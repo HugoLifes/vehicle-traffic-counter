@@ -1,0 +1,33 @@
+# Dependencias adicionales para el contenedor Docker de Jetson Orin Nano
+# (JetPack 6.x).
+#
+# NO incluye torch / torchvision / ultralytics / opencv-python / numpy:
+# esos ya vienen preinstalados y correctamente compilados para el Orin
+# dentro de la imagen base ultralytics/ultralytics:latest-jetson-jetpack6.
+# Reinstalarlos por pip los rompería — en PyPI no hay wheels de esas
+# librerías para esta combinación de arquitectura/JetPack con soporte
+# CUDA/TensorRT del propio Jetson.
+
+# Motor de conteo (tracking)
+filterpy==1.4.5
+scikit-learn
+pandas
+pyyaml
+pillow
+matplotlib
+seaborn
+imageio
+imageio-ffmpeg
+tqdm
+colorama
+
+# Plataforma (backend + dashboard)
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.17
+
+# IAs de NVIDIA (visual, validadora, RAG) + RAG local
+openai==1.57.4
+python-dotenv==1.0.1
+sqlite-vec==0.1.6
+pypdf==5.1.0

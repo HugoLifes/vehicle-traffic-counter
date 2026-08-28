@@ -1,0 +1,52 @@
+# Core dependencies
+opencv-python==4.8.1.78
+numpy==1.24.3
+scipy==1.10.1
+
+# Deep Learning
+torch==2.0.0
+torchvision==0.15.0
+ultralytics==8.1.0  # YOLOv8
+
+# Tracking
+filterpy==1.4.5
+scikit-learn==1.3.2
+
+# Data handling
+pandas==2.0.3
+pyyaml==6.0.1
+pillow==10.1.0
+
+# Visualization
+matplotlib==3.7.3
+seaborn==0.13.0
+
+# Video processing
+imageio==2.31.5
+imageio-ffmpeg==0.4.9
+
+# Utilities
+tqdm==4.66.1
+colorama==0.4.6
+
+# Plataforma (backend + dashboard, RAG)
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.17
+openai==1.57.4      # cliente OpenAI-compatible para las APIs de NVIDIA (build.nvidia.com)
+python-dotenv==1.0.1  # carga NVIDIA_API_KEY desde .env sin exportarla a mano
+sqlite-vec==0.1.6   # vector store local para el RAG
+pypdf==5.1.0        # extracción de texto de documentos del RAG
+
+# Optional: TensorRT (para Jetson Nano)
+# Instalar manualmente desde NVIDIA
+# nvidia-tensorrt
+
+# Optional: ONNX export
+onnx==1.15.0
+onnxruntime==1.16.3
+
+# Development
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0

@@ -1,0 +1,23 @@
+/*
+  Fuentes autohospedadas (no dependemos de Google Fonts CDN): el Jetson
+  puede estar en un sitio con internet inestable, y el conteo/dashboard
+  debe seguir funcionando sin conexión. Overpass es la familia basada en
+  Highway Gothic, la tipografía real de las señales de autopista en EE.UU.
+  Overpass Mono se usa para todos los números (conteos, FPS, timestamps).
+*/
+
+@font-face {
+  font-family: 'Overpass';
+  src: url('../vendor/fonts/overpass-latin.woff2') format('woff2');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Overpass Mono';
+  src: url('../vendor/fonts/overpass-mono-latin.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}

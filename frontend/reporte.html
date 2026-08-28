@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aforo Vehicular — Reporte de aforo</title>
+<link rel="stylesheet" href="css/fonts.css?v=3">
+<link rel="stylesheet" href="css/tokens.css?v=3">
+<link rel="stylesheet" href="css/shared.css?v=3">
+<link rel="stylesheet" href="css/upload.css?v=3">
+<link rel="stylesheet" href="css/report.css?v=3">
+</head>
+<body>
+<div class="wrap">
+
+  <div id="nav-host"></div>
+  <div id="guia-host"></div>
+
+  <div class="report-controls">
+    <label class="field">
+      <span>Intersección</span>
+      <select id="project-select"></select>
+    </label>
+    <label class="field field-narrow">
+      <span>Intervalo</span>
+      <select id="report-interval">
+        <option value="5">5 minutos</option>
+        <option value="10">10 minutos</option>
+        <option value="15" selected>15 minutos</option>
+        <option value="30">30 minutos</option>
+        <option value="60">60 minutos</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="report-body">
+    <div class="empty-state">Selecciona una intersección para ver su reporte.</div>
+  </div>
+
+</div>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="js/nav.js?v=3"></script>
+<script>
+  renderNav({ current: 'reporte', title: 'Reporte de aforo',
+              subtitle: 'Métricas, gráficas por intervalo y cifras exactas',
+              projectScoped: true });
+</script>
+<script src="js/theme.js?v=3"></script>
+<script src="js/projects-select.js?v=3"></script>
+<script src="js/charts.js?v=3"></script>
+<script src="js/report.js?v=3"></script>
+<script src="js/guia.js?v=3"></script>
+</body>
+</html>

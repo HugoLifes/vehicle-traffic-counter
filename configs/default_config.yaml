@@ -1,0 +1,173 @@
+# Configuración por Defecto - Sistema de Aforo Vehicular
+# =======================================================
+
+# Configuración del Detector
+detector:
+  model_path: "models/yolov8n.pt"  # Modelo YOLO (n=nano, s=small, m=medium)
+  confidence_threshold: 0.4         # Umbral de confianza (0-1)
+  iou_threshold: 0.5               # Umbral IoU para NMS
+  input_size: 640                  # Tamaño de entrada (320, 640, 1280)
+  
+  # Clases de vehículos (COCO dataset)
+  vehicle_classes:
+    2: "car"
+    3: "motorcycle"
+    5: "bus"
+    7: "truck"
+  
+  # Optimizaciones
+  use_tensorrt: false              # Usar TensorRT (Jetson Nano)
+  half_precision: false            # Precisión FP16
+  batch_size: 1                    # Tamaño de batch
+
+# Configuración del Tracker
+tracker:
+  max_age: 30                      # Frames máx sin detección antes de eliminar
+  min_hits: 3                      # Hits mínimos para confirmar track
+  iou_threshold: 0.3               # Umbral IoU para asociación
+  buffer_size: 60                  # Tamaño buffer de trayectorias (frames)
+  
+  # Parámetros del Filtro de Kalman
+  kalman:
+    process_noise: 0.01            # Ruido del proceso (Q)
+    measurement_noise: 1.0         # Ruido de medición (R)
+    initial_covariance: 10.0       # Covarianza inicial (P)
+
+# Configuración del Contador
+counter:
+  line_type: "horizontal"          # Tipo: horizontal, vertical, diagonal, polygon
+  line_position: null              # Posición (null = centro automático)
+  crossing_tolerance: 10           # Tolerancia para detección de cruce (pixels)
+  min_trajectory_points: 3         # Puntos mínimos de trayectoria antes de contar
+  
+  # Configuración de línea personalizada
+  # Para líneas diagonales o polígonos
+  custom_line:
+    enabled: false
+    points:                        # Lista de puntos [(x1,y1), (x2,y2), ...]
+      - [100, 200]
+      - [500, 250]
+
+# Configuración del Visualizador
+visualizer:
+  show_labels: true                # Mostrar etiquetas de clase
+  show_ids: true                   # Mostrar IDs de tracks
+  show_trajectories: true          # Mostrar trayectorias
+  show_confidence: true            # Mostrar confianza
+  
+  # Estilos visuales
+  bbox_thickness: 2
+  font_scale: 0.6
+  font_thickness: 2
+  trajectory_thickness: 2
+  trajectory_max_length: 50        # Longitud máxima de trayectoria visible
+  
+  # Colores (BGR)
+  colors:
+    car: [0, 255, 0]              # Verde
+    motorcycle: [255, 0, 0]        # Azul
+    bus: [0, 165, 255]            # Naranja
+    truck: [0, 0, 255]            # Rojo
+    
+  # Panel de estadísticas
+  stats_panel:
+    position: [20, 40]             # Posición (x, y)
+    background_alpha: 0.7          # Transparencia del fondo
+
+# Configuración del Procesador de Video
+processor:
+  skip_frames: 0                   # Frames a saltar (0 = procesar todos)
+  resize_input: false              # Redimensionar input para rendimiento
+  target_width: 1280               # Ancho objetivo si resize_input = true
+  target_height: 720               # Alto objetivo si resize_input = true
+
+# Configuración del Reporter
+reporter:
+  save_json: true                  # Guardar datos en JSON
+  save_csv: true                   # Guardar estadísticas en CSV
+  generate_plots: true             # Generar gráficas
+  generate_heatmap: true           # Generar mapa de calor
+  
+  # Formato de exportación
+  export_format:
+    timestamps: true               # Incluir timestamps
+    trajectories: true             # Incluir trayectorias completas
+    metadata: true                 # Incluir metadata
+
+# Configuraciones específicas para Jetson Nano
+jetson_nano:
+  # Modo de rendimiento (0 = MAXN, 1 = 5W)
+  power_mode: 0
+  
+  # Optimizaciones
+  enable_cuda_graphs: true
+  use_cudnn_benchmark: true
+  pin_memory: true
+  
+  # Recursos
+  max_gpu_memory: 3.5              # GB (dejar ~0.5GB para sistema)
+  cpu_threads: 4                   # Threads para operaciones CPU
+
+# Configuración de perspectiva de cámara
+perspective:
+  type: "frontal"                  # Tipos: top_down, frontal, angular
+  
+  # Calibración de perspectiva (opcional)
+  calibration:
+    enabled: false
+    matrix_file: "configs/camera_matrix.yaml"
+    
+  # Corrección de perspectiva
+  correction:
+    enabled: false
+    source_points:                 # Puntos fuente (perspectiva actual)
+      - [0, 0]
+      - [1920, 0]
+      - [1920, 1080]
+      - [0, 1080]
+    target_points:                 # Puntos objetivo (vista cenital)
+      - [0, 0]
+      - [1920, 0]
+      - [1920, 1080]
+      - [0, 1080]
+
+# Zonas de interés (ROI) - opcional
+roi:
+  enabled: false
+  zones:
+    - name: "entrada_principal"
+      type: "polygon"
+      points:
+        - [100, 100]
+        - [500, 100]
+        - [500, 400]
+        - [100, 400]
+      count_in_zone: true
+
+# Configuración de logging
+logging:
+  level: "INFO"                    # DEBUG, INFO, WARNING, ERROR
+  console: true                    # Log a consola
+  file: true                       # Log a archivo
+  verbose: false                   # Modo verbose
+
+# Configuración de análisis avanzado
+advanced:
+  # Detección de velocidad (requiere calibración)
+  speed_estimation:
+    enabled: false
+    pixels_per_meter: 10.0         # Calibración: pixels por metro
+    fps: 30                        # FPS del video
+    
+  # Clasificación de eventos
+  event_detection:
+    enabled: false
+    detect_stopped_vehicles: false
+    detect_wrong_direction: false
+    detect_overcrowding: false
+    
+  # Análisis temporal
+  temporal_analysis:
+    enabled: false
+    time_windows: [60, 300, 900]   # Ventanas de tiempo (segundos)
+    peak_detection: false

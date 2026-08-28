@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aforo Vehicular — Proyectos</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/fonts.css?v=3">
+<link rel="stylesheet" href="css/tokens.css?v=3">
+<link rel="stylesheet" href="css/shared.css?v=3">
+<link rel="stylesheet" href="css/upload.css?v=3">
+<link rel="stylesheet" href="css/proyectos.css?v=3">
+</head>
+<body>
+<div class="wrap">
+
+  <div id="nav-host"></div>
+  <div id="guia-host"></div>
+
+  <div class="section-head">
+    <h2 class="section-title">Intersecciones</h2>
+    <button type="button" class="btn-primary" id="new-project-btn">+ Nueva intersección</button>
+  </div>
+
+  <div class="project-form hidden" id="project-form">
+    <div class="form-row">
+      <label class="field">
+        <span>Nombre de la intersección</span>
+        <input type="text" id="project-name" placeholder="ej. Reforma × Insurgentes">
+        <span class="field-hint">Todos los videos y carriles de este punto de medición cuelgan de aquí.</span>
+      </label>
+      <label class="field field-narrow">
+        <span>Intervalo de conteo</span>
+        <select id="project-interval">
+          <option value="5">5 minutos</option>
+          <option value="10">10 minutos</option>
+          <option value="15" selected>15 minutos</option>
+          <option value="30">30 minutos</option>
+          <option value="60">60 minutos</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="form-row" style="margin-bottom:8px">
+      <label class="field">
+        <span>Notas (opcional)</span>
+        <input type="text" id="project-description" placeholder="ej. Aforo solicitado por el municipio, acceso norte">
+      </label>
+    </div>
+
+    <div class="field" style="margin-bottom:8px"><span>Ubicación</span></div>
+    <div class="map-search">
+      <input type="text" id="map-search-input" placeholder="Busca la dirección o el cruce de calles…">
+      <button type="button" class="btn-secondary" id="map-search-btn">Buscar</button>
+    </div>
+    <div id="map"></div>
+    <div class="map-hint">
+      <span id="map-status">Busca una dirección o haz clic en el mapa para poner el pin.</span>
+      <span class="coords" id="map-coords"></span>
+    </div>
+    <div class="map-attribution">
+      Mapa © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" id="cancel-project">Cancelar</button>
+      <button type="button" class="btn-primary" id="save-project">Crear intersección</button>
+    </div>
+  </div>
+
+  <div class="project-grid" id="project-grid">
+    <div class="empty-state">Cargando proyectos…</div>
+  </div>
+
+</div>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="js/nav.js?v=3"></script>
+<script>
+  renderNav({ current: 'proyectos', title: 'Proyectos de aforo',
+              subtitle: 'Una intersección por proyecto — acumula su histórico de conteos' });
+</script>
+<script src="js/theme.js?v=3"></script>
+<script src="js/proyectos.js?v=3"></script>
+<script src="js/guia.js?v=3"></script>
+</body>
+</html>

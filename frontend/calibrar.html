@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aforo Vehicular — Calibrar carriles</title>
+<link rel="stylesheet" href="css/fonts.css?v=3">
+<link rel="stylesheet" href="css/tokens.css?v=3">
+<link rel="stylesheet" href="css/shared.css?v=3">
+<link rel="stylesheet" href="css/upload.css?v=3">
+<link rel="stylesheet" href="css/calibrar.css?v=3">
+</head>
+<body>
+<div class="wrap">
+
+  <div id="nav-host"></div>
+  <div id="guia-host"></div>
+
+  <div class="calib-controls">
+    <label class="field">
+      <span>Intersección</span>
+      <select id="project-select"></select>
+    </label>
+  </div>
+
+  <div class="calib-layout">
+    <div>
+      <div class="canvas-wrap">
+        <canvas id="calib-canvas" width="640" height="360"></canvas>
+      </div>
+      <div class="calib-hint" id="calib-hint">Elige una intersección arriba para cargar un frame.</div>
+    </div>
+
+    <div class="lane-panel">
+      <h3>Carriles</h3>
+      <div id="lane-list"></div>
+      <button type="button" class="btn-primary" id="new-lane-btn" style="width:100%; margin-top:12px;" disabled>
+        + Nuevo carril
+      </button>
+      <div class="new-lane-form hidden" id="new-lane-form">
+        <input type="text" id="new-lane-name" placeholder="Nombre del carril (ej. Acceso Norte)">
+        <button type="button" class="btn-primary" id="save-lane-btn">Guardar</button>
+      </div>
+
+      <div class="start-counting hidden" id="start-counting-box">
+        <div class="sc-info" id="sc-info"></div>
+        <button type="button" class="btn-primary" id="start-counting-btn" style="width:100%">
+          Empezar conteo
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="js/nav.js?v=3"></script>
+<script>
+  renderNav({ current: 'calibrar', title: 'Calibrar carriles',
+              subtitle: 'Dibuja la línea justo donde cruzan los vehículos',
+              projectScoped: true });
+</script>
+<script src="js/theme.js?v=3"></script>
+<script src="js/projects-select.js?v=3"></script>
+<script src="js/calibrar.js?v=3"></script>
+<script src="js/guia.js?v=3"></script>
+</body>
+</html>

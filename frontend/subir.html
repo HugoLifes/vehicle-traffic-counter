@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aforo Vehicular — Subir videos</title>
+<link rel="stylesheet" href="css/fonts.css?v=3">
+<link rel="stylesheet" href="css/tokens.css?v=3">
+<link rel="stylesheet" href="css/shared.css?v=3">
+<link rel="stylesheet" href="css/upload.css?v=3">
+</head>
+<body>
+<div class="wrap">
+
+  <div id="nav-host"></div>
+  <div id="guia-host"></div>
+
+  <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Subir videos">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v13" />
+      <path d="M7 8l5-5 5 5" />
+      <path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" />
+    </svg>
+    <div class="dz-title">Arrastra uno o varios videos aquí</div>
+    <div class="dz-sub">o <button type="button" id="browse-btn">elige archivos desde tu equipo</button></div>
+    <div class="dz-formats">MP4 · AVI · MOV · MKV · WEBM · FLV · WMV · M4V · MPG</div>
+    <input type="file" id="file-input" multiple hidden
+           accept=".mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.mpg,.mpeg">
+  </div>
+
+  <div class="reject-list" id="reject-list"></div>
+
+  <div class="staging hidden" id="staging">
+    <h2 class="section-title">Antes de subir</h2>
+
+    <div class="staging-shared">
+      <label class="field">
+        <span>Intersección</span>
+        <select id="project-select"></select>
+        <span class="field-hint">Todos los videos de la misma intersección comparten sus carriles y se unen en un solo reporte por intervalos. ¿Falta la intersección? <a href="proyectos.html">Créala aquí</a>.</span>
+      </label>
+    </div>
+
+    <div class="staging-files" id="staging-files"></div>
+
+    <div class="staging-actions">
+      <button type="button" class="btn-secondary" id="cancel-staging">Cancelar</button>
+      <button type="button" class="btn-primary" id="confirm-upload">Subir videos</button>
+    </div>
+  </div>
+
+  <h2 class="section-title">Cola de procesamiento</h2>
+  <div class="job-list" id="job-list">
+    <div class="empty-state">Todavía no has subido ningún video.</div>
+  </div>
+
+</div>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="js/nav.js?v=3"></script>
+<script>
+  renderNav({ current: 'subir', title: 'Subir videos',
+              subtitle: 'Procesamiento por lote — uno o varios archivos a la vez',
+              projectScoped: true });
+</script>
+<script src="js/theme.js?v=3"></script>
+<script src="js/projects-select.js?v=3"></script>
+<script src="js/upload.js?v=3"></script>
+<script src="js/guia.js?v=3"></script>
+</body>
+</html>

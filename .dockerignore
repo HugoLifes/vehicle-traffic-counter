@@ -1,0 +1,14 @@
+.git/
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+models/*.pt
+models/*.engine
+models/*.onnx
+input/*.mp4
+input/*.avi
+input/*.mov
+results/
+*.log

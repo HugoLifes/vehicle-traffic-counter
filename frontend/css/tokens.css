@@ -1,0 +1,111 @@
+/*
+  Sistema de diseño — "panel de instrumentos" de aforo vehicular.
+
+  Paleta: superficie fría con sesgo azul (no gris puro). El acento es
+  el azul de señalética vial (el azul FHWA de señales de servicio en
+  autopistas de EE.UU./México) — deliberadamente NO cian/teal, que es
+  el acento por defecto más común en diseño generado por IA. Reservado
+  para elementos interactivos y foco, separado de los colores
+  semánticos (ok/aviso/crítico), que nunca se reusan como acento.
+
+  Tipografía: Overpass (Highway Gothic, la tipografía real de señalética
+  de autopista) para títulos y texto; Overpass Mono para todo dato
+  numérico — conteos, FPS, timestamps — como un velocímetro digital.
+*/
+
+:root {
+  /* Superficies — luz */
+  --surface-0: #f2f5f8;
+  --surface-1: #ffffff;
+  --surface-2: #e7ecf1;
+  --border: #d7dfe6;
+  --shadow: rgba(16, 24, 32, 0.08);
+
+  /* Texto — luz */
+  --text-primary: #10161d;
+  --text-secondary: #4d5967;
+  --text-muted: #8291a1;
+
+  /* Acento — azul de señalética vial (interactivo/foco, no semántico) */
+  --accent: #1d54b3;
+  --accent-strong: #123f8c;
+  --accent-soft: #e3ebfa;
+
+  /* Semántico — reservado, nunca se reusa como acento */
+  --good: #1c8f56;
+  --good-soft: #e2f5eb;
+  --warning: #a8690c;
+  --warning-soft: #faedd9;
+  --critical: #c22c3d;
+  --critical-soft: #fbe2e5;
+
+  /* Escala tipográfica */
+  --font-display: 'Overpass', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Overpass Mono', ui-monospace, 'Cascadia Code', monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.85rem;
+  --text-base: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.6rem;
+  --text-2xl: 2.4rem;
+
+  /* Espaciado y forma */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: #0a0e14;
+    --surface-1: #121722;
+    --surface-2: #1a212e;
+    --border: #262e3c;
+    --shadow: rgba(0, 0, 0, 0.45);
+
+    --text-primary: #eaeef4;
+    --text-secondary: #93a0b3;
+    --text-muted: #5d6a7d;
+
+    --accent: #4f8ff0;
+    --accent-strong: #7aabff;
+    --accent-soft: rgba(79, 143, 240, 0.14);
+
+    --good: #34c77a;
+    --good-soft: rgba(52, 199, 122, 0.14);
+    --warning: #f5a623;
+    --warning-soft: rgba(245, 166, 35, 0.14);
+    --critical: #f0475a;
+    --critical-soft: rgba(240, 71, 90, 0.14);
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface-0: #0a0e14;
+  --surface-1: #121722;
+  --surface-2: #1a212e;
+  --border: #262e3c;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --text-primary: #eaeef4;
+  --text-secondary: #93a0b3;
+  --text-muted: #5d6a7d;
+
+  --accent: #4f8ff0;
+  --accent-strong: #7aabff;
+  --accent-soft: rgba(79, 143, 240, 0.14);
+
+  --good: #34c77a;
+  --good-soft: rgba(52, 199, 122, 0.14);
+  --warning: #f5a623;
+  --warning-soft: rgba(245, 166, 35, 0.14);
+  --critical: #f0475a;
+  --critical-soft: rgba(240, 71, 90, 0.14);
+}

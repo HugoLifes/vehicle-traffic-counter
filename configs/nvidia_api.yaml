@@ -1,0 +1,41 @@
+# Configuración de las APIs de NVIDIA (build.nvidia.com / NIM).
+#
+# La API key NUNCA va aquí — se lee de la variable de entorno
+# NVIDIA_API_KEY (ver .env.example). Este archivo solo fija qué
+# modelo se usa para cada rol.
+#
+# Modelos confirmados funcionando en la cuenta gratuita real del
+# proyecto (probados con curl contra integrate.api.nvidia.com el
+# 2026-08-28). El catálogo de NVIDIA cambia con el tiempo y esta
+# cuenta en particular solo tiene habilitado un subconjunto — si un
+# modelo empieza a fallar con 404, hay que revisar
+# https://build.nvidia.com para ver qué está disponible ahora.
+
+base_url: "https://integrate.api.nvidia.com/v1"
+
+models:
+  # IA validadora (sanity-check de conteos + grounding de respuestas del RAG)
+  # y generación de respuestas del RAG. Modelo de texto, funciona bien con
+  # prompts sin imagen aunque el nombre diga "vision".
+  chat: "meta/llama-3.2-90b-vision-instruct"
+
+  # IA visual: contexto cualitativo de la escena (congestión, sentido
+  # contrario, clima). Versión más chica/rápida para llamadas periódicas.
+  vision: "meta/llama-3.2-11b-vision-instruct"
+
+  # Embeddings para el RAG (2048 dimensiones)
+  embedding: "nvidia/nemotron-3-embed-1b"
+
+  # Reranking: el endpoint dedicado (/v1/ranking) no resuelve en esta
+  # cuenta todavía (404 de ruta, no de permisos) — pendiente de revisar.
+  # Mientras tanto el RAG usa fusión híbrida (denso + léxico + RRF) sin
+  # paso de reranking, que sigue siendo un patrón de retrieval válido.
+  reranking: null
+
+# Límites/comportamiento
+request_timeout_s: 30
+max_retries: 2
+
+# Intervalos de las IAs periódicas (segundos) — no llamar la API en
+# cada frame, el free tier es rate-limited.
+visual_interval_s: 20

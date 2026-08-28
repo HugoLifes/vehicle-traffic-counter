@@ -1,0 +1,71 @@
+# Despliegue de la plataforma completa en el Jetson Orin Nano.
+#
+# Uso:
+#   docker compose -f docker-compose.jetson.yml up -d --build
+#   docker compose -f docker-compose.jetson.yml logs -f
+#   docker compose -f docker-compose.jetson.yml down
+#
+# Requiere:
+#   - .env en esta misma carpeta, con NVIDIA_API_KEY (copiar de .env.example)
+#   - Docker con el runtime "nvidia" configurado (JetPack lo trae de fábrica
+#     desde 4.4+; confirmar con: docker info | grep -i nvidia)
+
+services:
+  aforo-vehicular:
+    build:
+      context: .
+      dockerfile: Dockerfile.jetson
+    image: vehicle-traffic-counter:jetson
+    container_name: aforo-vehicular
+    restart: unless-stopped
+    runtime: nvidia
+
+    env_file:
+      - .env
+    environment:
+      # Cambiar aquí la fuente de la cámara en vivo sin tocar el YAML.
+      # "0" = primera webcam USB, o una URL rtsp://... para cámara IP.
+      - CAMERA_SOURCE=${CAMERA_SOURCE:-0}
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      # Solo se monta lo que debe persistir entre reinicios del
+      # contenedor — el código de la app va horneado en la imagen
+      # (COPY . . en el Dockerfile), no como volumen, para evitar que
+      # quede desincronizado de lo que realmente se construyó.
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./configs:/app/configs
+
+    # Passthrough de cámara USB (descomentar si usas webcam en vez de
+    # cámara IP por RTSP — una cámara IP no necesita esto, solo red).
+    # devices:
+    #   - /dev/video0:/dev/video0
+
+    # --- Límites de recursos ---------------------------------------
+    # El Orin Nano Super tiene 8GB de RAM COMPARTIDA entre CPU y GPU —
+    # es un solo pool de memoria, no una GPU con VRAM aparte. Dejamos
+    # ~2GB de colchón para el sistema operativo y el propio JetPack,
+    # y 1 núcleo de CPU libre para que el host no se ahorque si el
+    # contenedor se pone pesado (YOLO + FastAPI + un video subido
+    # procesándose al mismo tiempo).
+    mem_limit: 6g
+    memswap_limit: 6g   # = mem_limit -> sin swap extra, mejor un OOM
+                         # controlado que el equipo arrastrándose por
+                         # swap en la microSD/NVMe.
+    cpus: "5.0"          # de los 6 núcleos típicos del Orin Nano
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"   # no dejar que los logs se coman la microSD
+        max-file: "3"

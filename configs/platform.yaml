@@ -1,0 +1,23 @@
+# Configuración de la plataforma (backend + dashboard).
+# Para procesar un video puntual con reportes, usa main.py + configs/default_config.yaml.
+
+# Fuente de la cámara: índice de webcam ("0"), ruta a archivo, o rtsp://...
+# Se puede sobreescribir sin editar este archivo con la variable de entorno CAMERA_SOURCE.
+camera_source: "0"
+
+model_path: "models/yolov8n.pt"
+confidence_threshold: 0.4
+device: "auto"
+
+detector:
+  iou_threshold: 0.5
+  input_size: 640
+
+tracker:
+  max_age: 30
+  min_hits: 3
+  iou_threshold: 0.3
+
+server:
+  host: "0.0.0.0"
+  port: 8080

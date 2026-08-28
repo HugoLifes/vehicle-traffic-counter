@@ -1,0 +1,44 @@
+# Imagen de la PLATAFORMA completa (backend + dashboard + IAs de NVIDIA)
+# para NVIDIA Jetson Orin Nano, JetPack 6.x.
+#
+# Usa la imagen oficial de Ultralytics para JetPack 6, que ya trae
+# PyTorch, TorchVision, OpenCV y `ultralytics` compilados y probados
+# para el Orin (a diferencia del Jetson Nano original, JetPack 6 sí
+# trae Python 3.10 — por eso aquí las dependencias del proyecto se
+# instalan normal por pip, sin el rodeo que hacía falta para el Nano).
+#
+# ⚠️ Este Dockerfile asume JetPack 6.x. Confírmalo en el propio Jetson
+# con `cat /etc/nv_tegra_release` antes del primer deploy real — si
+# resulta ser JetPack 5, solo hay que cambiar el tag de la imagen base
+# a `latest-jetson-jetpack5`, nada más cambia.
+#
+# Build:
+#   docker compose -f docker-compose.jetson.yml build
+#
+# Ver docker-compose.jetson.yml para límites de memoria/CPU, volúmenes
+# y cómo correrlo — este Dockerfile solo arma la imagen.
+
+FROM ultralytics/ultralytics:latest-jetson-jetpack6
+
+WORKDIR /app
+
+# Dependencias del proyecto que NO vienen en la imagen base (torch,
+# torchvision, opencv, ultralytics, numpy sí vienen — no se reinstalan
+# para no romper las versiones compiladas específicamente para el Orin).
+COPY requirements-jetson-docker.txt .
+RUN pip3 install --no-cache-dir -r requirements-jetson-docker.txt
+
+COPY . .
+
+RUN mkdir -p models data data/uploads
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status', timeout=3)" || exit 1
+
+# Plataforma (backend + dashboard) por defecto. Para procesar un video
+# puntual con reportes en vez de levantar el servidor:
+#   docker compose -f docker-compose.jetson.yml run --rm aforo-vehicular \
+#     python3 main.py --source input/video.mp4 --save-video
+CMD ["python3", "serve.py"]

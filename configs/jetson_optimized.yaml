@@ -1,0 +1,125 @@
+# Configuración Optimizada para NVIDIA Jetson Nano
+# ==================================================
+# Esta configuración prioriza rendimiento y eficiencia
+# para obtener máximo FPS en hardware embebido
+
+# Detector - Optimizado para velocidad
+detector:
+  model_path: "models/yolov8n.pt"  # Modelo nano (más rápido)
+  confidence_threshold: 0.5         # Mayor umbral = menos falsos positivos
+  iou_threshold: 0.45              # Reducido para mejor velocidad
+  input_size: 416                  # Resolución reducida (416 vs 640)
+  
+  vehicle_classes:
+    2: "car"
+    3: "motorcycle"
+    5: "bus"
+    7: "truck"
+  
+  # Optimizaciones críticas para Jetson
+  use_tensorrt: true               # ¡IMPORTANTE! +3x velocidad
+  half_precision: true             # FP16 para mejor rendimiento
+  batch_size: 1                    # Batch 1 para baja latencia
+
+# Tracker - Configuración ligera
+tracker:
+  max_age: 20                      # Reducido de 30 a 20
+  min_hits: 2                      # Reducido de 3 a 2
+  iou_threshold: 0.25              # Menos estricto
+  buffer_size: 30                  # Buffer más pequeño (30 vs 60)
+
+# Contador - Sin cambios necesarios
+counter:
+  line_type: "horizontal"
+  line_position: null
+  crossing_tolerance: 15           # Ligeramente más tolerante
+  min_trajectory_points: 2         # Reducido de 3 a 2
+
+# Visualizador - Simplificado
+visualizer:
+  show_labels: true
+  show_ids: true
+  show_trajectories: false         # Deshabilitado para rendimiento
+  show_confidence: false           # Deshabilitado
+  
+  bbox_thickness: 2
+  font_scale: 0.5                  # Fuente más pequeña
+  font_thickness: 1                # Más delgada
+  trajectory_thickness: 1
+  trajectory_max_length: 20        # Muy reducido
+  
+  stats_panel:
+    position: [10, 30]
+    background_alpha: 0.6
+
+# Procesador - Optimizaciones críticas
+processor:
+  skip_frames: 1                   # Saltar 1 frame (procesar 1 de cada 2)
+  resize_input: true               # Redimensionar entrada
+  target_width: 960                # Resolución reducida
+  target_height: 540               # 540p en lugar de 1080p
+
+# Reporter - Ligero
+reporter:
+  save_json: true
+  save_csv: true
+  generate_plots: false            # Deshabilitado (caro en CPU)
+  generate_heatmap: false          # Deshabilitado
+
+# Configuración específica de Jetson Nano
+jetson_nano:
+  power_mode: 0                    # MAXN (máximo rendimiento)
+  
+  # Optimizaciones CUDA
+  enable_cuda_graphs: true
+  use_cudnn_benchmark: true
+  pin_memory: true
+  
+  # Gestión de memoria
+  max_gpu_memory: 3.5              # GB
+  cpu_threads: 4
+  
+  # Optimizaciones adicionales
+  cuda_memory_fraction: 0.8
+  allow_growth: true
+  clear_memory_interval: 100       # Limpiar cada 100 frames
+
+# Sin perspectiva compleja
+perspective:
+  type: "frontal"
+  calibration:
+    enabled: false
+  correction:
+    enabled: false
+
+# Sin ROI para simplificar
+roi:
+  enabled: false
+
+# Logging mínimo
+logging:
+  level: "WARNING"                 # Solo warnings y errores
+  console: true
+  file: false                      # Sin archivo de log
+  verbose: false
+
+# Sin análisis avanzado
+advanced:
+  speed_estimation:
+    enabled: false
+  event_detection:
+    enabled: false
+  temporal_analysis:
+    enabled: false
+
+# Notas de optimización para Jetson Nano:
+# ========================================
+# 1. Asegurar modo MAXN: sudo nvpmodel -m 0
+# 2. Maximizar clocks: sudo jetson_clocks
+# 3. Usar swap si es necesario: sudo systemctl enable nvzramconfig
+# 4. Monitorear temperatura: watch -n 1 cat /sys/devices/virtual/thermal/thermal_zone*/temp
+# 5. FPS esperado: 10-15 FPS con esta configuración
+# 6. Para más FPS, considerar:
+#    - skip_frames: 2 (procesar 1 de cada 3)
+#    - target_width: 640, target_height: 360
+#    - input_size: 320

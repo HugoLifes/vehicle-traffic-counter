@@ -1,0 +1,121 @@
+/* --- Cluster de instrumentos (stats hero) ------------------------------ */
+
+.stat-cluster {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.stat-tile {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: 0 1px 2px var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-tile .label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.stat-tile .value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.stat-tile.accent .value { color: var(--accent); }
+.stat-tile .unit { font-size: var(--text-sm); color: var(--text-muted); margin-left: 4px; }
+
+/* --- Carriles ------------------------------------------------------- */
+
+.lane-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.lane-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+
+.lane-card .lane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.lane-card .lane-name { font-weight: 700; font-size: var(--text-base); }
+.lane-card .lane-total {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.lane-io {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.lane-io .io-item { flex: 1; }
+.lane-io .io-label { font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 2px; }
+.lane-io .io-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.vt-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+.vt-row:first-of-type { border-top: none; padding-top: 0; }
+.vt-row .vt-name { flex: 0 0 78px; color: var(--text-secondary); text-transform: capitalize; }
+.vt-row .vt-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  display: flex;
+}
+.vt-row .vt-bar .seg-in { background: var(--accent); height: 100%; }
+.vt-row .vt-bar .seg-out { background: var(--text-muted); height: 100%; }
+.vt-row .vt-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 860px) {
+  .stat-cluster { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 520px) {
+  .stat-cluster { grid-template-columns: 1fr; }
+}
