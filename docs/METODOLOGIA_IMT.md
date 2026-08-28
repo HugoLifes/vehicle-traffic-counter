@@ -55,28 +55,43 @@ También reportan que solo el **85.9 %** de las mediciones de velocidad se
 aceptan; el resto se descarta por pérdida de identidad del track o cruces en
 orden inválido.
 
+## Ya aplicado a partir de este documento
+
+**Continuidad de trayectoria alrededor de la línea** (§3.4) — implementado en
+`src/counter.py`. Un cruce solo se valida si el `track_id` venía siendo visto en
+los cuadros inmediatamente anteriores (`max_gap_frames`, 2 por defecto). Un
+parpadeo breve del detector se tolera; una oclusión larga descarta el cruce,
+porque el vehículo pudo atravesar la línea sin haber sido observado.
+
+Al implementarlo se encontró y corrigió **un fallo distinto pero relacionado**:
+la comprobación de cruce exigía que la posición previa o la actual cayera dentro
+de una banda de tolerancia (10 px) alrededor de la línea. Un vehículo rápido que
+saltara de un lado al otro en un solo cuadro (p. ej. de y=185 a y=215) nunca
+entraba en esa banda y **no se contaba**, pese a haber cruzado — el "cruce
+perdido" que describe el documento. Ahora basta el cambio de lado, que ya prueba
+por sí solo que la trayectoria atravesó la línea. Verificado: sigue sin contar
+vehículos que se acercan sin cruzar, y sobre el footage real el conteo no cambió
+(11 vehículos antes y después), así que corrige un caso latente sin alterar lo
+que ya funcionaba.
+
 ## Mejoras que sugiere y todavía no implementamos
 
-1. **Continuidad mínima alrededor de la línea** (§3.4) — la recomendación
-   explícita del documento para reducir conteos dobles y cruces perdidos: exigir
-   que la trayectoria sea continua en una ventana de cuadros *antes y después*
-   de la línea, no solo en el instante del cruce.
-2. **Estimación de velocidad con dos líneas** (§2.2.4):
+1. **Estimación de velocidad con dos líneas** (§2.2.4):
    `v = d / Δt` (m/s), o `v = 3.6 · d / Δt` (km/h), donde `d` es la distancia
    real en metros entre dos líneas y `Δt` el tiempo entre ambos cruces del mismo
    `track_id`. Se acepta la medición solo si: cruza en el orden esperado,
    `Δt > 0` con trayectoria continua, ocurre dentro de la ROI, y la velocidad
    cae en un rango plausible `[v_min, v_max]` del sitio.
-3. **Detección de cambio de carril** (§2.2.5–2.2.6) — mismo producto cruzado,
+2. **Detección de cambio de carril** (§2.2.5–2.2.6) — mismo producto cruzado,
    pero exigiendo que el cambio de signo **persista N cuadros consecutivos** y
    con una **zona muerta** alrededor del divisor, para no disparar el evento
    cuando el vehículo circula pegado a la línea.
-4. **ROI (polígono de análisis)** — nosotros solo tenemos líneas; ellos delimitan
+3. **ROI (polígono de análisis)** — nosotros solo tenemos líneas; ellos delimitan
    además un área válida, lo que evita activaciones fuera de escena.
-5. **Versionado de la geometría** — registrar qué configuración de carriles
+4. **Versionado de la geometría** — registrar qué configuración de carriles
    produjo cada medición, para que los aforos sigan siendo comparables entre
    sesiones aunque después se recalibre.
-6. **Trazabilidad del pipeline** — guardar versión del modelo y parámetros de
+5. **Trazabilidad del pipeline** — guardar versión del modelo y parámetros de
    inferencia junto con los resultados.
 
 ## Limitaciones que también aplican a nosotros

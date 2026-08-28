@@ -74,6 +74,10 @@ class BidirectionalCounter:
         # Configuraciones
         self.crossing_tolerance = self.config.get('crossing_tolerance', 10)
         self.min_trajectory_points = self.config.get('min_trajectory_points', 3)
+        # Cuántos cuadros puede desaparecer un track y aún así aceptarle un
+        # cruce. Con 2 se tolera un parpadeo del detector, pero no una
+        # oclusión larga (donde el vehículo pudo cruzar sin ser observado).
+        self.max_gap_frames = self.config.get('max_gap_frames', 2)
         
         # Historial de cruces (para análisis)
         self.crossing_history = []
@@ -169,29 +173,26 @@ class BidirectionalCounter:
         px, py = prev_position
         cx, cy = curr_position
         
+        # El cambio de lado entre la posición previa y la actual YA prueba
+        # que el segmento de trayectoria atravesó la línea. No se exige
+        # además cercanía a la línea: hacerlo perdía los cruces de vehículos
+        # rápidos, que en un solo cuadro saltan de un lado al otro sin caer
+        # nunca dentro de la banda de tolerancia (p. ej. 185 -> 215 con una
+        # tolerancia de 10 px no se contaba, aunque cruzó). Eso es
+        # exactamente el "cruce perdido" que documenta la PT-914 del IMT.
         if self.line_type == LineType.HORIZONTAL:
             line_y = self.counting_line['y']
-            
-            # Verificar cruce de línea horizontal
-            if abs(py - line_y) <= self.crossing_tolerance or \
-               abs(cy - line_y) <= self.crossing_tolerance:
-                # Determinar dirección
-                if py < line_y and cy >= line_y:
-                    return Direction.ENTERING  # De arriba hacia abajo
-                elif py > line_y and cy <= line_y:
-                    return Direction.EXITING  # De abajo hacia arriba
-            
+            if py < line_y and cy >= line_y:
+                return Direction.ENTERING  # De arriba hacia abajo
+            elif py > line_y and cy <= line_y:
+                return Direction.EXITING  # De abajo hacia arriba
+
         elif self.line_type == LineType.VERTICAL:
             line_x = self.counting_line['x']
-            
-            # Verificar cruce de línea vertical
-            if abs(px - line_x) <= self.crossing_tolerance or \
-               abs(cx - line_x) <= self.crossing_tolerance:
-                # Determinar dirección
-                if px < line_x and cx >= line_x:
-                    return Direction.ENTERING  # De izquierda a derecha
-                elif px > line_x and cx <= line_x:
-                    return Direction.EXITING  # De derecha a izquierda
+            if px < line_x and cx >= line_x:
+                return Direction.ENTERING  # De izquierda a derecha
+            elif px > line_x and cx <= line_x:
+                return Direction.EXITING  # De derecha a izquierda
         
         elif self.line_type in [LineType.DIAGONAL, LineType.POLYGON]:
             # Para líneas diagonales, usar producto cruzado
@@ -269,20 +270,33 @@ class BidirectionalCounter:
             'count': 0
         }
         
+        seen_ids = set()
+
         for track in tracks:
             track_id = track['id']
-            
+            seen_ids.add(track_id)
+
             # Obtener posición actual (centro del bbox)
             x1, y1, x2, y2 = track['bbox']
             curr_position = ((x1 + x2) / 2, (y1 + y2) / 2)
-            
+
             # Verificar si ya tenemos estado previo de este track
             if track_id in self.track_states:
-                prev_position = self.track_states[track_id]['last_position']
-                already_crossed = self.track_states[track_id]['crossed']
-                
+                state = self.track_states[track_id]
+                prev_position = state['last_position']
+                already_crossed = state['crossed']
+
+                # Continuidad alrededor de la línea: el cruce solo se valida
+                # si el track venía siendo visto en los cuadros inmediatamente
+                # anteriores. Sin esto, un track que reaparece tras una
+                # oclusión justo sobre la línea puede registrar un cruce que
+                # nunca se observó — la causa principal de conteos dobles y
+                # de cruces perdidos según la PT-914 del IMT (§3.4), que
+                # recomienda exactamente esta ventana antes/después.
+                continuous = state.get('frames_since_seen', 0) <= self.max_gap_frames
+
                 # Solo verificar si no ha cruzado antes
-                if not already_crossed:
+                if not already_crossed and continuous:
                     # Verificar si hubo suficiente trayectoria
                     if len(track.get('trajectory', [])) >= self.min_trajectory_points:
                         # Verificar cruce
@@ -322,12 +336,20 @@ class BidirectionalCounter:
                                 self.track_states[track_id]['crossed'] = True
                                 self.counted_ids.add(track_id)
             
-            # Actualizar estado del track
+            # Actualizar estado del track (visto en este cuadro)
             self.track_states[track_id] = {
                 'last_position': curr_position,
-                'crossed': self.track_states.get(track_id, {}).get('crossed', False)
+                'crossed': self.track_states.get(track_id, {}).get('crossed', False),
+                'frames_since_seen': 0,
             }
-        
+
+        # Los tracks que no aparecieron en este cuadro acumulan ausencia. Si
+        # reaparecen tras una pausa larga (oclusión), su siguiente cruce no
+        # se da por válido porque no se observó la trayectoria completa.
+        for track_id, state in self.track_states.items():
+            if track_id not in seen_ids:
+                state['frames_since_seen'] = state.get('frames_since_seen', 0) + 1
+
         return frame_crossings
     
     def _register_crossing(
