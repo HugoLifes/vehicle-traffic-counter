@@ -133,3 +133,49 @@ export const IconMoon = (p: IconProps) => (
     <path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" />
   </Svg>
 );
+
+/* --- Transporte de video ------------------------------------------------
+   Trazo 2 porque van solos en botones de icono, sin texto al lado que les
+   marque el peso. Play y pausa son rellenos, no contornos: son estados
+   activos, y el relleno los distingue de un vistazo. */
+
+export const IconPlay = (p: IconProps) => (
+  <Svg {...p} strokeWidth={0}>
+    <path d="M7 4.5v15l13-7.5z" fill="currentColor" />
+  </Svg>
+);
+
+export const IconPause = (p: IconProps) => (
+  <Svg {...p} strokeWidth={0}>
+    <rect x="6.5" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" />
+    <rect x="13.5" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" />
+  </Svg>
+);
+
+export const IconStepBack = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M17 5v14l-9-7z" fill="currentColor" stroke="none" />
+    <path d="M6 5v14" />
+  </Svg>
+);
+
+export const IconStepForward = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M7 5v14l9-7z" fill="currentColor" stroke="none" />
+    <path d="M18 5v14" />
+  </Svg>
+);
+
+export const IconJumpBack = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M12.5 5v14l-8-7z" fill="currentColor" stroke="none" />
+    <path d="M20.5 5v14l-8-7z" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+export const IconJumpForward = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M11.5 5v14l8-7z" fill="currentColor" stroke="none" />
+    <path d="M3.5 5v14l8-7z" fill="currentColor" stroke="none" />
+  </Svg>
+);

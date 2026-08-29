@@ -36,16 +36,23 @@
   --border-strong: #7d8b9c;   /* contorno de controles — 3.47:1 sobre blanco */
   --shadow: rgba(16, 24, 32, 0.08);
 
-  /* Fondo de página: dos brillos suaves sobre un lavado vertical.
-     Los valores no son libres — el texto más débil que se apoya
-     directamente en el fondo es --text-muted, así que ninguna parada
-     puede oscurecer tanto que ese texto baje de 4.5:1, ni aclarar tanto
-     que las tarjetas (--surface-1) dejen de despegarse del fondo.
-     Medido: peor caso 4.66:1 de texto y 1.08:1 de separación. */
-  --bg-glow-a: #edf3fd;      /* brillo frío, esquina superior derecha */
-  --bg-glow-b: #ecf4f3;      /* brillo verdoso, esquina inferior izquierda */
-  --bg-wash-from: #f3f7fb;
-  --bg-wash-to: #e9eef7;
+  /* Fondo de página: tres brillos de color sobre un lavado vertical.
+     Cielo, durazno y lila en esquinas distintas — el contraste entre un
+     brillo frío y uno cálido es lo que hace que se lea como color y no
+     como un simple tinte azulado.
+
+     Elegidos en OKLCH, no a ojo. Ahí el tono y la luminosidad son ejes
+     independientes, y el único eje que esta interfaz tiene restringido es
+     la luminosidad: el texto más débil que se apoya directamente en el
+     fondo es --text-muted, y las tarjetas tienen que seguir despegándose
+     de él. Con la luminosidad fija en L≈0.965 el tono queda libre — por
+     eso se puede tener color de verdad sin tocar el contraste.
+     Medido: peor caso 4.69:1 de texto y 1.08:1 de separación. */
+  --bg-glow-a: #daf9ff;      /* cielo, esquina superior derecha */
+  --bg-glow-b: #ffeae4;      /* durazno, esquina inferior izquierda */
+  --bg-glow-c: #f7f0ff;      /* lila, esquina superior izquierda */
+  --bg-wash-from: #f3f6fd;
+  --bg-wash-to: #e6f2ff;
 
   /* Texto */
   --text-primary: #10161d;
@@ -118,13 +125,15 @@
     --border-strong: #68748a;
     --shadow: rgba(0, 0, 0, 0.45);
 
-    /* En oscuro el límite es el contrario: si el fondo aclara más que la
-       tarjeta, la tarjeta parece hundida en vez de elevada. Las paradas se
-       quedan por debajo de --surface-1. */
-    --bg-glow-a: #0c1420;
-    --bg-glow-b: #09141a;
-    --bg-wash-from: #0c111a;
-    --bg-wash-to: #070a0f;
+    /* La misma idea de noche: índigo, ciruela y petróleo a L≈0.18. Aquí el
+       límite es el contrario — si el fondo aclara más que la tarjeta, la
+       tarjeta parece hundida en vez de elevada, así que todas las paradas
+       se quedan por debajo de --surface-1. */
+    --bg-glow-a: #041429;    /* índigo */
+    --bg-glow-b: #1a0920;    /* ciruela */
+    --bg-glow-c: #001617;    /* petróleo */
+    --bg-wash-from: #080d17;
+    --bg-wash-to: #03050a;
 
     --text-primary: #eaeef4;
     --text-secondary: #93a0b3;
@@ -160,13 +169,15 @@
   --border-strong: #68748a;
   --shadow: rgba(0, 0, 0, 0.45);
 
-  /* En oscuro el límite es el contrario: si el fondo aclara más que la
-     tarjeta, la tarjeta parece hundida en vez de elevada. Las paradas se
-     quedan por debajo de --surface-1. */
-  --bg-glow-a: #0c1420;
-  --bg-glow-b: #09141a;
-  --bg-wash-from: #0c111a;
-  --bg-wash-to: #070a0f;
+  /* La misma idea de noche: índigo, ciruela y petróleo a L≈0.18. Aquí el
+     límite es el contrario — si el fondo aclara más que la tarjeta, la
+     tarjeta parece hundida en vez de elevada, así que todas las paradas
+     se quedan por debajo de --surface-1. */
+  --bg-glow-a: #041429;    /* índigo */
+  --bg-glow-b: #1a0920;    /* ciruela */
+  --bg-glow-c: #001617;    /* petróleo */
+  --bg-wash-from: #080d17;
+  --bg-wash-to: #03050a;
 
   --text-primary: #eaeef4;
   --text-secondary: #93a0b3;

@@ -82,12 +82,14 @@ from src.api.routes_camera import router as camera_router  # noqa: E402
 from src.api.routes_lanes import router as lanes_router  # noqa: E402
 from src.api.routes_projects import router as projects_router  # noqa: E402
 from src.api.routes_geo import router as geo_router  # noqa: E402
+from src.api.routes_video_frames import router as frames_router  # noqa: E402
 app.include_router(counts_router)
 app.include_router(videos_router)
 app.include_router(camera_router)
 app.include_router(lanes_router)
 app.include_router(projects_router)
 app.include_router(geo_router)
+app.include_router(frames_router)
 
 
 FRONTEND_DIR = Path(os.environ.get("FRONTEND_DIR", "web/dist"))

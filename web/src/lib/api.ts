@@ -17,6 +17,7 @@ import type {
   ProjectCreate,
   ProjectMetrics,
   VideoJob,
+  VideoSegment,
 } from './types';
 
 export class ApiError extends Error {
@@ -150,6 +151,18 @@ export async function fetchImage(url: string): Promise<HTMLImageElement> {
 }
 
 export const snapshotUrl = (projectId: number) => `/api/camera/snapshot?project_id=${projectId}`;
+
+/* --- Recorrido del video ------------------------------------------------
+   Los cuadros se piden por índice, no por segundos: calibrar exige avanzar
+   de uno en uno para dar con el instante exacto del cruce, y con segundos
+   en coma flotante el mismo valor puede caer en un cuadro o en el
+   siguiente según cómo redondee. */
+
+export const listVideoSegments = (projectId: number) =>
+  request<VideoSegment[]>(`/api/frames/videos?project_id=${projectId}`);
+
+export const frameUrl = (jobId: number, frame: number) =>
+  `/api/frames/frame?job_id=${jobId}&frame=${frame}`;
 export const heatmapUrl = (projectId: number) => `/api/camera/heatmap?project_id=${projectId}`;
 
 /* --- Mensaje de error legible ------------------------------------------ */

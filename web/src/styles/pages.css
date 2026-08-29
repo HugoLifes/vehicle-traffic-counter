@@ -290,38 +290,20 @@
 
 .calib-layout {
   display: grid;
-  /* El lienzo manda: el panel se encoge antes que él, y la estructura de
-     dos columnas se sostiene hasta que el lienzo deja de ser legible. */
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  /* La mesa de trabajo manda: el panel de carriles se encoge antes que
+     ella, y la estructura de dos columnas se sostiene hasta que el video
+     deja de verse con el detalle suficiente para apuntar. */
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
   gap: var(--space-5);
   align-items: start;
 }
-@media (max-width: 900px) {
+@media (max-width: 940px) {
   .calib-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
-.canvas-wrap {
-  background: var(--surface-1);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 0 0 1px var(--border);
-  padding: var(--space-3);
-}
-.canvas-wrap canvas {
-  width: 100%;
-  height: auto;
-  display: block;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  /* Contorno de imagen: negro puro al 10% en claro, blanco puro en oscuro.
-     Un gris teñido recogería el fondo y se vería como suciedad en el borde. */
-  outline: 1px solid rgb(0 0 0 / 0.1);
-  outline-offset: -1px;
-}
-:root[data-theme="dark"] .canvas-wrap canvas { outline-color: rgb(255 255 255 / 0.1); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .canvas-wrap canvas { outline-color: rgb(255 255 255 / 0.1); }
-}
-.canvas-wrap canvas.is-drawing { cursor: crosshair; }
+.calib-main { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.calib-main > .section-title { margin: 0; }
+
 
 .canvas-tools {
   display: flex;
@@ -580,4 +562,151 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
   font-size: var(--text-xs);
+}
+
+/* ----------------------------------------------------------------
+   Mesa de trabajo: el video con sus controles y el lienzo de líneas
+   ---------------------------------------------------------------- */
+
+.workspace {
+  background: var(--surface-1);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px var(--border), 0 1px 3px var(--shadow);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ws-head { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.ws-head .field { flex: 1 1 260px; max-width: 420px; }
+
+/*
+  El escenario reserva la proporción del video antes de que llegue el
+  primer cuadro; si no, la página salta de alto al cargar y los controles
+  se mueven bajo el cursor.
+*/
+.ws-stage {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  /* Contorno de imagen: negro puro al 10% en claro, blanco puro en oscuro.
+     Un gris teñido recogería el fondo y se leería como suciedad en el borde. */
+  outline: 1px solid rgb(0 0 0 / 0.1);
+  outline-offset: -1px;
+}
+:root[data-theme="dark"] .ws-stage { outline-color: rgb(255 255 255 / 0.1); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ws-stage { outline-color: rgb(255 255 255 / 0.1); }
+}
+
+.ws-stage img,
+.ws-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.ws-stage img { object-fit: contain; }
+/* El lienzo solo pinta: los clics los recoge el contenedor, que es quien
+   conoce la escala entre píxeles del video y píxeles de pantalla. */
+.ws-stage canvas { pointer-events: none; }
+
+.ws-stage.is-drawing { cursor: crosshair; }
+/* Mientras se marca la línea, un borde de acento deja claro que el
+   lienzo está esperando clics — el cursor solo no basta, y en pantalla
+   táctil no existe. */
+.ws-stage.is-drawing { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.ws-stage-empty {
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  padding: var(--space-5);
+  text-align: center;
+}
+.ws-stage-empty p { margin: 0; max-width: 40ch; }
+
+.ws-error {
+  position: absolute;
+  inset-inline: var(--space-4);
+  bottom: var(--space-4);
+  margin: 0;
+  background: var(--critical);
+  color: var(--critical-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+/* --- Controles de transporte ------------------------------------- */
+
+.ws-transport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ws-buttons { display: flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; }
+.ws-play { gap: 7px; padding-inline: 14px; }
+
+.ws-scrub {
+  flex: 1 1 200px;
+  min-width: 140px;
+  accent-color: var(--accent);
+  height: 24px;   /* alto de agarre cómodo, aunque la barra se vea fina */
+  cursor: pointer;
+}
+.ws-scrub:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
+
+.ws-time {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-speed { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.ws-speed > span {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.ws-speed select {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+.ws-speed select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.ws-hint { font-size: var(--text-xs); color: var(--text-muted); margin: 0; line-height: 1.6; }
+.ws-hint kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 620px) {
+  /* En móvil la barra de tiempo se lleva su propia fila: compartirla con
+     cinco botones la dejaba tan corta que no se podía apuntar. */
+  .ws-scrub { flex: 1 1 100%; order: 3; }
+  .ws-buttons { flex: 1 1 auto; justify-content: center; }
 }

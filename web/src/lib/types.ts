@@ -133,3 +133,21 @@ export interface GeoResult {
   latitude: number | null;
   longitude: number | null;
 }
+
+/*
+  Un video de la intersección tal como lo describe /api/frames/videos.
+  Las claves vienen en español porque así las manda ese router; traducirlas
+  aquí solo añadiría un sitio más donde un cambio del backend pasa
+  desapercibido.
+*/
+export interface VideoSegment {
+  job_id: number;
+  nombre: string;
+  estado: JobStatus;
+  fps: number;
+  total_frames: number;
+  duracion_s: number;
+  ancho: number;
+  alto: number;
+  hora_inicio: string | null;
+}

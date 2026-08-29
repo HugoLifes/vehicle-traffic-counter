@@ -35,9 +35,13 @@ body {
 }
 
 /*
-  Fondo de página: dos brillos suaves en esquinas opuestas sobre un lavado
-  vertical. Sustituye a la cuadrícula tipo plano, que competía por la
-  atención en pantallas que ya están llenas de cifras y gráficas.
+  Fondo de página: tres brillos de color repartidos por las esquinas sobre
+  un lavado vertical. Sustituye a la cuadrícula tipo plano, que competía
+  por la atención en pantallas que ya están llenas de cifras y gráficas.
+
+  Que haya un brillo frío y uno cálido en extremos opuestos es lo que hace
+  que se perciba color; con tres tonos de la misma familia el resultado se
+  lee como un tinte y no como un degradado.
 
   Va fijo al viewport (`position: fixed`), no al documento: así se lee
   como luz ambiental detrás del contenido y no como una textura que se
@@ -58,14 +62,16 @@ body::before {
      entiende `in oklab`, descarta la segunda y se queda con esta en vez
      de perder el degradado entero. */
   background:
-    radial-gradient(1200px 760px at 88% -12%, var(--bg-glow-a), transparent 62%),
-    radial-gradient(1000px 700px at 4% 104%, var(--bg-glow-b), transparent 58%),
+    radial-gradient(1100px 720px at 86% -14%, var(--bg-glow-a), transparent 60%),
+    radial-gradient(1000px 780px at 2% 106%, var(--bg-glow-b), transparent 58%),
+    radial-gradient(900px 620px at 10% -6%, var(--bg-glow-c), transparent 55%),
     linear-gradient(180deg, var(--bg-wash-from), var(--bg-wash-to));
   /* En sRGB el punto medio entre dos tonos se apaga y tira a gris; oklab
      mantiene el brillo parejo de un extremo al otro. */
   background:
-    radial-gradient(1200px 760px at 88% -12% in oklab, var(--bg-glow-a), transparent 62%),
-    radial-gradient(1000px 700px at 4% 104% in oklab, var(--bg-glow-b), transparent 58%),
+    radial-gradient(1100px 720px at 86% -14% in oklab, var(--bg-glow-a), transparent 60%),
+    radial-gradient(1000px 780px at 2% 106% in oklab, var(--bg-glow-b), transparent 58%),
+    radial-gradient(900px 620px at 10% -6% in oklab, var(--bg-glow-c), transparent 55%),
     linear-gradient(180deg in oklab, var(--bg-wash-from), var(--bg-wash-to));
 }
 

@@ -132,11 +132,18 @@ def get_metrics(project_id: int, minutes: int = 15):
 
 @router.delete("/{job_id}")
 def delete_video(job_id: int):
+    from src.api.routes_video_frames import cerrar_captura
+
     job = traffic_db.get_video_job(job_id)
     if job is None:
         raise HTTPException(404, "Video no encontrado")
     if job["status"] == "processing":
         raise HTTPException(409, "No se puede borrar un video que se está procesando ahora mismo")
+
+    # La mesa de calibración deja el archivo abierto para poder recorrerlo
+    # cuadro a cuadro. En Windows no se puede borrar un archivo abierto, así
+    # que primero se suelta.
+    cerrar_captura(job_id)
 
     for path_str in (job["stored_path"], job.get("output_video_path")):
         if path_str:
