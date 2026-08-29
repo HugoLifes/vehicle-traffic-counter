@@ -1,0 +1,232 @@
+/* ======================================================================
+   Navegación y guía — el armazón que rodea a todas las páginas.
+   ====================================================================== */
+
+/*
+  La navegación está en dos niveles a propósito, porque la app tiene dos
+  modos que NO son del mismo rango:
+
+    Global →  Proyectos  |  Cámara en vivo
+    Local  →  (dentro de un proyecto)  1 Subir · 2 Calibrar · 3 Reporte
+
+  El espacio que separa la navegación del contenido lo pone este
+  contenedor, no la barra: así queda igual haya o no barra de pasos.
+*/
+.nav-host { display: block; margin-bottom: var(--space-5); }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-md);
+}
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.brand svg { display: block; color: var(--accent); flex: 0 0 auto; }
+.brand h1 { font-size: var(--text-lg); font-weight: 700; margin: 0; letter-spacing: 0.01em; }
+.brand .tagline { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+
+.topbar-right { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+
+/* --- Nivel 1: los dos modos de la app --------------------------------- */
+
+.nav-links { display: flex; align-items: center; gap: var(--space-1); }
+.nav-links a {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  transition: background-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.nav-links a:hover { color: var(--text-primary); background: var(--surface-2); }
+/* El estado activo NO depende solo del color: también cambia el peso de la
+   tipografía, para que se distinga sin percibir el tono. */
+.nav-links a.active { color: var(--accent); background: var(--accent-soft); font-weight: 800; }
+.nav-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --- Nivel 2: pasos dentro de un proyecto ----------------------------- */
+
+.nav-local {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding-top: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Orientación: qué intersección se está trabajando en este momento. */
+.nav-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 0;
+}
+.nav-project svg { color: var(--accent); flex: 0 0 auto; }
+.nav-project .np-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 30ch;
+}
+
+.nav-steps { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.nav-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 9px 12px 10px;
+  border-bottom: 2px solid transparent;
+  transition: color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.nav-step:hover { color: var(--text-primary); }
+/* Tres señales para el paso activo: color, peso y barra inferior. */
+.nav-step.active { color: var(--accent); font-weight: 800; border-bottom-color: var(--accent); }
+.nav-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+.nav-step[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+
+.nav-step .step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.nav-step.active .step-num { background: var(--accent); color: var(--accent-ink); }
+
+@media (max-width: 640px) {
+  .nav-local { gap: var(--space-2); }
+  .nav-step { padding: 9px 8px 10px; }
+  .nav-step .step-num { width: 17px; height: 17px; font-size: 10px; }
+}
+
+/* --- Conmutador de tema ------------------------------------------------ */
+
+.theme-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/*
+  Los dos iconos viven siempre en el DOM, uno encima del otro, y se cruzan
+  con opacidad + escala + desenfoque. Alternar `display` daría un salto sin
+  transición de salida.
+*/
+.theme-toggle svg {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  transition-property: opacity, scale, filter;
+  transition-duration: var(--dur-base);
+  transition-timing-function: var(--ease-out);
+}
+.theme-toggle svg[data-state="hidden"] { opacity: 0; scale: 0.25; filter: blur(4px); }
+.theme-toggle svg[data-state="shown"]  { opacity: 1; scale: 1;    filter: blur(0px); }
+
+/* --- Guía de primeros pasos ------------------------------------------- */
+
+.guia {
+  background: var(--surface-1);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px var(--accent);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+.guia-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.guia-head h2 {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+.guia-sub { font-size: var(--text-xs); color: var(--text-muted); margin: 4px 0 0; }
+
+.guia-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+
+.guia-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+.guia-step .gs-text { flex: 1 1 auto; min-width: 0; }
+.guia-step .gs-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.guia-step .gs-body { font-size: var(--text-xs); color: var(--text-muted); margin-top: 3px; }
+
+/* El paso completado se distingue por la palomita y el tachado, no solo
+   por el color. */
+.guia-step.done .gs-title { color: var(--text-muted); text-decoration: line-through; }
+.guia-step.current .gs-title { color: var(--text-primary); font-weight: 700; }
+
+.gs-mark {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gs-mark.done { background: var(--good); border-color: var(--good); color: var(--good-ink); }
+.gs-mark.current { border-color: var(--accent); border-style: dashed; }
+
+.gs-action { flex: 0 0 auto; text-decoration: none; }
+
+@media (max-width: 560px) {
+  .guia-step { flex-wrap: wrap; }
+  .guia-step .gs-action { width: 100%; }
+  .gs-action .btn { width: 100%; }
+}

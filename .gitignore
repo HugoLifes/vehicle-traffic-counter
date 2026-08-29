@@ -16,18 +16,18 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -87,10 +87,13 @@ data/uploads/
 !input/.gitkeep
 !results/.gitkeep
 
-# Data
+# Volcados de datos — no el JSON de configuración del proyecto.
+# Antes esto era `*.json` a secas e ignoraba package.json, tsconfig.json y
+# todo lo demás: los archivos desaparecían del repo sin ningún aviso.
 *.csv
-*.json
-!configs/*.json
+/data/*.json
+/results/*.json
+/output/*.json
 
 # Temporary files
 *.tmp
@@ -115,3 +118,7 @@ models/*.onnx
 *.zip
 *.tar.gz
 *.rar
+
+# Frontend (React + Vite)
+web/node_modules/
+web/dist/

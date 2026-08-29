@@ -12,3 +12,12 @@ input/*.avi
 input/*.mov
 results/
 *.log
+
+# El frontend se construye en la etapa `frontend` del Dockerfile, con
+# Node. Copiar node_modules (cientos de MB) o un dist local a la imagen
+# del Jetson solo la infla y arriesga meter un build viejo.
+web/node_modules/
+web/dist/
+data/uploads/
+data/*.db
+data/*.db-*

@@ -1,0 +1,144 @@
+/*
+  Fuentes autohospedadas: el Jetson puede estar en un sitio sin internet
+  estable y la interfaz debe verse igual. Overpass desciende de Highway
+  Gothic, la tipografía real de las señales de carretera; Overpass Mono
+  se usa en TODO dato numérico (conteos, FPS, horas) para que las cifras
+  se alineen en columna como en un velocímetro.
+*/
+@font-face {
+  font-family: 'Overpass';
+  src: url('/fonts/overpass-latin.woff2') format('woff2');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Overpass Mono';
+  src: url('/fonts/overpass-mono-latin.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100%; }
+
+body {
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Grilla de fondo tipo plano: casi imperceptible a propósito. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px),
+    var(--surface-0);
+  background-size: 48px 48px, 48px 48px, auto;
+  opacity: 0.5;
+}
+
+/*
+  Durante el cambio de tema se apagan TODAS las transiciones. Sin esto,
+  cada elemento anima su color por separado y el cambio se ve como una
+  mancha que se corre por la página en vez de un corte limpio.
+*/
+:root.theme-switching *,
+:root.theme-switching *::before,
+:root.theme-switching *::after {
+  transition: none !important;
+}
+
+h1, h2, h3, h4 { text-wrap: balance; }
+p { text-wrap: pretty; }
+
+/* Los números en columna deben alinearse: nunca cifras de ancho variable. */
+.num, .mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Contenedor y saltos de navegación -------------------------------- */
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-5) var(--space-7);
+}
+@media (max-width: 520px) {
+  .wrap { padding: var(--space-4) var(--space-4) var(--space-6); }
+}
+
+/*
+  Enlace de salto: primer elemento enfocable de la página. Quien navega
+  con teclado no tiene que recorrer la barra completa en cada página.
+*/
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: var(--space-2);
+  z-index: 100;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+.skip-link:focus {
+  left: var(--space-4);
+}
+
+main:focus { outline: none; }
+
+/*
+  Texto solo para lectores de pantalla. Se usa en las regiones de anuncio:
+  el mensaje tiene que existir en el DOM para ser leído, pero repetirlo en
+  pantalla junto a lo que ya se ve sería ruido.
+  `clip-path` en vez de `display:none`, que lo sacaría del árbol accesible.
+*/
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Entradas escalonadas ---------------------------------------------
+   Sin librería de animación: `animation-delay` en cascada da el mismo
+   escalonado que GSAP con cero bytes de JS. Se activa solo si el usuario
+   no pidió reducir el movimiento. */
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stagger > * {
+    animation: rise-in var(--dur-base) var(--ease-out) backwards;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 45ms; }
+  .stagger > *:nth-child(3) { animation-delay: 90ms; }
+  .stagger > *:nth-child(4) { animation-delay: 135ms; }
+  .stagger > *:nth-child(5) { animation-delay: 180ms; }
+  .stagger > *:nth-child(n + 6) { animation-delay: 225ms; }
+
+  .rise { animation: rise-in var(--dur-base) var(--ease-out) backwards; }
+}

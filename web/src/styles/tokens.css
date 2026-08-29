@@ -1,0 +1,167 @@
+/*
+  Sistema de color — "panel de instrumentos" de aforo vehicular.
+
+  Estructura en dos capas (regla de better-colors: primitivos por tono,
+  semánticos por rol):
+    · Los componentes SOLO usan tokens semánticos (--text-muted, --accent-ink…).
+    · Cambiar de tema redefine los semánticos; ningún componente se toca.
+
+  Paleta: superficie fría con sesgo azul. El acento es el azul de
+  señalética vial (FHWA), reservado a lo interactivo y al foco — nunca se
+  reusa como color semántico, ni al revés.
+
+  Todos los pares fg/bg de esta hoja están MEDIDOS contra su fondo real
+  en ambos temas (script de verificación en docs/). Los valores que se
+  ven "raros" respecto al diseño original son justamente los corregidos:
+
+    --text-muted   claro #8291a1 → #5f6b7a   (2.71:1 → 4.56:1)
+                   oscuro #5d6a7d → #7b899e   (2.94:1 → 4.55:1)
+    --accent-ink   oscuro  #ffffff → #0a0e14  (3.22:1 → 6.00:1)
+    --good         claro  #1c8f56 → #136c3f   (3.62:1 → 5.70:1)
+    --warning      claro  #a8690c → #8a5409   (3.88:1 → 5.42:1)
+    --border-strong  token nuevo: los bordes de input/select necesitan
+                   3:1 porque son lo único que distingue el control del
+                   texto plano. --border (1.35:1) sirve para separadores
+                   decorativos, no para eso.
+*/
+
+:root {
+  /* Superficies */
+  --surface-0: #f2f5f8;
+  --surface-1: #ffffff;
+  --surface-2: #e7ecf1;
+
+  /* Dos bordes con trabajos distintos, no uno reutilizado */
+  --border: #d7dfe6;          /* separadores y divisiones decorativas */
+  --border-strong: #7d8b9c;   /* contorno de controles — 3.47:1 sobre blanco */
+  --shadow: rgba(16, 24, 32, 0.08);
+
+  /* Texto */
+  --text-primary: #10161d;
+  --text-secondary: #4d5967;
+  --text-muted: #5f6b7a;
+
+  /* Acento — interactivo y foco. `-ink` es el texto que va ENCIMA del relleno. */
+  --accent: #1d54b3;
+  --accent-strong: #123f8c;
+  --accent-soft: #e3ebfa;
+  --accent-ink: #ffffff;
+
+  /* Semánticos — nunca se usan como acento */
+  --good: #136c3f;
+  --good-soft: #e2f5eb;
+  --good-ink: #ffffff;
+  --warning: #8a5409;
+  --warning-soft: #faedd9;
+  --critical: #c22c3d;
+  --critical-soft: #fbe2e5;
+  --critical-ink: #ffffff;
+
+  /* Categorías de vehículo (gráficas). Varían en tono Y luminosidad para
+     seguir siendo distinguibles con daltonismo y en escala de grises. */
+  --veh-car: #1d54b3;
+  --veh-truck: #9a5a12;
+  --veh-bus: #6b34a1;
+  --veh-motorcycle: #0d6b72;
+  --veh-other: #4d5967;
+
+  /* Tipografía */
+  --font-display: 'Overpass', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Overpass Mono', ui-monospace, 'Cascadia Code', monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.85rem;
+  --text-base: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.6rem;
+  --text-2xl: 2.4rem;
+
+  /* Espaciado y forma */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Movimiento — una sola curva para entradas y cambios de estado */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 150ms;
+  --dur-base: 250ms;
+}
+
+/*
+  Un solo mecanismo de conmutación en dos formas, como pide better-colors:
+  el bloque de tokens oscuros es idéntico en ambas reglas. `prefers-color-scheme`
+  cubre a quien no eligió nada; `[data-theme]` gana cuando el usuario eligió.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface-0: #0a0e14;
+    --surface-1: #121722;
+    --surface-2: #1a212e;
+    --border: #262e3c;
+    --border-strong: #68748a;
+    --shadow: rgba(0, 0, 0, 0.45);
+
+    --text-primary: #eaeef4;
+    --text-secondary: #93a0b3;
+    --text-muted: #7b899e;
+
+    --accent: #4f8ff0;
+    --accent-strong: #7aabff;
+    --accent-soft: rgba(79, 143, 240, 0.16);
+    --accent-ink: #0a0e14;
+
+    --good: #34c77a;
+    --good-soft: rgba(52, 199, 122, 0.16);
+    --good-ink: #0a0e14;
+    --warning: #f5a623;
+    --warning-soft: rgba(245, 166, 35, 0.16);
+    --critical: #f7707d;
+    --critical-soft: rgba(247, 112, 125, 0.16);
+    --critical-ink: #0a0e14;
+
+    --veh-car: #7aa9f0;
+    --veh-truck: #e0913c;
+    --veh-bus: #b98ae8;
+    --veh-motorcycle: #3fc2cd;
+    --veh-other: #93a0b3;
+  }
+}
+
+:root[data-theme='dark'] {
+  --surface-0: #0a0e14;
+  --surface-1: #121722;
+  --surface-2: #1a212e;
+  --border: #262e3c;
+  --border-strong: #68748a;
+  --shadow: rgba(0, 0, 0, 0.45);
+
+  --text-primary: #eaeef4;
+  --text-secondary: #93a0b3;
+  --text-muted: #7b899e;
+
+  --accent: #4f8ff0;
+  --accent-strong: #7aabff;
+  --accent-soft: rgba(79, 143, 240, 0.16);
+  --accent-ink: #0a0e14;
+
+  --good: #34c77a;
+  --good-soft: rgba(52, 199, 122, 0.16);
+  --good-ink: #0a0e14;
+  --warning: #f5a623;
+  --warning-soft: rgba(245, 166, 35, 0.16);
+  --critical: #f7707d;
+  --critical-soft: rgba(247, 112, 125, 0.16);
+  --critical-ink: #0a0e14;
+
+  --veh-car: #7aa9f0;
+  --veh-truck: #e0913c;
+  --veh-bus: #b98ae8;
+  --veh-motorcycle: #3fc2cd;
+  --veh-other: #93a0b3;
+}

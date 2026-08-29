@@ -53,6 +53,15 @@ La primera construcción tarda — está descargando la imagen base de
 Ultralytics para JetPack 6 (varios GB) y compilando lo que haga falta.
 Los siguientes arranques son casi instantáneos.
 
+> **Sobre el frontend.** La interfaz es React y hay que compilarla, pero
+> eso pasa **dentro del build de Docker**, en una etapa aparte con Node
+> (`node:22-alpine`, que tiene imagen para ARM64). A la imagen que corre
+> en el Jetson solo llegan los archivos estáticos ya compilados: el
+> equipo no lleva Node, ni npm, ni `node_modules`, y no compila nada en
+> tiempo de ejecución. FastAPI los sirve directamente.
+>
+> Solo hace falta internet **al construir**, no al operar.
+
 ```bash
 docker compose -f docker-compose.jetson.yml logs -f
 ```

@@ -9,11 +9,13 @@ los conteos por API y sirve el dashboard estático.
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import yaml
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.engine.counting_service import CountingService, set_service
 from src.engine.video_job_processor import VideoJobProcessor, set_processor
@@ -88,33 +90,77 @@ app.include_router(projects_router)
 app.include_router(geo_router)
 
 
-@app.get("/")
-def root():
-    # Los proyectos son la puerta de entrada: todo lo demás (subir, calibrar,
-    # reportar) necesita una intersección seleccionada.
-    return RedirectResponse(url="/proyectos.html")
+FRONTEND_DIR = Path(os.environ.get("FRONTEND_DIR", "web/dist"))
 
 
-class NoCacheStaticFiles(StaticFiles):
+class SPAStaticFiles(StaticFiles):
     """
-    Sirve el frontend pidiéndole al navegador que revalide siempre.
+    Sirve el frontend ya construido (Vite → web/dist).
 
-    Sin esto, el navegador se queda con el CSS/JS viejo tras actualizar la
-    plataforma y muestra una interfaz rota o a medias (comprobado: tras
-    editar shared.css, Chrome seguía usando la copia anterior aunque el
-    servidor ya servía la nueva). `no-cache` no significa "no guardar":
-    el archivo se sigue cacheando, solo que el navegador pregunta primero
-    si cambió — y recibe un 304 barato cuando no.
+    Dos cosas que el StaticFiles de serie no hace y aquí hacen falta:
+
+    1. **Rutas del enrutador.** /calibrar y /reporte no son archivos: los
+       resuelve React Router en el navegador. Al recargar la página o
+       entrar por un enlace directo, el servidor tiene que devolver
+       index.html en vez de un 404.
+
+    2. **Caché correcta según el tipo de archivo.** Vite pone un hash del
+       contenido en el nombre de cada bundle (index-D6JvMFO6.js), así que
+       esos archivos se pueden cachear para siempre: si el contenido
+       cambia, cambia el nombre. index.html es lo contrario — es el que
+       apunta a los bundles nuevos, así que se revalida siempre. Sin esa
+       distinción el navegador se queda con la interfaz anterior después
+       de actualizar la plataforma (pasó, y se veía como una página rota).
     """
-
-    def is_not_modified(self, response_headers, request_headers) -> bool:
-        response_headers.setdefault("Cache-Control", "no-cache")
-        return super().is_not_modified(response_headers, request_headers)
 
     async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
-        response.headers.setdefault("Cache-Control", "no-cache")
+        # StaticFiles normaliza la ruta con os.path.normpath, que en Windows
+        # devuelve "assets\index-abc.js" y en Linux "assets/index-abc.js".
+        # Se unifica el separador para que las comprobaciones de abajo se
+        # comporten igual en el equipo de desarrollo y en el Jetson.
+        rel = path.replace(os.sep, "/").lstrip("/")
+
+        # Una ruta /api/... que llega hasta aquí es un endpoint que no
+        # existe. Devolver el index.html haría que el frontend recibiera
+        # HTML donde espera JSON y fallara con un error incomprensible;
+        # un 404 dice la verdad.
+        if rel.startswith("api/"):
+            raise StarletteHTTPException(status_code=404, detail="Endpoint no encontrado")
+
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            # StaticFiles LANZA un 404 en vez de devolverlo, así que la
+            # reserva del enrutador va en un except, no en un if. Y la
+            # excepción es la de Starlette: capturar la de FastAPI no
+            # sirve, porque esta es su clase padre y no su subclase.
+            if exc.status_code != 404:
+                raise
+            response = await super().get_response("index.html", scope)
+
+        if response.status_code == 404:
+            response = await super().get_response("index.html", scope)
+
+        if rel.startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
 
-app.mount("/", NoCacheStaticFiles(directory="frontend", html=True), name="frontend")
+if FRONTEND_DIR.is_dir():
+    app.mount("/", SPAStaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+else:
+    @app.get("/")
+    def missing_frontend():
+        # Mensaje explícito en vez de un 404 pelado: lo que falta es el
+        # build, y el mensaje dice cómo hacerlo.
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    f"No se encontró el frontend construido en '{FRONTEND_DIR}'. "
+                    "Constrúyelo con: cd web && npm install && npm run build"
+                )
+            },
+        )
