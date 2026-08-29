@@ -59,6 +59,7 @@ async function loadFrame(projectId) {
     newLaneBtn.disabled = false;
     hint.textContent = 'Clic en "+ Nuevo carril" y marca 2 puntos donde cruzan los vehículos.';
     redraw();
+    loadHeatmap(projectId).then(redraw);
   } catch (e) {
     currentImage = null;
     newLaneBtn.disabled = true;
@@ -212,6 +213,14 @@ function redraw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
 
+  // El rastro de movimiento va encima del frame y debajo de las líneas, para
+  // poder juzgar si la línea cruza el tránsito o corre a lo largo de él.
+  if (showHeatmap && heatImage) {
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(heatImage, 0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
+  }
+
   lanes.forEach((lane, i) => drawLine(lane.points[0], lane.points[1], laneColor(i), lane.name));
 
   if (tempPoints.length === 1) {
@@ -236,6 +245,7 @@ canvas.addEventListener('click', e => {
 
   if (tempPoints.length === 2) {
     drawMode = false;
+    validarLinea(tempPoints[0], tempPoints[1]);
     newLaneForm.classList.remove('hidden');
     newLaneNameInput.value = `Carril ${lanes.length + 1}`;
     newLaneNameInput.focus();
@@ -293,3 +303,75 @@ function onProjectChange() {
 }
 
 loadProjectsInto(projectSelect, { onChange: onProjectChange, autoSelectFirst: true });
+
+// --- Rastro de movimiento y validación de la línea ------------------------
+
+const heatToggle = document.getElementById('heat-toggle');
+const calibWarn = document.getElementById('calib-warn');
+
+let heatImage = null;
+let showHeatmap = false;
+
+async function loadHeatmap(projectId) {
+  heatImage = null;
+  heatToggle.disabled = true;
+  heatToggle.checked = false;
+  showHeatmap = false;
+  try {
+    const res = await fetch(`/api/camera/heatmap?project_id=${projectId}`);
+    if (!res.ok) return;
+    const url = URL.createObjectURL(await res.blob());
+    const img = new Image();
+    await new Promise((ok, err) => { img.onload = ok; img.onerror = err; img.src = url; });
+    heatImage = img;
+    heatToggle.disabled = false;
+  } catch (e) { /* sin rastro, la calibración sigue siendo posible a mano */ }
+}
+
+heatToggle.addEventListener('change', () => {
+  showHeatmap = heatToggle.checked;
+  redraw();
+});
+
+/**
+ * Revisa que la línea recién dibujada sirva para contar y avisa si no.
+ *
+ * Los dos errores que de verdad arruinan un aforo:
+ *  - Línea demasiado corta: los vehículos pasan por los lados sin tocarla.
+ *  - Línea paralela al tránsito: el vehículo avanza A LO LARGO de ella en
+ *    vez de cruzarla, así que casi nunca dispara un conteo.
+ * Se avisa pero no se bloquea: puede haber escenas donde el usuario sepa
+ * algo que este chequeo no.
+ */
+function validarLinea(p1, p2) {
+  const problemas = [];
+  const largo = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+  const pctAncho = (largo / canvas.width) * 100;
+
+  if (pctAncho < 15) {
+    problemas.push(
+      `La línea mide solo ${Math.round(pctAncho)}% del ancho de la imagen. ` +
+      `Si no cubre el carril completo, los vehículos pasan por los lados sin contarse.`
+    );
+  }
+
+  if (heatImage) {
+    const angulo = Math.abs(Math.atan2(p2[1] - p1[1], p2[0] - p1[0]) * 180 / Math.PI) % 180;
+    const casiHorizontal = angulo < 25 || angulo > 155;
+    if (casiHorizontal) {
+      problemas.push(
+        'La línea quedó casi horizontal. Si el tránsito también circula en ' +
+        'horizontal, los vehículos avanzan a lo largo de ella y no la cruzan. ' +
+        'Activa "Ver por dónde pasan los vehículos" y dibújala atravesando ese rastro.'
+      );
+    }
+  }
+
+  if (!problemas.length) {
+    calibWarn.classList.add('hidden');
+    calibWarn.innerHTML = '';
+    return;
+  }
+  calibWarn.classList.remove('hidden');
+  calibWarn.innerHTML = problemas.map(p => `⚠ ${p}`).join('<br><br>');
+}

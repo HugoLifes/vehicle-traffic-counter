@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aforo Vehicular — Calibrar carriles</title>
-<link rel="stylesheet" href="css/fonts.css?v=7">
-<link rel="stylesheet" href="css/tokens.css?v=7">
-<link rel="stylesheet" href="css/shared.css?v=7">
-<link rel="stylesheet" href="css/upload.css?v=7">
-<link rel="stylesheet" href="css/calibrar.css?v=7">
+<link rel="stylesheet" href="css/fonts.css?v=8">
+<link rel="stylesheet" href="css/tokens.css?v=8">
+<link rel="stylesheet" href="css/shared.css?v=8">
+<link rel="stylesheet" href="css/upload.css?v=8">
+<link rel="stylesheet" href="css/calibrar.css?v=8">
 </head>
 <body>
 <div class="wrap">
@@ -28,7 +28,15 @@
       <div class="canvas-wrap">
         <canvas id="calib-canvas" width="640" height="360"></canvas>
       </div>
+      <div class="canvas-tools">
+        <label class="toggle-heat">
+          <input type="checkbox" id="heat-toggle" disabled>
+          <span>Ver por dónde pasan los vehículos</span>
+        </label>
+        <span class="tool-hint">Dibuja la línea <strong>cruzando</strong> ese rastro, no a lo largo de él.</span>
+      </div>
       <div class="calib-hint" id="calib-hint">Elige una intersección arriba para cargar un frame.</div>
+      <div class="calib-warn hidden" id="calib-warn"></div>
     </div>
 
     <div class="lane-panel">
@@ -54,15 +62,15 @@
 </div>
 
 <script src="vendor/gsap.min.js"></script>
-<script src="js/nav.js?v=7"></script>
+<script src="js/nav.js?v=8"></script>
 <script>
   renderNav({ current: 'calibrar', title: 'Calibrar carriles',
               subtitle: 'Dibuja la línea justo donde cruzan los vehículos',
               projectScoped: true });
 </script>
-<script src="js/theme.js?v=7"></script>
-<script src="js/projects-select.js?v=7"></script>
-<script src="js/calibrar.js?v=7"></script>
-<script src="js/guia.js?v=7"></script>
+<script src="js/theme.js?v=8"></script>
+<script src="js/projects-select.js?v=8"></script>
+<script src="js/calibrar.js?v=8"></script>
+<script src="js/guia.js?v=8"></script>
 </body>
 </html>
