@@ -150,6 +150,13 @@ class VideoJobProcessor:
         if job is None or job['status'] == 'done':
             return
 
+        # Un video puede reprocesarse tras recalibrar los carriles. Si no se
+        # borran sus cruces anteriores, los nuevos se SUMAN a los viejos y el
+        # aforo sale al doble.
+        borrados = traffic_db.delete_crossings_for_job(job_id)
+        if borrados:
+            logging.info(f"Reproceso: se descartaron {borrados} cruces previos del video {job_id}")
+
         traffic_db.mark_video_job_started(job_id)
         path = job['stored_path']
         logging.info(f"Procesando video subido: {job['original_name']} ({path})")
@@ -250,7 +257,8 @@ class VideoJobProcessor:
                             direction=crossing['direction'],
                             vehicle_type=crossing['vehicle_type'],
                             confidence=confidence,
-                            timestamp=crossing_timestamp
+                            timestamp=crossing_timestamp,
+                            job_id=job_id
                         )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]

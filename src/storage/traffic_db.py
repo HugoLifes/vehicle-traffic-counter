@@ -90,6 +90,14 @@ def init_schema():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_crossings_lane ON crossings(lane_id)"
     )
+    # De qué video salió cada cruce. Sin esto no se pueden borrar los cruces
+    # anteriores al reprocesar un video, y los conteos se DUPLICAN cada vez
+    # que se recalibra y se vuelve a contar — que es justo lo que se quiere
+    # hacer cuando la primera calibración salió mal.
+    _ensure_column(conn, "crossings", "job_id", "INTEGER")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_crossings_job ON crossings(job_id)"
+    )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS video_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -311,7 +319,8 @@ def delete_lane(lane_id: int):
 
 def record_crossing(lane_id: int, track_id: int, direction: str,
                      vehicle_type: str, confidence: float,
-                     timestamp: Optional[str] = None):
+                     timestamp: Optional[str] = None,
+                     job_id: Optional[int] = None):
     """
     timestamp: hora REAL del cruce en formato ISO ('YYYY-MM-DD HH:MM:SS').
     En la cámara en vivo se omite (usa la hora del reloj del sistema).
@@ -319,21 +328,38 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
     video_start_time + (frame/fps) — si no, todos los cruces quedarían
     con la hora en que se PROCESÓ el archivo en vez de la hora en que
     ocurrieron de verdad, y los reportes por intervalo saldrían mal.
+
+    job_id: video del que salió el cruce, para poder borrar los cruces
+    anteriores si ese mismo video se vuelve a procesar.
     """
     conn = get_connection()
     if timestamp:
         conn.execute(
-            """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type, confidence, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (lane_id, track_id, direction, vehicle_type, confidence, timestamp)
+            """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
+                                      confidence, timestamp, job_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (lane_id, track_id, direction, vehicle_type, confidence, timestamp, job_id)
         )
     else:
         conn.execute(
-            """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type, confidence)
-               VALUES (?, ?, ?, ?, ?)""",
-            (lane_id, track_id, direction, vehicle_type, confidence)
+            """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
+                                      confidence, job_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (lane_id, track_id, direction, vehicle_type, confidence, job_id)
         )
     conn.commit()
+
+
+def delete_crossings_for_job(job_id: int) -> int:
+    """
+    Borra los cruces registrados por un video. Se llama antes de volver a
+    procesarlo: sin esto, recalibrar y reprocesar SUMA los cruces nuevos a
+    los viejos y el aforo queda inflado al doble.
+    """
+    conn = get_connection()
+    cur = conn.execute("DELETE FROM crossings WHERE job_id = ?", (job_id,))
+    conn.commit()
+    return cur.rowcount
 
 
 def get_counts(lane_id: Optional[int] = None) -> List[Dict]:
@@ -485,7 +511,10 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
     import datetime as _dt
 
     conn = get_connection()
-    lanes = list_lanes(project_id=project_id, active_only=False)
+    # Solo carriles activos: los eliminados conservan su historial en la base
+    # (por eso el borrado es lógico), pero incluirlos aquí inflaría el aforo
+    # vigente con mediciones de una calibración que el usuario ya descartó.
+    lanes = list_lanes(project_id=project_id, active_only=True)
     if not lanes:
         return {"lanes": [], "interval_minutes": interval_minutes}
 
