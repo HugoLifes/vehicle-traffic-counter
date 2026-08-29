@@ -487,3 +487,60 @@ class Visualizer:
         heatmap_color = cv2.applyColorMap(heatmap, colormap)
         
         return heatmap_color
+
+    def draw_lane_summary(
+        self,
+        frame: np.ndarray,
+        lanes: List[Tuple[str, Dict, Tuple[int, int, int]]],
+        position: Tuple[int, int] = (10, 10),
+        background_alpha: float = 0.55
+    ) -> np.ndarray:
+        """
+        Panel compacto: una línea por carril, en vez de un bloque de cinco
+        líneas por cada uno.
+
+        El panel anterior ocupaba ~150 px de alto por carril; con dos
+        carriles tapaba un tercio de un cuadro de 360 px de alto, justo la
+        zona por donde entran los vehículos. Aquí cada carril cabe en una
+        línea con su color, y el panel completo mide unos 50 px.
+
+        lanes: lista de (nombre, counts, color_bgr)
+        """
+        out = frame.copy()
+        x, y = position
+        fs = 0.42          # fuente chica: el panel informa, no protagoniza
+        th = 1
+        line_h = 17
+        pad = 7
+
+        filas = [
+            (nombre, f"{c['in']}>  {c['out']}<  ={c['total']}", color)
+            for nombre, c, color in lanes
+        ]
+        if not filas:
+            return out
+
+        ancho_nombre = max(
+            cv2.getTextSize(n, cv2.FONT_HERSHEY_SIMPLEX, fs, th)[0][0] for n, _, _ in filas
+        )
+        ancho_cifras = max(
+            cv2.getTextSize(v, cv2.FONT_HERSHEY_SIMPLEX, fs, th)[0][0] for _, v, _ in filas
+        )
+        w = ancho_nombre + ancho_cifras + 3 * pad + 10
+        h = len(filas) * line_h + pad
+
+        overlay = out.copy()
+        cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, background_alpha, out, 1 - background_alpha, 0, out)
+
+        for i, (nombre, cifras, color) in enumerate(filas):
+            yy = y + pad + i * line_h + 8
+            # Marca del color del carril, para saber a qué línea del video
+            # corresponde cada fila sin leer el nombre.
+            cv2.rectangle(out, (x + 4, yy - 6), (x + 9, yy - 1), color, -1)
+            cv2.putText(out, nombre, (x + 14, yy), cv2.FONT_HERSHEY_SIMPLEX, fs,
+                        (255, 255, 255), th, cv2.LINE_AA)
+            cv2.putText(out, cifras, (x + 14 + ancho_nombre + pad, yy),
+                        cv2.FONT_HERSHEY_SIMPLEX, fs, (200, 255, 200), th, cv2.LINE_AA)
+
+        return out

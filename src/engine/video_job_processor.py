@@ -243,7 +243,7 @@ class VideoJobProcessor:
 
                 annotated = visualizer.draw_tracks(frame, tracks)
 
-                stats_y = 30
+                resumen = []
                 for idx, (lane_id, counter) in enumerate(lane_counters.items()):
                     crossings = counter.update(tracks)
                     for crossing in crossings['in'] + crossings['out']:
@@ -264,17 +264,13 @@ class VideoJobProcessor:
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
                     line_coords = lane_meta[lane_id]["points"]
                     annotated = visualizer.draw_counting_line(annotated, line_coords, line_color=color)
+                    resumen.append((lane_meta[lane_id]["name"], counter.get_counts(), color))
 
-                    lane_counts = counter.get_counts()
-                    lane_name = lane_meta[lane_id]["name"]
-                    annotated = visualizer.draw_statistics(
-                        annotated,
-                        lane_counts,
-                        position=(20, stats_y + 30),
-                        background_alpha=0.6,
-                        title=lane_name
-                    )
-                    stats_y += 30 * 5 + 15  # misma fórmula de altura que draw_statistics
+                # Un solo panel compacto para todos los carriles. Antes se
+                # dibujaba un bloque de 5 líneas POR carril, que con dos
+                # carriles tapaba un tercio del cuadro justo donde entran
+                # los vehículos.
+                annotated = visualizer.draw_lane_summary(annotated, resumen)
 
                 writer.write(annotated)
 

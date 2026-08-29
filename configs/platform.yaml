@@ -6,11 +6,15 @@
 camera_source: "0"
 
 model_path: "models/yolov8n.pt"
-confidence_threshold: 0.4
+# 0.25 es el umbral documentado en la Publicación Técnica 914 del IMT para
+# esta misma aplicación (ver docs/METODOLOGIA_IMT.md). Medido sobre el
+# footage real de este proyecto: pasa de 0.53 a 0.88 detecciones por cuadro
+# (+66%) y de 54 a 78 cruces contados en 2 min, sin costo de velocidad.
+confidence_threshold: 0.25
 device: "auto"
 
 detector:
-  iou_threshold: 0.5
+  iou_threshold: 0.7   # NMS, valor de la PT-914 del IMT
   input_size: 640
 
 tracker:
