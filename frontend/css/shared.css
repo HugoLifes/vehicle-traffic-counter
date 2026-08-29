@@ -39,6 +39,12 @@ body::before {
 
 /* --- Barra superior ------------------------------------------------- */
 
+/* El espacio bajo la navegación lo pone el contenedor, no la barra: así
+   queda igual haya o no barra de pasos debajo. Ponerlo en .topbar dejaba
+   sin separación a las páginas sin barra local (Proyectos, Cámara en vivo),
+   donde el contenido quedaba pegado al borde. */
+#nav-host { display: block; margin-bottom: var(--space-5); }
+
 .topbar {
   display: flex;
   align-items: center;
@@ -105,7 +111,6 @@ body::before {
   gap: var(--space-5);
   flex-wrap: wrap;
   padding: var(--space-3) 0 0;
-  margin-bottom: var(--space-5);
   border-bottom: 1px solid var(--border);
 }
 
@@ -348,4 +353,19 @@ body::before {
 @media (max-width: 560px) {
   .guia-step { flex-wrap: wrap; }
   .gs-action { width: 100%; text-align: center; }
+}
+
+/* --- Área táctil mínima para botones de icono -------------------------
+   Los iconos miden 16px, pero el área clicable debe ser de al menos 32px
+   (mínimo cómodo, sobre todo con el dedo). Se aplica a todos los botones
+   de icono del proyecto para no tener que recordarlo caso por caso. */
+.guia-close,
+.staging-file-row .sf-remove,
+.job-row .job-delete,
+.job-row .job-view,
+.lane-item .lane-remove {
+  min-width: 32px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
 }

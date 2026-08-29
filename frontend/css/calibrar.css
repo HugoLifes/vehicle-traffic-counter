@@ -75,16 +75,23 @@
   border-radius: var(--radius-sm);
 }
 .lane-item .lane-name-input:focus-visible { outline: 2px solid var(--accent); background: var(--surface-0); }
+/* El icono mide 16px, pero el área que se puede tocar/clicar debe ser
+   más grande: 32px es el mínimo cómodo, sobre todo con el dedo. */
 .lane-item .lane-remove {
   flex: 0 0 auto;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-sm);
 }
-.lane-item .lane-remove:hover { color: var(--critical); }
+.lane-item .lane-remove:hover { color: var(--critical); background: var(--critical-soft); }
+.lane-item .lane-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .new-lane-form {
   display: flex;
