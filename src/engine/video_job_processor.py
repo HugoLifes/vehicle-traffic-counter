@@ -150,6 +150,19 @@ class VideoJobProcessor:
         if job is None or job['status'] == 'done':
             return
 
+        # La cola vive en memoria, así que devolver un video a
+        # 'awaiting_calibration' en la base no lo saca de ella: el hilo
+        # seguía sacándolo y procesándolo igual. Pasó de verdad — se pidió
+        # detener un aforo, se cambió el estado de los 33 videos que
+        # faltaban, y aun así se procesaron todos. Se comprueba el estado
+        # aquí, ya con el video en la mano, que es el único punto por el
+        # que pasa cualquier trabajo venga de donde venga.
+        if job['status'] == 'awaiting_calibration':
+            logging.info(
+                f"Video {job_id} devuelto a calibración mientras estaba en cola: se omite"
+            )
+            return
+
         # Un video puede reprocesarse tras recalibrar los carriles. Si no se
         # borran sus cruces anteriores, los nuevos se SUMAN a los viejos y el
         # aforo sale al doble.
