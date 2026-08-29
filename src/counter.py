@@ -78,6 +78,17 @@ class BidirectionalCounter:
         # cruce. Con 2 se tolera un parpadeo del detector, pero no una
         # oclusión larga (donde el vehículo pudo cruzar sin ser observado).
         self.max_gap_frames = self.config.get('max_gap_frames', 2)
+        # Anti-duplicado: dos cruces del mismo carril separados por menos de
+        # esto son el mismo vehículo al que el detector le puso dos cajas y
+        # el rastreador dos identificadores. Se midió en el footage real:
+        # los duplicados aparecen a 0-4 cuadros y menos de 1 px de distancia,
+        # mientras que dos vehículos distintos (carriles contiguos) van a
+        # 12 px o más. Los umbrales quedan holgados respecto a ese margen
+        # para no fusionar vehículos que circulan pegados.
+        self.dedup_frames = self.config.get('dedup_frames', 5)
+        self.dedup_pixels = self.config.get('dedup_pixels', 6)
+        self._frame_no = 0
+        self._recent_crossings = []   # [(frame, x, y)]
         
         # Historial de cruces (para análisis)
         self.crossing_history = []
@@ -269,6 +280,12 @@ class BidirectionalCounter:
             'out': [],
             'count': 0
         }
+
+        self._frame_no += 1
+        self._recent_crossings = [
+            c for c in self._recent_crossings
+            if self._frame_no - c[0] <= self.dedup_frames
+        ]
         
         seen_ids = set()
 
@@ -307,7 +324,12 @@ class BidirectionalCounter:
                         
                         if direction is not None and direction != Direction.UNKNOWN:
                             # Verificar que no se haya contado antes
-                            if track_id not in self.counted_ids:
+                            duplicado = any(
+                                abs(curr_position[0] - cx) <= self.dedup_pixels
+                                and abs(curr_position[1] - cy) <= self.dedup_pixels
+                                for _, cx, cy in self._recent_crossings
+                            )
+                            if track_id not in self.counted_ids and not duplicado:
                                 # Registrar cruce
                                 self._register_crossing(
                                     track_id=track_id,
@@ -335,6 +357,9 @@ class BidirectionalCounter:
                                 # Marcar como cruzado
                                 self.track_states[track_id]['crossed'] = True
                                 self.counted_ids.add(track_id)
+                                self._recent_crossings.append(
+                                    (self._frame_no, curr_position[0], curr_position[1])
+                                )
             
             # Actualizar estado del track (visto en este cuadro)
             self.track_states[track_id] = {

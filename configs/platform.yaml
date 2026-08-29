@@ -14,7 +14,11 @@ confidence_threshold: 0.25
 device: "auto"
 
 detector:
-  iou_threshold: 0.7   # NMS, valor de la PT-914 del IMT
+  # NMS. La PT-914 documenta 0.7, pero medido sobre ESTE footage 0.7 deja
+  # 29% más cajas duplicadas sobre el mismo vehículo (107 vs 83 pares muy
+  # solapados) a cambio de solo 2% más detecciones reales — y cada caja
+  # duplicada puede convertirse en un track extra y un conteo de más.
+  iou_threshold: 0.5
   input_size: 640
 
 tracker:
