@@ -79,6 +79,13 @@ class VideoJobProcessor:
         self.device = device
         self.config = config or {}
 
+        # Último cuadro anotado del video que se está procesando ahora
+        # mismo, para poder mirar en vivo lo que la IA está detectando en
+        # vez de esperar a que termine todo el archivo.
+        self._live_frame = None
+        self._live_job_id = None
+        self._live_lock = threading.Lock()
+
         self._queue = queue.Queue()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -103,6 +110,14 @@ class VideoJobProcessor:
         self._queue.put(None)
         if self._thread:
             self._thread.join(timeout=5)
+
+    def get_live_frame(self):
+        """Último cuadro anotado del video en proceso, o None si no hay
+        ninguno corriendo. Devuelve (frame, job_id)."""
+        with self._live_lock:
+            if self._live_frame is None:
+                return None, None
+            return self._live_frame.copy(), self._live_job_id
 
     def enqueue(self, job_id: int):
         self._queue.put(job_id)
@@ -254,6 +269,13 @@ class VideoJobProcessor:
                     stats_y += 30 * 5 + 15  # misma fórmula de altura que draw_statistics
 
                 writer.write(annotated)
+
+                # Publicar el cuadro para el visor en vivo. Solo se guarda
+                # en memoria (una referencia), no se escribe a disco: el
+                # costo por cuadro es despreciable frente a la inferencia.
+                with self._live_lock:
+                    self._live_frame = annotated
+                    self._live_job_id = job_id
                 frame_count += 1
                 if time.time() - last_progress_update > 1.0:
                     traffic_db.update_video_job(job_id, processed_frames=frame_count)
@@ -272,13 +294,29 @@ class VideoJobProcessor:
             else:
                 _transcode_to_h264(raw_path, final_path)
                 raw_path.unlink(missing_ok=True)
-                traffic_db.update_video_job(job_id, output_video_path=str(final_path))
+                # El total declarado en la metadata del contenedor no siempre
+                # coincide con los cuadros realmente decodificables (en los
+                # .mkv de prueba decía 9001 y solo había 6059). Al terminar se
+                # corrige con el conteo real, si no la barra de progreso se
+                # queda clavada y parece que el proceso quedó a medias.
+                traffic_db.update_video_job(
+                    job_id, output_video_path=str(final_path), total_frames=frame_count
+                )
                 traffic_db.mark_video_job_finished(job_id)
                 logging.info(f"Video procesado: {job['original_name']} ({frame_count} frames)")
+
+            # Ya no hay nada corriendo: limpiar el cuadro en vivo para que el
+            # visor no siga mostrando el último cuadro de un video terminado.
+            with self._live_lock:
+                self._live_frame = None
+                self._live_job_id = None
 
         except Exception as e:
             logging.exception(f"Error procesando video {job['original_name']}")
             traffic_db.update_video_job(job_id, status='error', error=str(e))
+            with self._live_lock:
+                self._live_frame = None
+                self._live_job_id = None
         finally:
             cap.release()
             if writer is not None:

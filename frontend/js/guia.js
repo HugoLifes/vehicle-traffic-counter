@@ -7,13 +7,15 @@
   alguien que vuelve a mitad del proceso — que es el caso normal aquí,
   porque un aforo se levanta en varias sesiones.
 
-  El "momento de valor" del producto es ver el reporte con el FHP
-  calculado a partir de su propio video, así que la guía apunta ahí.
-
-  Se puede cerrar en cualquier momento y no vuelve a aparecer.
+  Se refresca sola: antes solo se dibujaba al cargar la página, así que
+  si subías un video o creabas un carril sin recargar, la guía seguía
+  mostrando el paso anterior y parecía descompuesta. Ahora vuelve a leer
+  el estado periódicamente y también sigue al selector de intersección,
+  para no reportar el avance de un proyecto distinto al que estás viendo.
 */
 
 const GUIDE_DISMISSED_KEY = 'guia-dismissed';
+const GUIDE_POLL_MS = 4000;
 
 const GUIDE_STEPS = [
   {
@@ -33,7 +35,7 @@ const GUIDE_STEPS = [
   {
     id: 'calibrar',
     title: 'Marca los carriles',
-    body: 'Dibuja la línea justo donde cruzan los vehículos y ponle nombre. Sin esto el conteo no arranca.',
+    body: 'Dibuja la línea cruzando el carril completo, justo donde pasan los vehículos, y presiona "Empezar conteo".',
     action: { label: 'Calibrar', href: 'calibrar.html' },
     done: s => s.laneCount > 0,
   },
@@ -46,6 +48,30 @@ const GUIDE_STEPS = [
   },
 ];
 
+// Firma del último render, para no repintar (ni re-animar) cuando nada
+// cambió — si no, la guía parpadearía cada 4 segundos.
+let lastSignature = null;
+
+function currentProjectId(projects) {
+  // Prioridad: el selector de la página, luego la URL, y como último
+  // recurso el proyecto más avanzado.
+  //
+  // El selector va primero porque es el control vivo que el usuario está
+  // manipulando: si cambia de intersección en el desplegable, la URL sigue
+  // teniendo la anterior, y hacer ganar a la URL dejaba la guía mostrando
+  // el avance del proyecto equivocado.
+  const select = document.getElementById('project-select');
+  if (select && select.value && projects.some(p => String(p.id) === select.value)) {
+    return select.value;
+  }
+
+  const fromUrl = new URLSearchParams(location.search).get('project');
+  if (fromUrl && projects.some(p => String(p.id) === fromUrl)) return fromUrl;
+
+  if (!projects.length) return null;
+  return String(projects.slice().sort((a, b) => b.crossing_count - a.crossing_count)[0].id);
+}
+
 async function readProgress() {
   const state = { projectCount: 0, videoCount: 0, laneCount: 0, crossingCount: 0, projectId: null };
   try {
@@ -55,17 +81,15 @@ async function readProgress() {
     state.projectCount = projects.length;
     if (!projects.length) return state;
 
-    // El proyecto de referencia es el que el usuario está viendo, o el
-    // más avanzado — para no marcar el progreso contra uno vacío.
-    const fromUrl = new URLSearchParams(location.search).get('project');
-    const current = projects.find(p => String(p.id) === fromUrl)
-      || projects.slice().sort((a, b) => b.crossing_count - a.crossing_count)[0];
+    const id = currentProjectId(projects);
+    const current = projects.find(p => String(p.id) === String(id));
+    if (!current) return state;
 
     state.projectId = current.id;
     state.videoCount = current.video_count;
     state.laneCount = current.lane_count;
     state.crossingCount = current.crossing_count;
-  } catch (e) { /* sin red, la guía simplemente no se muestra */ }
+  } catch (e) { /* sin red, la guía simplemente no se actualiza */ }
   return state;
 }
 
@@ -78,16 +102,30 @@ function stepIcon(done, isCurrent) {
   return `<span class="gs-mark${isCurrent ? ' current' : ''}" aria-hidden="true"></span>`;
 }
 
-async function initGuia() {
+async function refreshGuia() {
   const host = document.getElementById('guia-host');
   if (!host) return;
-  if (localStorage.getItem(GUIDE_DISMISSED_KEY) === '1') return;
+
+  if (localStorage.getItem(GUIDE_DISMISSED_KEY) === '1') {
+    if (host.innerHTML) host.innerHTML = '';
+    lastSignature = null;
+    return;
+  }
 
   const state = await readProgress();
   const results = GUIDE_STEPS.map(s => s.done(state));
 
   // Si ya completó todo, la guía cumplió su función y desaparece sola.
-  if (results.every(Boolean)) return;
+  if (results.every(Boolean)) {
+    host.innerHTML = '';
+    lastSignature = 'completa';
+    return;
+  }
+
+  const signature = `${state.projectId}:${results.join(',')}`;
+  if (signature === lastSignature) return;   // nada cambió, no repintar
+  const isFirstRender = lastSignature === null;
+  lastSignature = signature;
 
   const currentIndex = results.findIndex(r => !r);
   const q = state.projectId ? `?project=${state.projectId}` : '';
@@ -131,9 +169,28 @@ async function initGuia() {
     }
   });
 
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && typeof gsap !== 'undefined') {
+  // Solo se anima la primera aparición; en las actualizaciones el contenido
+  // cambia en el lugar, sin llamar la atención de golpe.
+  if (isFirstRender && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      && typeof gsap !== 'undefined') {
     gsap.from(host.querySelector('.guia'), { opacity: 0, y: -10, duration: 0.4, ease: 'power2.out' });
   }
 }
 
-initGuia();
+/** Vuelve a mostrar la guía después de haberla cerrado. */
+function reabrirGuia() {
+  localStorage.removeItem(GUIDE_DISMISSED_KEY);
+  lastSignature = null;
+  refreshGuia();
+}
+
+refreshGuia();
+setInterval(refreshGuia, GUIDE_POLL_MS);
+
+// Reaccionar de inmediato al cambiar de intersección, sin esperar al sondeo.
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'project-select') {
+    lastSignature = null;
+    refreshGuia();
+  }
+});

@@ -259,3 +259,47 @@
   .job-row { flex-wrap: wrap; }
   .job-row .job-progress { flex: 1 1 100%; order: 3; }
 }
+
+/* --- Visor en vivo del procesamiento ---------------------------------- */
+
+.live-view {
+  background: var(--surface-1);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.live-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.live-stage {
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  /* Reserva la proporción del video para que la tarjeta no salte de alto
+     mientras llega el primer cuadro. */
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.live-stage img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.live-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin: var(--space-3) 0 0;
+  line-height: 1.5;
+}

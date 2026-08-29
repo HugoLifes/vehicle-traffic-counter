@@ -377,3 +377,52 @@ function entranceAnimation() {
 entranceAnimation();
 refreshJobs();
 setInterval(refreshJobs, POLL_MS);
+
+// --- Visor en vivo del procesamiento -------------------------------------
+// Muestra el cuadro que la IA está analizando en este momento. Se pide con
+// un intervalo propio (más corto que el sondeo de la cola) para que se vea
+// como video y no como diapositivas.
+
+const liveView = document.getElementById('live-view');
+const liveImg = document.getElementById('live-img');
+const liveLabel = document.getElementById('live-label');
+const LIVE_MS = 500;
+
+let liveObjectUrl = null;
+let liveInFlight = false;
+
+async function refreshLiveFrame() {
+  if (!liveView || liveInFlight) return;
+  liveInFlight = true;
+  try {
+    const res = await fetch('/api/videos/live-frame', { cache: 'no-store' });
+
+    // 204 = no hay nada procesándose. No es un error: es reposo.
+    if (res.status === 204) {
+      liveView.classList.add('hidden');
+      return;
+    }
+    if (!res.ok) return;
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    // Liberar el blob anterior; si no, la memoria del navegador crece sin
+    // límite a dos cuadros por segundo.
+    if (liveObjectUrl) URL.revokeObjectURL(liveObjectUrl);
+    liveObjectUrl = url;
+    liveImg.src = url;
+
+    const jobId = res.headers.get('X-Job-Id');
+    const entry = jobId ? rendered.get(Number(jobId)) : null;
+    liveLabel.textContent = entry ? entry.nameEl.textContent : 'procesando…';
+
+    liveView.classList.remove('hidden');
+  } catch (e) {
+    // Sin red: se deja el último cuadro en pantalla en vez de parpadear.
+  } finally {
+    liveInFlight = false;
+  }
+}
+
+refreshLiveFrame();
+setInterval(refreshLiveFrame, LIVE_MS);

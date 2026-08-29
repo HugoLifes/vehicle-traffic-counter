@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aforo Vehicular — Subir videos</title>
-<link rel="stylesheet" href="css/fonts.css?v=5">
-<link rel="stylesheet" href="css/tokens.css?v=5">
-<link rel="stylesheet" href="css/shared.css?v=5">
-<link rel="stylesheet" href="css/upload.css?v=5">
+<link rel="stylesheet" href="css/fonts.css?v=7">
+<link rel="stylesheet" href="css/tokens.css?v=7">
+<link rel="stylesheet" href="css/shared.css?v=7">
+<link rel="stylesheet" href="css/upload.css?v=7">
 </head>
 <body>
 <div class="wrap">
@@ -49,6 +49,17 @@
     </div>
   </div>
 
+  <section class="live-view hidden" id="live-view">
+    <div class="live-head">
+      <h2 class="section-title" style="margin:0">Procesando ahora</h2>
+      <span class="pill status-processing"><span class="dot"></span><span id="live-label">—</span></span>
+    </div>
+    <div class="live-stage">
+      <img id="live-img" alt="Cuadro actual del video con las detecciones de la IA">
+    </div>
+    <p class="live-hint">Lo que ves es el cuadro que la IA está analizando en este momento: cajas por vehículo, su ID de seguimiento y las líneas de conteo.</p>
+  </section>
+
   <h2 class="section-title">Cola de procesamiento</h2>
   <div class="job-list" id="job-list">
     <div class="empty-state">Todavía no has subido ningún video.</div>
@@ -57,15 +68,15 @@
 </div>
 
 <script src="vendor/gsap.min.js"></script>
-<script src="js/nav.js?v=5"></script>
+<script src="js/nav.js?v=7"></script>
 <script>
   renderNav({ current: 'subir', title: 'Subir videos',
               subtitle: 'Procesamiento por lote — uno o varios archivos a la vez',
               projectScoped: true });
 </script>
-<script src="js/theme.js?v=5"></script>
-<script src="js/projects-select.js?v=5"></script>
-<script src="js/upload.js?v=5"></script>
-<script src="js/guia.js?v=5"></script>
+<script src="js/theme.js?v=7"></script>
+<script src="js/projects-select.js?v=7"></script>
+<script src="js/upload.js?v=7"></script>
+<script src="js/guia.js?v=7"></script>
 </body>
 </html>

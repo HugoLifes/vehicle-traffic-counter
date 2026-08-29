@@ -11,12 +11,15 @@ import json
 import logging
 import re
 import uuid
+
+import cv2
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
+from src.engine.video_job_processor import get_processor
 from src.storage import traffic_db, traffic_metrics
 
 router = APIRouter(prefix="/api/videos")
@@ -145,6 +148,33 @@ def delete_video(job_id: int):
 
 
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
+
+
+@router.get("/live-frame")
+def live_frame():
+    """
+    Último cuadro anotado del video que se está procesando ahora mismo.
+    Permite ver en vivo lo que la IA está detectando, en vez de esperar a
+    que termine el archivo completo. Devuelve 204 cuando no hay nada
+    procesándose (el visor lo interpreta como "en reposo", no como error).
+    """
+    processor = get_processor()
+    if processor is None:
+        return Response(status_code=204)
+
+    frame, job_id = processor.get_live_frame()
+    if frame is None:
+        return Response(status_code=204)
+
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    if not ok:
+        return Response(status_code=204)
+
+    return Response(
+        content=buf.tobytes(),
+        media_type="image/jpeg",
+        headers={"X-Job-Id": str(job_id), "Cache-Control": "no-store"},
+    )
 
 
 @router.get("/{job_id}/video")
