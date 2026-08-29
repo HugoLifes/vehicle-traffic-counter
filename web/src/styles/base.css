@@ -34,18 +34,39 @@ body {
   overflow-x: hidden;
 }
 
-/* Grilla de fondo tipo plano: casi imperceptible a propósito. */
+/*
+  Fondo de página: dos brillos suaves en esquinas opuestas sobre un lavado
+  vertical. Sustituye a la cuadrícula tipo plano, que competía por la
+  atención en pantallas que ya están llenas de cifras y gráficas.
+
+  Va fijo al viewport (`position: fixed`), no al documento: así se lee
+  como luz ambiental detrás del contenido y no como una textura que se
+  arrastra al hacer scroll.
+
+  Los colores salen de tokens y cambian con el tema. Las paradas están
+  acotadas para no romper nada: en claro no pueden oscurecer tanto que el
+  texto secundario baje de 4.5:1, y en oscuro no pueden aclarar más que
+  las tarjetas, porque entonces la tarjeta parecería hundida en lugar de
+  elevada.
+*/
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
+  /* Primera declaración sin espacio de interpolación: si un navegador no
+     entiende `in oklab`, descarta la segunda y se queda con esta en vez
+     de perder el degradado entero. */
   background:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px),
-    var(--surface-0);
-  background-size: 48px 48px, 48px 48px, auto;
-  opacity: 0.5;
+    radial-gradient(1200px 760px at 88% -12%, var(--bg-glow-a), transparent 62%),
+    radial-gradient(1000px 700px at 4% 104%, var(--bg-glow-b), transparent 58%),
+    linear-gradient(180deg, var(--bg-wash-from), var(--bg-wash-to));
+  /* En sRGB el punto medio entre dos tonos se apaga y tira a gris; oklab
+     mantiene el brillo parejo de un extremo al otro. */
+  background:
+    radial-gradient(1200px 760px at 88% -12% in oklab, var(--bg-glow-a), transparent 62%),
+    radial-gradient(1000px 700px at 4% 104% in oklab, var(--bg-glow-b), transparent 58%),
+    linear-gradient(180deg in oklab, var(--bg-wash-from), var(--bg-wash-to));
 }
 
 /*

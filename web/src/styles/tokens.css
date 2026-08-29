@@ -36,6 +36,17 @@
   --border-strong: #7d8b9c;   /* contorno de controles — 3.47:1 sobre blanco */
   --shadow: rgba(16, 24, 32, 0.08);
 
+  /* Fondo de página: dos brillos suaves sobre un lavado vertical.
+     Los valores no son libres — el texto más débil que se apoya
+     directamente en el fondo es --text-muted, así que ninguna parada
+     puede oscurecer tanto que ese texto baje de 4.5:1, ni aclarar tanto
+     que las tarjetas (--surface-1) dejen de despegarse del fondo.
+     Medido: peor caso 4.66:1 de texto y 1.08:1 de separación. */
+  --bg-glow-a: #edf3fd;      /* brillo frío, esquina superior derecha */
+  --bg-glow-b: #ecf4f3;      /* brillo verdoso, esquina inferior izquierda */
+  --bg-wash-from: #f3f7fb;
+  --bg-wash-to: #e9eef7;
+
   /* Texto */
   --text-primary: #10161d;
   --text-secondary: #4d5967;
@@ -107,6 +118,14 @@
     --border-strong: #68748a;
     --shadow: rgba(0, 0, 0, 0.45);
 
+    /* En oscuro el límite es el contrario: si el fondo aclara más que la
+       tarjeta, la tarjeta parece hundida en vez de elevada. Las paradas se
+       quedan por debajo de --surface-1. */
+    --bg-glow-a: #0c1420;
+    --bg-glow-b: #09141a;
+    --bg-wash-from: #0c111a;
+    --bg-wash-to: #070a0f;
+
     --text-primary: #eaeef4;
     --text-secondary: #93a0b3;
     --text-muted: #7b899e;
@@ -140,6 +159,14 @@
   --border: #262e3c;
   --border-strong: #68748a;
   --shadow: rgba(0, 0, 0, 0.45);
+
+  /* En oscuro el límite es el contrario: si el fondo aclara más que la
+     tarjeta, la tarjeta parece hundida en vez de elevada. Las paradas se
+     quedan por debajo de --surface-1. */
+  --bg-glow-a: #0c1420;
+  --bg-glow-b: #09141a;
+  --bg-wash-from: #0c111a;
+  --bg-wash-to: #070a0f;
 
   --text-primary: #eaeef4;
   --text-secondary: #93a0b3;
