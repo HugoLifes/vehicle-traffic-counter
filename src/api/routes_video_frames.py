@@ -34,8 +34,36 @@ import cv2
 from fastapi import APIRouter, HTTPException, Response
 
 from src.storage import traffic_db
+from src.engine.zones import (band_from_zones, filter_detections, load_zones,
+                              zone_for_bbox)
 
 router = APIRouter(prefix="/api/frames")
+
+# Detector propio de la vista previa, aparte del que usa la cola de
+# procesamiento: compartirlo obligaría a cambiarle la banda de detección
+# en cada petición mientras está a media inferencia de otro video.
+_detector = None
+_detector_lock = threading.Lock()
+
+
+def _detector_de_vista():
+    global _detector
+    with _detector_lock:
+        if _detector is None:
+            import yaml
+            from src.detector import VehicleDetector
+            with open("configs/platform.yaml", encoding="utf-8") as fh:
+                cfg = yaml.safe_load(fh)
+            det_cfg = cfg.get("detector", {})
+            _detector = VehicleDetector(
+                model_path=cfg.get("model_path", "models/yolov8s.pt"),
+                confidence_threshold=cfg.get("confidence_threshold", 0.25),
+                iou_threshold=det_cfg.get("iou_threshold", 0.5),
+                input_size=det_cfg.get("input_size", 1280),
+                device=cfg.get("device", "auto"),
+                config=det_cfg,
+            )
+        return _detector
 
 # Cuántos videos se mantienen abiertos a la vez. Cada captura abierta
 # retiene un descriptor de archivo y algo de memoria del decodificador;
@@ -265,3 +293,66 @@ def obtener_frame(job_id: int, frame: int = 0, fuente: str = "original", calidad
             "Cache-Control": "private, max-age=3600",
         },
     )
+
+
+@router.get("/detections")
+def detecciones_de_cuadro(job_id: int, frame: int = 0):
+    """
+    Lo que el detector encuentra AHORA en un cuadro del video original.
+
+    Existe porque la única forma de ver las detecciones era el video
+    procesado, y ese archivo tiene las cajas y las líneas quemadas en la
+    imagen desde que se procesó: si después se recalibró, muestra la
+    geometría vieja y no hay manera de dibujar encima. De ahí la confusión
+    de ver "otras líneas" al cambiar de vista.
+
+    Esto devuelve las cajas como datos, calculadas en el momento con el
+    modelo y las zonas actuales, para pintarlas sobre el video original —
+    donde las líneas SÍ se pueden seguir editando. Sirve además para
+    comprobar una calibración antes de gastar una hora reprocesando.
+    """
+    job = traffic_db.get_video_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Video no encontrado")
+
+    with _lock:
+        entrada = _abrir(job_id, "original")
+        cap = entrada["cap"]
+        total = entrada["total"]
+        if total and frame >= total:
+            frame = total - 1
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, frame))
+        ok, imagen = cap.read()
+        # La captura compartida queda en otra posición: se marca para que
+        # la lectura secuencial del reproductor no crea que va al día.
+        entrada["siguiente"] = -1
+
+    if not ok:
+        raise HTTPException(416, "No hay ningún cuadro legible en esa posición")
+
+    alto = imagen.shape[0]
+    zonas = load_zones(job.get("project_id"))
+    detector = _detector_de_vista()
+    banda = band_from_zones(zonas, alto) if zonas else None
+    detector.set_detection_band(banda)
+
+    crudas, _ = detector.detect(imagen)
+    dentro = filter_detections(zonas, crudas)
+    ids_dentro = {id(d) for d in dentro}
+
+    return {
+        "frame": frame,
+        "detections": [
+            {
+                "bbox": [round(v, 1) for v in d["bbox"]],
+                "confidence": round(d["confidence"], 3),
+                "class_name": d["class_name"],
+                # Las descartadas por zona se devuelven marcadas en vez de
+                # omitirse: ver QUÉ se está tirando es justo lo que permite
+                # notar una zona mal dibujada antes de reprocesar.
+                "en_zona": id(d) in ids_dentro,
+                "zona_id": zone_for_bbox(zonas, d["bbox"]) if zonas else None,
+            }
+            for d in crudas
+        ],
+    }

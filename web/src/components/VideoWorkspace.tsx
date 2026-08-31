@@ -43,8 +43,8 @@ import {
   IconJumpBack,
   IconJumpForward,
 } from './Icons';
-import { frameUrl } from '../lib/api';
-import type { FuenteVideo, Lane, Point, VideoSegment, Zone } from '../lib/types';
+import { frameUrl, getFrameDetections } from '../lib/api';
+import type { FrameDetection, FuenteVideo, Lane, Point, VideoSegment, Zone } from '../lib/types';
 
 /* Colores de carril: se dibujan sobre el video, no sobre la interfaz, así
    que no salen de los tokens de tema. Son tonos saturados que destacan
@@ -94,6 +94,8 @@ interface Props {
   /** 'linea' marca 2 puntos; 'zona' acumula vértices hasta cerrar. */
   drawKind?: 'linea' | 'zona';
   onCanvasPoint: (p: Point) => void;
+  /** Pide y dibuja las cajas del detector sobre el video original. */
+  showDetections?: boolean;
   /** Rastro de movimiento acumulado, si está disponible y encendido. */
   heatmap: HTMLImageElement | null;
   showHeatmap: boolean;
@@ -114,6 +116,7 @@ export function VideoWorkspace({
   drawMode,
   drawKind = 'linea',
   onCanvasPoint,
+  showDetections = false,
   heatmap,
   showHeatmap,
   fuente,
@@ -130,6 +133,14 @@ export function VideoWorkspace({
 
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  /* Detecciones del cuadro que se está viendo. Cada una cuesta una
+     inferencia de GPU (~50 ms), así que solo se piden con el video en
+     pausa: hacerlo durante la reproducción pondría al servidor a detectar
+     15 cuadros por segundo para nada, compitiendo con la cola de conteo
+     que probablemente esté corriendo al mismo tiempo. */
+  const [detections, setDetections] = useState<FrameDetection[]>([]);
+  const [cargandoDet, setCargandoDet] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef(0);
   frameRef.current = frame;
@@ -249,6 +260,28 @@ export function VideoWorkspace({
   useEffect(() => {
     if (drawMode) setPlaying(false);
   }, [drawMode]);
+
+  useEffect(() => {
+    if (!showDetections || !segment || playing || fuente === 'procesado') {
+      setDetections([]);
+      return;
+    }
+    let cancelado = false;
+    setCargandoDet(true);
+    // Pequeña espera: al avanzar cuadro a cuadro con las flechas se
+    // dispararía una inferencia por pulsación.
+    const t = setTimeout(() => {
+      getFrameDetections(segment.job_id, frame)
+        .then((r) => !cancelado && setDetections(r.detections))
+        .catch(() => !cancelado && setDetections([]))
+        .finally(() => !cancelado && setCargandoDet(false));
+    }, 220);
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+      window.clearTimeout(t);
+    };
+  }, [showDetections, segment, frame, playing, fuente]);
 
   /* --- Lienzo de líneas ------------------------------------------------ */
 
@@ -380,6 +413,24 @@ export function VideoWorkspace({
       }
     };
 
+    /* Cajas del detector calculadas para ESTE cuadro. A diferencia de las
+       del video procesado, están al día con la calibración actual: se
+       pueden ver mientras se mueven las líneas. */
+    for (const d of detections) {
+      const [x1, y1, x2, y2] = d.bbox;
+      // Gris para lo que el filtro de zonas descartó: verlo es lo que
+      // delata una zona mal dibujada antes de gastar una hora contando.
+      const color = !d.en_zona ? '#8a8f98' : d.confidence >= 0.4 ? '#4ade80' : '#fb923c';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash(d.en_zona ? [] : [3, 3]);
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.setLineDash([]);
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = color;
+      ctx.fillText(d.confidence.toFixed(2), x1, Math.max(9, y1 - 2));
+    }
+
     lanes.forEach((lane, i) => linea(lane.points[0], lane.points[1], laneColor(i), lane.name));
 
     if (drawKind === 'zona') {
@@ -398,7 +449,7 @@ export function VideoWorkspace({
     } else if (drawing.length === 2) {
       linea(drawing[0], drawing[1], '#ffffff', null);
     }
-  }, [segment, lanes, zones, drawing, drawKind, heatmap, showHeatmap, fuente]);
+  }, [segment, lanes, zones, drawing, drawKind, detections, heatmap, showHeatmap, fuente]);
 
   /* --- Transporte ------------------------------------------------------ */
 
@@ -557,6 +608,9 @@ export function VideoWorkspace({
         {/* Distintivo permanente de qué se está mirando: sin él, el video
             anotado y el original se confunden en cuadros sin tránsito. */}
         {fuente === 'procesado' && <span className="ws-badge">Con detecciones</span>}
+        {/* Detectar cuesta una inferencia: sin este aviso, el medio segundo
+            entre pausar y ver las cajas parece que no pasó nada. */}
+        {cargandoDet && <span className="ws-badge">Detectando…</span>}
 
         {drawMode && (
           <span className="ws-badge ws-badge-draw">

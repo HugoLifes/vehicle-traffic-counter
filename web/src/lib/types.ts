@@ -60,6 +60,16 @@ export type Point = [number, number];
  * encima de la otra, así que una sola línea cruza ambas y sin la zona no
  * hay forma de separar los sentidos.
  */
+/** Detección calculada al vuelo sobre un cuadro del video original. */
+export interface FrameDetection {
+  bbox: [number, number, number, number];
+  confidence: number;
+  class_name: string;
+  /** false = la descartó el filtro de zonas. Se muestra igual, en gris. */
+  en_zona: boolean;
+  zona_id: number | null;
+}
+
 export interface Zone {
   id: number;
   project_id: number;

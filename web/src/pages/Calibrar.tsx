@@ -118,6 +118,7 @@ export default function Calibrar() {
   );
   const [heatmap, setHeatmap] = useState<HTMLImageElement | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [verDetecciones, setVerDetecciones] = useState(false);
 
   const [drawMode, setDrawMode] = useState(false);
   /* 'linea' dibuja una línea de conteo (2 puntos); 'zona' dibuja el área de
@@ -276,6 +277,7 @@ export default function Calibrar() {
               drawMode={drawMode}
               drawKind={drawKind}
               onCanvasPoint={onCanvasPoint}
+              showDetections={verDetecciones}
               heatmap={heatmap}
               showHeatmap={showHeatmap}
               fuente={fuente}
@@ -292,10 +294,24 @@ export default function Calibrar() {
                 />
                 <span>Ver por dónde pasan los vehículos</span>
               </label>
+              <label className="toggle-heat">
+                <input
+                  type="checkbox"
+                  checked={verDetecciones}
+                  disabled={fuente === 'procesado'}
+                  onChange={(e) => setVerDetecciones(e.target.checked)}
+                />
+                <span>Ver lo que detecta la IA ahora</span>
+              </label>
               <span className="tool-hint">
-                {heatmap === null
-                  ? 'El rastro aparece cuando la intersección ya tiene conteos.'
-                  : 'Dibuja la línea cruzando ese rastro, no a lo largo de él.'}
+                {verDetecciones
+                  ? /* Se explica el gris porque es el dato más útil de todos:
+                       una caja descartada sobre la calzada significa que la
+                       zona está mal dibujada, y se ve antes de reprocesar. */
+                    'Verde: detección firme. Naranja: confianza baja. Gris punteado: descartada por quedar fuera de las zonas. Pausa el video para calcularlas.'
+                  : heatmap === null
+                    ? 'El rastro aparece cuando la intersección ya tiene conteos.'
+                    : 'Dibuja la línea cruzando ese rastro, no a lo largo de él.'}
               </span>
             </div>
 
