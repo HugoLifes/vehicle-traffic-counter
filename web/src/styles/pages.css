@@ -710,3 +710,165 @@
   .ws-scrub { flex: 1 1 100%; order: 3; }
   .ws-buttons { flex: 1 1 auto; justify-content: center; }
 }
+
+/* --- Cabecera de la mesa: segmento y fuente del video ------------------ */
+
+.ws-head {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.ws-head .field { flex: 1 1 240px; max-width: 400px; }
+
+.ws-source { border: none; margin: 0; padding: 0; min-width: 0; flex: 0 1 auto; }
+.ws-source legend {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+/* Control segmentado hecho con radios reales: las flechas del teclado se
+   mueven entre las opciones y el lector de pantalla anuncia "1 de 2". */
+.ws-source-options {
+  display: inline-flex;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 3px;
+}
+.ws-source-options label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  /* 34px de alto: la opción es el objetivo, no el círculo del radio. */
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 7px;   /* radio concéntrico: 10 exterior − 3 de relleno */
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+/* El radio queda invisible pero sigue enfocable y anunciable: se estira
+   sobre toda la etiqueta en vez de ocultarse con display:none. */
+.ws-source-options input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+.ws-source-options label:hover { color: var(--text-primary); }
+/* La opción activa se distingue por fondo, color Y peso, no solo color. */
+.ws-source-options label.is-on {
+  background: var(--surface-1);
+  color: var(--accent);
+  font-weight: 800;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.ws-source-options label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ws-source-options label.is-off { color: var(--text-muted); cursor: not-allowed; }
+
+.ws-source-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  max-width: 44ch;
+  line-height: 1.5;
+}
+
+/* --- Distintivo sobre el video ---------------------------------------- */
+
+.ws-badge {
+  position: absolute;
+  top: var(--space-3);
+  inset-inline-end: var(--space-3);
+  background: rgba(4, 8, 14, 0.78);
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+/* El aviso de dibujo va al lado contrario para no taparse con el otro. */
+.ws-badge-draw {
+  inset-inline-end: auto;
+  inset-inline-start: var(--space-3);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* --- Vista rápida del video en la cola -------------------------------- */
+
+.job-player {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--border);
+  background: var(--surface-1);
+}
+.job-player video { width: 100%; max-height: 460px; display: block; background: #000; }
+
+.jp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  flex-wrap: wrap;
+}
+.jp-title {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+}
+.jp-loop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px 0;   /* la etiqueta entera es el objetivo, no la casilla */
+}
+.jp-loop input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+.jp-loop input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.jp-link {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+}
+.jp-link:hover { background: var(--accent-soft); }
+.jp-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

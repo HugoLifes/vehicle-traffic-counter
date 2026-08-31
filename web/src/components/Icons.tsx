@@ -179,3 +179,17 @@ export const IconJumpForward = (p: IconProps) => (
     <path d="M3.5 5v14l8-7z" fill="currentColor" stroke="none" />
   </Svg>
 );
+
+export const IconReplay = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M3 12a9 9 0 1 0 3-6.7" />
+    <path d="M3 4v5h5" />
+  </Svg>
+);
+
+export const IconRepeat = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M4 8a3 3 0 0 1 3-3h10l-2.5-2.5M20 16a3 3 0 0 1-3 3H7l2.5 2.5" />
+    <path d="M20 16V8a3 3 0 0 0-3-3M4 8v8a3 3 0 0 0 3 3" />
+  </Svg>
+);

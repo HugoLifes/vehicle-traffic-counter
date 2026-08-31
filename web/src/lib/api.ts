@@ -19,6 +19,7 @@ import type {
   VideoJob,
   VideoSegment,
 } from './types';
+import type { FuenteVideo } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -161,8 +162,8 @@ export const snapshotUrl = (projectId: number) => `/api/camera/snapshot?project_
 export const listVideoSegments = (projectId: number) =>
   request<VideoSegment[]>(`/api/frames/videos?project_id=${projectId}`);
 
-export const frameUrl = (jobId: number, frame: number) =>
-  `/api/frames/frame?job_id=${jobId}&frame=${frame}`;
+export const frameUrl = (jobId: number, frame: number, fuente: FuenteVideo = 'original') =>
+  `/api/frames/frame?job_id=${jobId}&frame=${frame}&fuente=${fuente}`;
 export const heatmapUrl = (projectId: number) => `/api/camera/heatmap?project_id=${projectId}`;
 
 /* --- Mensaje de error legible ------------------------------------------ */

@@ -16,7 +16,7 @@ import { Button, Card, EmptyState, IconButton, Notice, Pill } from '../component
 import { IconClose, IconEye, IconTrash, IconUpload, IconVideo } from '../components/Icons';
 import { useDeleteVideo, useStartCounting, useUploadVideos, useVideos } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { errorMessage, videoUrl } from '../lib/api';
+import { errorMessage, frameUrl, videoUrl } from '../lib/api';
 import {
   JOB_STATUS_LABEL,
   JOB_STATUS_TONE,
@@ -123,8 +123,17 @@ function LiveView({ jobs }: { jobs: VideoJob[] }) {
 
 /* --- Fila de la cola ------------------------------------------------------ */
 
-function JobRow({ job, onDelete }: { job: VideoJob; onDelete: (j: VideoJob) => void }) {
+function JobRow({
+  job,
+  projectId,
+  onDelete,
+}: {
+  job: VideoJob;
+  projectId: number | null;
+  onDelete: (j: VideoJob) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [loop, setLoop] = useState(false);
 
   const pct = job.total_frames
     ? Math.min(100, Math.round((job.processed_frames / job.total_frames) * 100))
@@ -174,7 +183,7 @@ function JobRow({ job, onDelete }: { job: VideoJob; onDelete: (j: VideoJob) => v
 
         {job.status === 'done' && (
           <IconButton
-            label={open ? 'Ocultar el video procesado' : 'Ver qué detectó la IA'}
+            label={open ? 'Ocultar el video con detecciones' : 'Ver el video con las detecciones'}
             tone="accent"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
@@ -194,8 +203,43 @@ function JobRow({ job, onDelete }: { job: VideoJob; onDelete: (j: VideoJob) => v
       </div>
 
       {open && (
+        /*
+          Vista rápida dentro de la cola: sirve para confirmar de un
+          vistazo que el conteo hizo algo razonable. Para mirar de verdad
+          —parar en el cuadro de un cruce y comprobar si se contó— está la
+          mesa de trabajo, y por eso el enlace va aquí mismo.
+        */
         <div className="job-player rise">
-          <video controls preload="metadata" src={videoUrl(job.id)} />
+          <div className="jp-head">
+            <span className="jp-title">{job.original_name}</span>
+            <Pill tone="accent">Con detecciones</Pill>
+          </div>
+          {/* Controles nativos: dan pantalla completa, velocidad y volumen
+              sin reconstruir nada. `loop` es lo único que el navegador no
+              expone en su barra, así que se ofrece aparte.
+
+              La portada sale del servidor de cuadros y no del propio
+              video: con `preload="metadata"` el navegador no decodifica
+              ninguna imagen, así que sin ella el reproductor se abre en
+              negro y no se sabe si cargó o se rompió. Se toma un cuadro
+              de la mitad, donde es más probable que haya tránsito que en
+              el primer segundo. */}
+          <video
+            controls
+            loop={loop}
+            preload="metadata"
+            poster={frameUrl(job.id, Math.floor((job.total_frames ?? 2) / 2), 'procesado')}
+            src={videoUrl(job.id)}
+          />
+          <div className="jp-foot">
+            <label className="jp-loop">
+              <input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} />
+              <span>Repetir en bucle</span>
+            </label>
+            <Link className="jp-link" to={`/calibrar?project=${projectId}&job=${job.id}&ver=procesado`}>
+              Revisar cuadro a cuadro
+            </Link>
+          </div>
         </div>
       )}
     </>
@@ -476,7 +520,7 @@ export default function Subir() {
           />
         )}
         {jobs?.map((job) => (
-          <JobRow key={job.id} job={job} onDelete={setToDelete} />
+          <JobRow key={job.id} job={job} projectId={projectId} onDelete={setToDelete} />
         ))}
       </div>
 

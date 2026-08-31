@@ -13,7 +13,7 @@
 */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Page';
 import { ProjectPicker } from '../components/ProjectPicker';
@@ -39,7 +39,7 @@ import {
 import { useProjectParam } from '../lib/useProjectParam';
 import { errorMessage, fetchImage, heatmapUrl, listVideoSegments } from '../lib/api';
 import { plural } from '../lib/format';
-import type { Lane, Point } from '../lib/types';
+import type { FuenteVideo, Lane, Point } from '../lib/types';
 
 /**
  * Revisa que la línea recién dibujada sirva para contar.
@@ -91,7 +91,17 @@ export default function Calibrar() {
     enabled: projectId !== null,
   });
 
+  /*
+    El segmento y la fuente se leen de la URL en la primera carga. Es lo
+    que hace que "Revisar cuadro a cuadro" desde la cola aterrice en el
+    video correcto y ya con las detecciones puestas, en vez de dejar al
+    usuario buscándolo entre los segmentos.
+  */
+  const [params] = useSearchParams();
   const [jobId, setJobId] = useState<number | null>(null);
+  const [fuente, setFuente] = useState<FuenteVideo>(
+    params.get('ver') === 'procesado' ? 'procesado' : 'original',
+  );
   const [heatmap, setHeatmap] = useState<HTMLImageElement | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
 
@@ -109,12 +119,18 @@ export default function Calibrar() {
   // intersección se descarta lo que hubiera a medio dibujar, para no
   // arrastrar puntos de una escena a otra.
   useEffect(() => {
-    setJobId(segments && segments.length ? segments[0].job_id : null);
+    if (!segments || !segments.length) {
+      setJobId(null);
+    } else {
+      const pedido = Number(params.get('job'));
+      const existe = segments.some((s) => s.job_id === pedido);
+      setJobId(existe ? pedido : segments[0].job_id);
+    }
     setPoints([]);
     setDrawMode(false);
     setWarnings([]);
     setHint(null);
-  }, [segments]);
+  }, [segments, params]);
 
   // El rastro de movimiento es opcional: si el proyecto no tiene conteos
   // previos no existe, y calibrar a mano sigue siendo posible.
@@ -218,6 +234,8 @@ export default function Calibrar() {
               onCanvasPoint={onCanvasPoint}
               heatmap={heatmap}
               showHeatmap={showHeatmap}
+              fuente={fuente}
+              onFuenteChange={setFuente}
             />
 
             <div className="canvas-tools">
@@ -331,19 +349,31 @@ export default function Calibrar() {
                 </Button>
               </>
             ) : (
-              <Button
-                variant="primary"
-                block
-                disabled={!segment}
-                onClick={() => {
-                  setDrawMode(true);
-                  setPoints([]);
-                  setWarnings([]);
-                  setHint('Pausa el video donde se vea bien el tránsito y marca el primer punto.');
-                }}
-              >
-                Nuevo carril
-              </Button>
+              <>
+                <Button
+                  variant="primary"
+                  block
+                  disabled={!segment || fuente === 'procesado'}
+                  onClick={() => {
+                    setDrawMode(true);
+                    setPoints([]);
+                    setWarnings([]);
+                    setHint('Pausa el video donde se vea bien el tránsito y marca el primer punto.');
+                  }}
+                >
+                  Nuevo carril
+                </Button>
+                {fuente === 'procesado' && (
+                  /* Un control deshabilitado sin explicación es una
+                     puerta cerrada sin cartel: aquí se dice por qué y
+                     cómo abrirla. */
+                  <p className="sc-info" style={{ marginTop: 'var(--space-2)' }}>
+                    Los carriles se dibujan sobre el video original. La versión con detecciones ya
+                    tiene las líneas quemadas en la imagen, así que unas nuevas no coincidirían con
+                    lo que se ve. Cambia a <strong>Original</strong> para seguir calibrando.
+                  </p>
+                )}
+              </>
             )}
 
             {createLane.isError && (

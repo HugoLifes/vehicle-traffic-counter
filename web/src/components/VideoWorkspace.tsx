@@ -2,10 +2,16 @@
   Mesa de trabajo: el video de la intersección con controles de
   reproducción, y encima el lienzo donde se dibujan las líneas de conteo.
 
-  Antes se calibraba sobre un cuadro fijo del centro del video. Eso obliga
-  a adivinar: si en ese instante no pasa nadie, no hay forma de saber por
-  dónde circulan realmente los vehículos. Aquí se recorre la grabación,
-  se pausa donde el tránsito se ve claro y se dibuja ahí.
+  Sirve para las dos cosas que se hacen mirando el video:
+
+   · CALIBRAR — recorrer la grabación original, pausar donde el tránsito
+     se ve claro y dibujar ahí las líneas. Antes se calibraba sobre un
+     cuadro fijo del centro, lo que obliga a adivinar: si en ese instante
+     no pasa nadie, no hay forma de saber por dónde circulan.
+
+   · REVISAR — recorrer la versión que dibujó la IA para comprobar si
+     contó bien. Es el mismo reproductor con los mismos controles, así
+     que se puede parar en el cuadro exacto de un cruce y comparar.
 
   Cómo se reproduce, y por qué no es un <video>: los aforos llegan en
   .mkv, .avi o .wmv, que los navegadores no reproducen de forma fiable, y
@@ -15,6 +21,10 @@
   2.7 ms por cuadro consecutivo (369 por segundo) y 15 ms al saltar con la
   barra de tiempo. El video original va a 15 cuadros por segundo, así que
   sobra para verlo a velocidad real.
+
+  Usar el mismo motor para las dos fuentes tiene una ventaja que un
+  <video> nativo no da: avanzar de cuadro en cuadro sobre el video
+  anotado, que es justo lo que hace falta para verificar un conteo.
 
   El cuadro va en un <img> y las líneas en un <canvas> transparente
   encima. Separarlos evita redibujar la imagen completa quince veces por
@@ -26,13 +36,15 @@ import { Button, IconButton, SelectField } from './ui';
 import {
   IconPause,
   IconPlay,
+  IconReplay,
+  IconRepeat,
   IconStepBack,
   IconStepForward,
   IconJumpBack,
   IconJumpForward,
 } from './Icons';
 import { frameUrl } from '../lib/api';
-import type { Lane, Point, VideoSegment } from '../lib/types';
+import type { FuenteVideo, Lane, Point, VideoSegment } from '../lib/types';
 
 /* Colores de carril: se dibujan sobre el video, no sobre la interfaz, así
    que no salen de los tokens de tema. Son tonos saturados que destacan
@@ -40,7 +52,7 @@ import type { Lane, Point, VideoSegment } from '../lib/types';
 export const LANE_COLORS = ['#ff5470', '#2dd4ff', '#ffd23f', '#7cff6b', '#c77dff', '#ff9f45'];
 export const laneColor = (i: number) => LANE_COLORS[i % LANE_COLORS.length];
 
-const SPEEDS = [0.5, 1, 2, 4];
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
 const JUMP_SECONDS = 5;
 
 /** Vector unitario hacia el lado que el backend clasifica como "Entrada".
@@ -74,6 +86,11 @@ interface Props {
   /** Rastro de movimiento acumulado, si está disponible y encendido. */
   heatmap: HTMLImageElement | null;
   showHeatmap: boolean;
+  /* La fuente vive fuera del componente para que un enlace pueda
+     aterrizar directamente en "este segmento, con detecciones" — que es
+     como se llega desde la cola de procesamiento. */
+  fuente: FuenteVideo;
+  onFuenteChange: (f: FuenteVideo) => void;
 }
 
 export function VideoWorkspace({
@@ -86,12 +103,16 @@ export function VideoWorkspace({
   onCanvasPoint,
   heatmap,
   showHeatmap,
+  fuente,
+  onFuenteChange,
 }: Props) {
   const segment = segments.find((s) => s.job_id === jobId) ?? null;
 
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [repetir, setRepetir] = useState(false);
+  const [terminado, setTerminado] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   const imgRef = useRef<HTMLImageElement>(null);
@@ -102,14 +123,36 @@ export function VideoWorkspace({
 
   const total = segment?.total_frames ?? 0;
   const fps = segment?.fps ?? 15;
+  const hayProcesado = segment?.tiene_procesado ?? false;
 
   // Al cambiar de segmento se vuelve al principio y se detiene: seguir
   // reproduciendo en un punto arbitrario de otro video desorienta.
   useEffect(() => {
     setFrame(0);
     setPlaying(false);
+    setTerminado(false);
     setLoadError(false);
   }, [jobId]);
+
+  // Si el segmento elegido no tiene versión con detecciones, se vuelve al
+  // original en vez de dejar la pestaña marcada sobre un video que no está.
+  //
+  // La condición exige que el segmento YA se conozca. Sin eso, al abrir un
+  // enlace del tipo `?ver=procesado` la salvaguarda se disparaba en el
+  // primer render —cuando los metadatos todavía no habían llegado y por
+  // tanto `hayProcesado` era falso— y devolvía a "Original" el enlace que
+  // pedía justo lo contrario.
+  useEffect(() => {
+    if (!segment) return;
+    if (fuente === 'procesado' && !hayProcesado) onFuenteChange('original');
+  }, [segment, fuente, hayProcesado, onFuenteChange]);
+
+  // Cambiar de fuente conserva la posición: la gracia de comparar es ver
+  // el MISMO instante con y sin las cajas de la IA.
+  useEffect(() => {
+    setPlaying(false);
+    setTerminado(false);
+  }, [fuente]);
 
   /* --- Carga de un cuadro ---------------------------------------------
      Se precarga en un Image suelto y solo se cambia el src visible cuando
@@ -120,7 +163,7 @@ export function VideoWorkspace({
     (n: number) =>
       new Promise<boolean>((resolve) => {
         if (jobId === null) return resolve(false);
-        const url = frameUrl(jobId, n);
+        const url = frameUrl(jobId, n, fuente);
         const pre = new Image();
         pre.onload = () => {
           if (imgRef.current) imgRef.current.src = url;
@@ -133,13 +176,11 @@ export function VideoWorkspace({
         };
         pre.src = url;
       }),
-    [jobId],
+    [jobId, fuente],
   );
 
   useEffect(() => {
     void loadFrame(frame);
-    // `frame` cambia también al arrastrar la barra; loadFrame ya está
-    // memorizado por jobId, así que no rehace la carga sin motivo.
   }, [frame, loadFrame]);
 
   /* --- Bucle de reproducción ------------------------------------------
@@ -155,11 +196,20 @@ export function VideoWorkspace({
 
     const paso = async () => {
       if (cancelled) return;
-      const siguiente = frameRef.current + 1;
+      let siguiente = frameRef.current + 1;
+
       if (siguiente >= total) {
-        setPlaying(false);
-        return;
+        if (!repetir) {
+          // Al terminar no se deja el botón en "Reproducir" sin más: se
+          // marca que se acabó, y el botón pasa a decir "Repetir". Sin
+          // eso, pulsar reproducir al final no hacía nada visible.
+          setPlaying(false);
+          setTerminado(true);
+          return;
+        }
+        siguiente = 0;
       }
+
       const t0 = performance.now();
       const ok = await loadFrame(siguiente);
       if (cancelled) return;
@@ -180,7 +230,7 @@ export function VideoWorkspace({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [playing, jobId, total, fps, speed, loadFrame]);
+  }, [playing, jobId, total, fps, speed, repetir, loadFrame]);
 
   // Dibujar exige una imagen quieta: al empezar a marcar puntos se pausa.
   useEffect(() => {
@@ -197,6 +247,11 @@ export function VideoWorkspace({
     canvas.width = segment.ancho;
     canvas.height = segment.alto;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Sobre el video procesado la IA ya dibujó sus propias líneas y cajas.
+    // Repintar las nuestras encima duplicaría cada línea con un desfase de
+    // un píxel y haría imposible saber cuál es cuál.
+    if (fuente === 'procesado') return;
 
     // El rastro va debajo de las líneas: sirve para juzgar si la línea
     // cruza el tránsito o corre a lo largo de él.
@@ -279,13 +334,14 @@ export function VideoWorkspace({
     } else if (drawing.length === 2) {
       linea(drawing[0], drawing[1], '#ffffff', null);
     }
-  }, [segment, lanes, drawing, heatmap, showHeatmap]);
+  }, [segment, lanes, drawing, heatmap, showHeatmap, fuente]);
 
   /* --- Transporte ------------------------------------------------------ */
 
   const irA = useCallback(
     (n: number) => {
       if (!total) return;
+      setTerminado(false);
       setFrame(Math.max(0, Math.min(total - 1, n)));
     },
     [total],
@@ -296,6 +352,17 @@ export function VideoWorkspace({
     [irA, fps],
   );
 
+  /** Reproducir, pausar, o volver a empezar si ya terminó. */
+  const alternarReproduccion = useCallback(() => {
+    if (terminado) {
+      setTerminado(false);
+      setFrame(0);
+      setPlaying(true);
+      return;
+    }
+    setPlaying((v) => !v);
+  }, [terminado]);
+
   // Atajos de teclado dentro de la mesa. Espacio no se intercepta cuando
   // el foco está en un botón: ahí ya significa "activar este botón".
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -304,20 +371,28 @@ export function VideoWorkspace({
 
     if (e.key === ' ' && !esControl) {
       e.preventDefault();
-      setPlaying((v) => !v);
+      alternarReproduccion();
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       setPlaying(false);
-      e.shiftKey ? saltar(-JUMP_SECONDS) : irA(frameRef.current - 1);
+      if (e.shiftKey) saltar(-JUMP_SECONDS);
+      else irA(frameRef.current - 1);
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
       setPlaying(false);
-      e.shiftKey ? saltar(JUMP_SECONDS) : irA(frameRef.current + 1);
+      if (e.shiftKey) saltar(JUMP_SECONDS);
+      else irA(frameRef.current + 1);
     }
   };
 
   const onStageClick = (e: React.MouseEvent) => {
-    if (!drawMode || !segment) return;
+    if (!segment) return;
+    // Fuera del modo dibujo, un clic en el video reproduce o pausa, que es
+    // lo que hace cualquier reproductor.
+    if (!drawMode) {
+      alternarReproduccion();
+      return;
+    }
     const stage = stageRef.current;
     if (!stage) return;
     const r = stage.getBoundingClientRect();
@@ -339,12 +414,12 @@ export function VideoWorkspace({
 
   const tiempo = frame / fps;
   const etiquetaTiempo = `${mmss(tiempo)} / ${mmss(segment.duracion_s)}`;
+  const etiquetaPlay = terminado ? 'Repetir' : playing ? 'Pausa' : 'Reproducir';
 
   return (
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div className="workspace" onKeyDown={onKeyDown}>
-      {segments.length > 1 && (
-        <div className="ws-head">
+      <div className="ws-head">
+        {segments.length > 1 && (
           <SelectField
             label="Segmento"
             value={jobId ?? ''}
@@ -357,8 +432,48 @@ export function VideoWorkspace({
               </option>
             ))}
           </SelectField>
-        </div>
-      )}
+        )}
+
+        {/*
+          Grupo de radios, no dos botones: son opciones excluyentes de una
+          misma pregunta ("¿qué video estoy viendo?"), y con radios las
+          flechas del teclado se mueven entre ellas y el lector de pantalla
+          anuncia "1 de 2".
+        */}
+        <fieldset className="ws-source">
+          <legend>Ver</legend>
+          <div className="ws-source-options">
+            <label className={fuente === 'original' ? 'is-on' : undefined}>
+              <input
+                type="radio"
+                name="fuente-video"
+                checked={fuente === 'original'}
+                onChange={() => onFuenteChange('original')}
+              />
+              <span>Original</span>
+            </label>
+            <label
+              className={`${fuente === 'procesado' ? 'is-on' : ''}${hayProcesado ? '' : ' is-off'}`}
+            >
+              <input
+                type="radio"
+                name="fuente-video"
+                checked={fuente === 'procesado'}
+                disabled={!hayProcesado}
+                onChange={() => onFuenteChange('procesado')}
+              />
+              <span>Con detecciones</span>
+            </label>
+          </div>
+          <p className="ws-source-hint">
+            {!hayProcesado
+              ? 'La versión con detecciones aparece cuando termina el conteo de este segmento.'
+              : fuente === 'procesado'
+                ? 'Lo que vio la IA: una caja por vehículo y sus líneas de conteo.'
+                : 'La grabación tal como se subió. Es sobre esta donde se dibujan los carriles.'}
+          </p>
+        </fieldset>
+      </div>
 
       <div
         className={`ws-stage${drawMode ? ' is-drawing' : ''}`}
@@ -370,6 +485,17 @@ export function VideoWorkspace({
         {/* El lienzo solo pinta; los clics los recoge el contenedor, que
             es quien conoce la escala entre píxeles del video y de pantalla. */}
         <canvas ref={canvasRef} aria-hidden="true" />
+
+        {/* Distintivo permanente de qué se está mirando: sin él, el video
+            anotado y el original se confunden en cuadros sin tránsito. */}
+        {fuente === 'procesado' && <span className="ws-badge">Con detecciones</span>}
+
+        {drawMode && (
+          <span className="ws-badge ws-badge-draw">
+            {drawing.length === 0 ? 'Marca el primer punto' : 'Marca el segundo punto'}
+          </span>
+        )}
+
         {loadError && (
           <p className="ws-error" role="alert">
             No se pudo cargar este cuadro del video.
@@ -379,29 +505,30 @@ export function VideoWorkspace({
 
       <div className="ws-transport">
         <div className="ws-buttons">
-          <IconButton label={`Retroceder ${JUMP_SECONDS} segundos`} onClick={() => { setPlaying(false); saltar(-JUMP_SECONDS); }}>
+          <IconButton
+            label={`Retroceder ${JUMP_SECONDS} segundos`}
+            onClick={() => { setPlaying(false); saltar(-JUMP_SECONDS); }}
+          >
             <IconJumpBack />
           </IconButton>
           <IconButton label="Cuadro anterior" onClick={() => { setPlaying(false); irA(frame - 1); }}>
             <IconStepBack />
           </IconButton>
 
-          <Button
-            variant="primary"
-            className="ws-play"
-            aria-pressed={playing}
-            onClick={() => setPlaying((v) => !v)}
-          >
+          <Button variant="primary" className="ws-play" onClick={alternarReproduccion}>
             {/* El estado va en el icono Y en la palabra: quien no distinga
-                los dos glifos lo lee igual. */}
-            {playing ? <IconPause size={15} /> : <IconPlay size={15} />}
-            {playing ? 'Pausa' : 'Reproducir'}
+                los glifos lo lee igual. */}
+            {terminado ? <IconReplay size={15} /> : playing ? <IconPause size={15} /> : <IconPlay size={15} />}
+            {etiquetaPlay}
           </Button>
 
           <IconButton label="Cuadro siguiente" onClick={() => { setPlaying(false); irA(frame + 1); }}>
             <IconStepForward />
           </IconButton>
-          <IconButton label={`Avanzar ${JUMP_SECONDS} segundos`} onClick={() => { setPlaying(false); saltar(JUMP_SECONDS); }}>
+          <IconButton
+            label={`Avanzar ${JUMP_SECONDS} segundos`}
+            onClick={() => { setPlaying(false); saltar(JUMP_SECONDS); }}
+          >
             <IconJumpForward />
           </IconButton>
         </div>
@@ -423,6 +550,15 @@ export function VideoWorkspace({
           {etiquetaTiempo}
         </output>
 
+        <IconButton
+          label={repetir ? 'Desactivar repetición continua' : 'Repetir en bucle al terminar'}
+          aria-pressed={repetir}
+          className={repetir ? 'is-accent' : undefined}
+          onClick={() => setRepetir((v) => !v)}
+        >
+          <IconRepeat />
+        </IconButton>
+
         <label className="ws-speed">
           <span>Velocidad</span>
           <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
@@ -439,9 +575,10 @@ export function VideoWorkspace({
         Cuadro <span className="mono">{frame + 1}</span> de{' '}
         <span className="mono">{total}</span>
         {' · '}
-        {segment.fps} cuadros por segundo. Con el lienzo enfocado: <kbd>espacio</kbd> reproduce,{' '}
-        <kbd>←</kbd> <kbd>→</kbd> avanzan un cuadro y con <kbd>Shift</kbd> saltan {JUMP_SECONDS}{' '}
-        segundos.
+        {segment.fps} cuadros por segundo
+        {repetir ? ' · repetición continua activada' : ''}. Con el lienzo enfocado:{' '}
+        <kbd>espacio</kbd> reproduce, <kbd>←</kbd> <kbd>→</kbd> avanzan un cuadro y con{' '}
+        <kbd>Shift</kbd> saltan {JUMP_SECONDS} segundos.
       </p>
     </div>
   );

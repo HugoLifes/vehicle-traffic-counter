@@ -150,4 +150,9 @@ export interface VideoSegment {
   ancho: number;
   alto: number;
   hora_inicio: string | null;
+  /** Si ya existe la versión que dibujó la IA sobre este video. */
+  tiene_procesado: boolean;
 }
+
+/** Qué video se está viendo: la grabación tal cual, o la anotada por la IA. */
+export type FuenteVideo = 'original' | 'procesado';

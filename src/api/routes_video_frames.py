@@ -43,11 +43,21 @@ router = APIRouter(prefix="/api/frames")
 # de segmentos vecinos) sin acumular archivos abiertos indefinidamente.
 _MAX_ABIERTOS = 3
 
-_capturas: "OrderedDict[int, dict]" = OrderedDict()
+# La clave incluye la fuente: el mismo aforo tiene dos videos, el
+# original y el anotado por la IA, y se recorren de forma independiente.
+_capturas: "OrderedDict[tuple, dict]" = OrderedDict()
 _lock = threading.Lock()
 
+FUENTES = ("original", "procesado")
 
-def _abrir(job_id: int) -> dict:
+
+def _ruta(job: Dict, fuente: str) -> Optional[str]:
+    if fuente == "procesado":
+        return job.get("output_video_path")
+    return job["stored_path"]
+
+
+def _abrir(job_id: int, fuente: str) -> dict:
     """
     Devuelve la entrada de captura de un video, abriéndola si hace falta.
 
@@ -55,16 +65,25 @@ def _abrir(job_id: int) -> dict:
     entregaría con un read() sin buscar. Es lo que permite distinguir
     "reproducir" de "saltar".
     """
-    entrada = _capturas.get(job_id)
+    clave = (job_id, fuente)
+    entrada = _capturas.get(clave)
     if entrada is not None:
-        _capturas.move_to_end(job_id)
+        _capturas.move_to_end(clave)
         return entrada
 
     job = traffic_db.get_video_job(job_id)
     if job is None:
         raise HTTPException(404, "Ese video no existe")
 
-    cap = cv2.VideoCapture(job["stored_path"])
+    ruta = _ruta(job, fuente)
+    if not ruta:
+        raise HTTPException(
+            404,
+            "Este video todavía no tiene versión con detecciones. Aparece "
+            "cuando termina el conteo."
+        )
+
+    cap = cv2.VideoCapture(ruta)
     if not cap.isOpened():
         cap.release()
         raise HTTPException(
@@ -81,7 +100,7 @@ def _abrir(job_id: int) -> dict:
         "ancho": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
         "alto": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
     }
-    _capturas[job_id] = entrada
+    _capturas[clave] = entrada
 
     while len(_capturas) > _MAX_ABIERTOS:
         _, vieja = _capturas.popitem(last=False)
@@ -91,16 +110,20 @@ def _abrir(job_id: int) -> dict:
 
 
 def cerrar_captura(job_id: int) -> None:
-    """Suelta el archivo de un video. La llama el borrado de videos:
-    en Windows no se puede eliminar un archivo que sigue abierto."""
+    """Suelta los archivos de un video, en sus dos fuentes. La llama el
+    borrado de videos: en Windows no se puede eliminar un archivo que
+    sigue abierto por el propio proceso."""
     with _lock:
-        entrada = _capturas.pop(job_id, None)
-    if entrada is not None:
-        entrada["cap"].release()
+        entradas = [_capturas.pop((job_id, f), None) for f in FUENTES]
+    for entrada in entradas:
+        if entrada is not None:
+            entrada["cap"].release()
 
 
 def _metadatos(job: Dict) -> Optional[Dict]:
     """Duración y dimensiones de un video, leídas de su cabecera."""
+    from pathlib import Path as _Path
+
     cap = cv2.VideoCapture(job["stored_path"])
     if not cap.isOpened():
         cap.release()
@@ -122,6 +145,13 @@ def _metadatos(job: Dict) -> Optional[Dict]:
         "ancho": ancho,
         "alto": alto,
         "hora_inicio": job.get("video_start_time"),
+        # Se comprueba el archivo, no solo el estado del trabajo: un job
+        # puede figurar como terminado y haber perdido su salida (borrada a
+        # mano, disco lleno a mitad del transcodificado). Ofrecer una
+        # pestaña que después falla es peor que no ofrecerla.
+        "tiene_procesado": bool(
+            job.get("output_video_path") and _Path(job["output_video_path"]).exists()
+        ),
     }
 
 
@@ -146,7 +176,7 @@ def listar_videos(project_id: int):
 
 
 @router.get("/frame")
-def obtener_frame(job_id: int, frame: int = 0, calidad: int = 80):
+def obtener_frame(job_id: int, frame: int = 0, fuente: str = "original", calidad: int = 80):
     """
     Un cuadro concreto del video, por índice.
 
@@ -154,9 +184,16 @@ def obtener_frame(job_id: int, frame: int = 0, calidad: int = 80):
     poder avanzar de uno en uno para encontrar el instante en que el
     vehículo cruza, y con segundos en coma flotante el mismo valor puede
     caer en un cuadro o en el siguiente según cómo redondee.
+
+    `fuente` elige entre la grabación original y la versión que dibujó la
+    IA. Recorrer la segunda con los mismos controles es lo que permite
+    parar en el cuadro exacto de un cruce y comprobar si se contó.
     """
+    if fuente not in FUENTES:
+        raise HTTPException(400, f"Fuente desconocida. Usa una de: {', '.join(FUENTES)}")
+
     with _lock:
-        entrada = _abrir(job_id)
+        entrada = _abrir(job_id, fuente)
         cap = entrada["cap"]
         total = entrada["total"]
 
@@ -221,6 +258,7 @@ def obtener_frame(job_id: int, frame: int = 0, calidad: int = 80):
             "X-Video-Total-Frames": str(total),
             "X-Video-Width": str(ancho),
             "X-Video-Height": str(alto),
+            "X-Video-Source": fuente,
             # Cada cuadro es inmutable: el mismo índice del mismo video da
             # siempre la misma imagen, así que el navegador puede
             # guardarlo y el recorrido hacia atrás sale de su caché.
