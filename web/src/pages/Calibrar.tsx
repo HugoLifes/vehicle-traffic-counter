@@ -35,7 +35,9 @@ import {
   useRenameLane,
   useStartCounting,
   useVideos,
+  useCalibrationStatus,
   useCopyCalibration,
+  useRecount,
   useCreateZone,
   useDeleteZone,
   useRenameZone,
@@ -89,6 +91,8 @@ export default function Calibrar() {
   const renameZone = useRenameZone(projectId ?? 0);
   const removeZone = useDeleteZone(projectId ?? 0);
   const copiarCalibracion = useCopyCalibration(projectId ?? 0);
+  const { data: calibStatus } = useCalibrationStatus(projectId);
+  const recontar = useRecount();
   const { data: jobs } = useVideos(projectId ?? undefined);
   const createLane = useCreateLane(projectId ?? 0);
   const renameLane = useRenameLane(projectId ?? 0);
@@ -514,6 +518,49 @@ export default function Calibrar() {
             {/* El botón de arrancar solo aparece cuando hay algo que
                 arrancar: carriles definidos Y videos esperando. Así no se
                 puede lanzar un conteo sobre una línea que no existe. */}
+            {/* La pregunta que esto contesta es "¿el video ya está contado
+                con estas líneas o con las de antes?". Editar la geometría
+                no cambia por sí solo ningún conteo ya guardado, y sin este
+                aviso no había forma de notarlo. */}
+            {(calibStatus?.stale ?? 0) > 0 && laneCount > 0 && (
+              <div className="start-counting">
+                <Notice tone="warning" title="Los conteos son de una calibración anterior">
+                  {plural(
+                    calibStatus?.stale ?? 0,
+                    'video ya contado se procesó',
+                    'videos ya contados se procesaron',
+                  )}{' '}
+                  antes del último cambio de líneas o zonas, así que sus números y su video
+                  anotado siguen siendo los de la geometría vieja.
+                </Notice>
+                <Button
+                  variant="primary"
+                  block
+                  disabled={recontar.isPending}
+                  style={{ marginTop: 'var(--space-3)' }}
+                  onClick={() => projectId !== null && recontar.mutate(projectId)}
+                >
+                  {recontar.isPending ? 'Reencolando…' : 'Volver a contar con estas líneas'}
+                </Button>
+                {recontar.isError && (
+                  <div style={{ marginTop: 'var(--space-2)' }}>
+                    <Notice title="No se pudo reencolar">{errorMessage(recontar.error)}</Notice>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(calibStatus?.stale ?? 0) === 0 &&
+              (calibStatus?.awaiting ?? 0) === 0 &&
+              laneCount > 0 &&
+              (jobs?.some((j) => j.status === 'done') ?? false) && (
+                <div className="start-counting">
+                  <Notice tone="good" title="Los conteos están al día">
+                    Todos los videos se contaron con las líneas y zonas que ves ahora.
+                  </Notice>
+                </div>
+              )}
+
             {awaiting.length > 0 && laneCount > 0 && (
               <div className="start-counting">
                 <p className="sc-info">

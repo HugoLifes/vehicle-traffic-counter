@@ -526,6 +526,46 @@ def get_awaiting_calibration_jobs(project_id: int) -> List[Dict]:
     return [dict(row) for row in rows]
 
 
+def get_calibration_time(project_id: int) -> Optional[str]:
+    """
+    Cuándo se tocó por última vez la geometría de este proyecto.
+
+    Es el dato que permite saber si un conteo ya terminado corresponde a
+    la calibración actual o a una anterior. Sin esto, editar las líneas
+    después de procesar deja los números viejos en pantalla sin que nada
+    lo indique, y no hay forma de distinguir un aforo vigente de uno que
+    quedó obsoleto.
+    """
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT MAX(t) FROM (
+               SELECT MAX(updated_at) AS t FROM lane_configs
+               WHERE project_id = ? AND active = 1
+               UNION ALL
+               SELECT MAX(updated_at) AS t FROM zones
+               WHERE project_id = ? AND active = 1
+           )""",
+        (project_id, project_id)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def get_stale_jobs(project_id: int) -> List[Dict]:
+    """Videos ya procesados cuyo conteo salió de una calibración anterior."""
+    calibrado = get_calibration_time(project_id)
+    if not calibrado:
+        return []
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT * FROM video_jobs
+           WHERE project_id = ? AND status = 'done'
+             AND (finished_at IS NULL OR finished_at < ?)
+           ORDER BY video_start_time, id""",
+        (project_id, calibrado)
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_video_job(job_id: int) -> Optional[Dict]:
     conn = get_connection()
     row = conn.execute(

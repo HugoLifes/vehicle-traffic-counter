@@ -533,7 +533,11 @@ export function VideoWorkspace({
             {!hayProcesado
               ? 'La versión con detecciones aparece cuando termina el conteo de este segmento.'
               : fuente === 'procesado'
-                ? 'Lo que vio la IA: una caja por vehículo y sus líneas de conteo.'
+                ? // Se aclara de QUÉ calibración son esas líneas: están quemadas
+                  // en la imagen desde que se procesó el video, así que si
+                  // después se movieron no coinciden con las de Original —
+                  // que es exactamente la confusión que provoca si no se dice.
+                  'Lo que vio la IA cuando se procesó. Sus líneas están quemadas en la imagen: si las editaste después, aquí siguen las anteriores.'
                 : 'La grabación tal como se subió. Es sobre esta donde se dibujan los carriles.'}
           </p>
         </fieldset>

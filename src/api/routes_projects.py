@@ -91,6 +91,60 @@ def delete_project(project_id: int):
     return {"deleted": project_id}
 
 
+@router.get("/{project_id}/calibration-status")
+def calibration_status(project_id: int):
+    """
+    Si los conteos ya hechos corresponden a la calibración actual.
+
+    Editar las líneas después de procesar no cambia nada por sí solo: los
+    cruces guardados siguen siendo los de la geometría anterior, y el
+    video anotado sigue teniendo las líneas viejas quemadas en la imagen.
+    Sin este dato no había forma de notarlo desde la interfaz — y como el
+    botón de contar solo aparece cuando hay videos esperando, un proyecto
+    ya procesado tampoco se podía volver a contar.
+    """
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    obsoletos = traffic_db.get_stale_jobs(project_id)
+    return {
+        "calibrated_at": traffic_db.get_calibration_time(project_id),
+        "stale": len(obsoletos),
+        "awaiting": len(traffic_db.get_awaiting_calibration_jobs(project_id)),
+    }
+
+
+@router.post("/{project_id}/recount")
+def recount(project_id: int):
+    """
+    Vuelve a contar los videos ya procesados con la calibración actual.
+
+    Los cruces anteriores de cada video se borran al reprocesarlo (lo hace
+    el propio procesador con delete_crossings_for_job), así que los
+    conteos se reemplazan en vez de sumarse.
+    """
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    if not traffic_db.list_lanes(project_id=project_id):
+        raise HTTPException(409, "Este proyecto no tiene carriles definidos")
+
+    # Se reprocesan TODOS los terminados, no solo los obsoletos: si el
+    # usuario pide volver a contar, lo que quiere es que el aforo completo
+    # salga de una sola calibración.
+    conn_jobs = [
+        j for j in traffic_db.list_video_jobs(project_id=project_id)
+        if j["status"] == "done"
+    ]
+    if not conn_jobs:
+        raise HTTPException(409, "Este proyecto no tiene videos procesados que volver a contar")
+
+    processor = get_processor()
+    for job in conn_jobs:
+        traffic_db.update_video_job(job["id"], status="queued", processed_frames=0)
+        if processor:
+            processor.enqueue(job["id"])
+    return {"requeued": len(conn_jobs)}
+
+
 @router.post("/{project_id}/copy-calibration")
 def copy_calibration(project_id: int, data: CopyCalibration):
     """

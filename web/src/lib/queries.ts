@@ -111,6 +111,25 @@ export function useDeleteLane(projectId: number) {
   });
 }
 
+export function useCalibrationStatus(projectId: number | null) {
+  return useQuery({
+    queryKey: ['calibration-status', projectId ?? 0],
+    queryFn: () => api.getCalibrationStatus(projectId as number),
+    enabled: projectId !== null,
+    // Se refresca solo: el aviso tiene que aparecer en cuanto el usuario
+    // mueve una línea, no cuando recarga la página.
+    refetchInterval: 4000,
+  });
+}
+
+export function useRecount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: number) => api.recount(projectId),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
 export function useCopyCalibration(projectId: number) {
   const qc = useQueryClient();
   return useMutation({

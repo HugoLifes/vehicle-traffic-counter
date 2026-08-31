@@ -75,6 +75,14 @@ export const copyCalibration = (id: number, fromProjectId: number) =>
     json({ from_project_id: fromProjectId }),
   );
 
+export const getCalibrationStatus = (id: number) =>
+  request<{ calibrated_at: string | null; stale: number; awaiting: number }>(
+    `/api/projects/${id}/calibration-status`,
+  );
+
+export const recount = (id: number) =>
+  request<{ requeued: number }>(`/api/projects/${id}/recount`, { method: 'POST' });
+
 export const startCounting = (id: number) =>
   request<{ started: number }>(`/api/projects/${id}/start-counting`, { method: 'POST' });
 
