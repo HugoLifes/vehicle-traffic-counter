@@ -44,13 +44,20 @@ import {
   IconJumpForward,
 } from './Icons';
 import { frameUrl } from '../lib/api';
-import type { FuenteVideo, Lane, Point, VideoSegment } from '../lib/types';
+import type { FuenteVideo, Lane, Point, VideoSegment, Zone } from '../lib/types';
 
 /* Colores de carril: se dibujan sobre el video, no sobre la interfaz, así
    que no salen de los tokens de tema. Son tonos saturados que destacan
    contra el asfalto con cualquier iluminación. */
 export const LANE_COLORS = ['#ff5470', '#2dd4ff', '#ffd23f', '#7cff6b', '#c77dff', '#ff9f45'];
 export const laneColor = (i: number) => LANE_COLORS[i % LANE_COLORS.length];
+
+/* Las zonas usan una paleta aparte de la de los carriles a propósito: son
+   cosas distintas (un área contra una línea) y compartir colores haría
+   creer que la zona 1 y el carril 1 tienen algo que ver. */
+export const ZONE_COLORS = ['#ffbe46', '#82eb82', '#eb8ceb', '#5ac8ff'];
+export const zoneColor = (i: number, kind?: string) =>
+  kind === 'excluir' ? '#c85050' : ZONE_COLORS[i % ZONE_COLORS.length];
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 const JUMP_SECONDS = 5;
@@ -78,10 +85,14 @@ interface Props {
   jobId: number | null;
   onJobChange: (id: number) => void;
   lanes: Lane[];
-  /** Puntos de la línea que se está dibujando ahora mismo. */
+  /** Áreas de calzada ya guardadas. */
+  zones?: Zone[];
+  /** Puntos de la línea o del polígono que se está dibujando ahora mismo. */
   drawing: Point[];
   /** Si está activo, un clic en el lienzo agrega un punto. */
   drawMode: boolean;
+  /** 'linea' marca 2 puntos; 'zona' acumula vértices hasta cerrar. */
+  drawKind?: 'linea' | 'zona';
   onCanvasPoint: (p: Point) => void;
   /** Rastro de movimiento acumulado, si está disponible y encendido. */
   heatmap: HTMLImageElement | null;
@@ -98,8 +109,10 @@ export function VideoWorkspace({
   jobId,
   onJobChange,
   lanes,
+  zones = [],
   drawing,
   drawMode,
+  drawKind = 'linea',
   onCanvasPoint,
   heatmap,
   showHeatmap,
@@ -261,6 +274,53 @@ export function VideoWorkspace({
       ctx.globalAlpha = 1;
     }
 
+    /* Las zonas van DEBAJO de las líneas: delimitan el área y las líneas
+       son lo que hay que poder ver con precisión para colocarlas bien. */
+    const poligono = (pts: Point[], color: string, label: string | null, cerrado: boolean) => {
+      if (pts.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
+      if (cerrado) ctx.closePath();
+
+      if (cerrado) {
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.2;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      for (const p of pts) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (label) {
+        const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+        const top = Math.min(...pts.map((p) => p[1]));
+        ctx.font = 'bold 13px sans-serif';
+        const w = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(cx - w / 2 - 5, top - 20, w + 10, 18);
+        ctx.fillStyle = color;
+        ctx.fillText(label, cx - w / 2, top - 7);
+      }
+    };
+
+    zones.forEach((z, i) => poligono(z.points, zoneColor(i, z.kind), z.name, true));
+
     const flecha = (from: Point, dir: [number, number], color: string) => {
       const to: Point = [from[0] + dir[0] * 26, from[1] + dir[1] * 26];
       ctx.strokeStyle = color;
@@ -322,7 +382,11 @@ export function VideoWorkspace({
 
     lanes.forEach((lane, i) => linea(lane.points[0], lane.points[1], laneColor(i), lane.name));
 
-    if (drawing.length === 1) {
+    if (drawKind === 'zona') {
+      // Abierto mientras se dibuja: el área no está definida hasta cerrarla,
+      // y mostrarla rellena antes daría una idea equivocada de su forma.
+      poligono(drawing, '#ffffff', null, false);
+    } else if (drawing.length === 1) {
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.beginPath();
       ctx.arc(drawing[0][0], drawing[0][1], 6.5, 0, Math.PI * 2);
@@ -334,7 +398,7 @@ export function VideoWorkspace({
     } else if (drawing.length === 2) {
       linea(drawing[0], drawing[1], '#ffffff', null);
     }
-  }, [segment, lanes, drawing, heatmap, showHeatmap, fuente]);
+  }, [segment, lanes, zones, drawing, drawKind, heatmap, showHeatmap, fuente]);
 
   /* --- Transporte ------------------------------------------------------ */
 

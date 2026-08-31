@@ -119,6 +119,36 @@ def init_schema():
             finished_at TEXT
         )
     """)
+    # Zonas: polígonos dibujados sobre el video que delimitan la calzada.
+    #
+    # Existen porque en perspectiva las dos calzadas se ven muy distintas —
+    # la cercana ocupa media pantalla y la del fondo cabe en una franja de
+    # 15 px — y el detector no tiene forma de saber cuál es cuál. Con el
+    # polígono dibujado a mano, cada cruce se puede atribuir a su calzada,
+    # y todo lo que cae fuera (banquetas, estacionamientos, el patio del
+    # frente) deja de contarse.
+    #
+    # kind: 'calzada' cuenta y atribuye; 'excluir' descarta lo que caiga
+    # dentro, para zonas donde hay movimiento que no es tránsito.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS zones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id),
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'calzada',
+            points_json TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_zones_project ON zones(project_id)"
+    )
+    # En qué calzada ocurrió el cruce. Nulo cuando el proyecto no tiene
+    # zonas dibujadas, que es el caso de todos los aforos anteriores.
+    _ensure_column(conn, "crossings", "zone_id", "INTEGER")
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS geocode_cache (
             query TEXT PRIMARY KEY,
@@ -315,12 +345,72 @@ def delete_lane(lane_id: int):
     conn.commit()
 
 
+# --- Zonas / calzadas dibujadas ----------------------------------------
+
+def create_zone(project_id: int, name: str, points: List[List[float]],
+                kind: str = 'calzada') -> int:
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO zones (project_id, name, kind, points_json)
+           VALUES (?, ?, ?, ?)""",
+        (project_id, name, kind, json.dumps(points))
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_zones(project_id: int, active_only: bool = True) -> List[Dict]:
+    conn = get_connection()
+    query = "SELECT * FROM zones WHERE project_id = ?"
+    if active_only:
+        query += " AND active = 1"
+    query += " ORDER BY id"
+    rows = conn.execute(query, (project_id,)).fetchall()
+    zones = []
+    for row in rows:
+        z = dict(row)
+        z['points'] = json.loads(z.pop('points_json'))
+        zones.append(z)
+    return zones
+
+
+def update_zone(zone_id: int, name: Optional[str] = None,
+                kind: Optional[str] = None,
+                points: Optional[List[List[float]]] = None):
+    conn = get_connection()
+    fields, params = [], []
+    if name is not None:
+        fields.append("name = ?")
+        params.append(name)
+    if kind is not None:
+        fields.append("kind = ?")
+        params.append(kind)
+    if points is not None:
+        fields.append("points_json = ?")
+        params.append(json.dumps(points))
+    if not fields:
+        return
+    fields.append("updated_at = datetime('now')")
+    params.append(zone_id)
+    conn.execute(f"UPDATE zones SET {', '.join(fields)} WHERE id = ?", params)
+    conn.commit()
+
+
+def delete_zone(zone_id: int):
+    """Borrado lógico, igual que los carriles: los cruces ya atribuidos a
+    esta zona conservan su zone_id y el histórico sigue teniendo sentido."""
+    conn = get_connection()
+    conn.execute("UPDATE zones SET active = 0 WHERE id = ?", (zone_id,))
+    conn.commit()
+
+
 # --- Cruces / conteos --------------------------------------------------
 
 def record_crossing(lane_id: int, track_id: int, direction: str,
                      vehicle_type: str, confidence: float,
                      timestamp: Optional[str] = None,
-                     job_id: Optional[int] = None):
+                     job_id: Optional[int] = None,
+                     zone_id: Optional[int] = None):
     """
     timestamp: hora REAL del cruce en formato ISO ('YYYY-MM-DD HH:MM:SS').
     En la cámara en vivo se omite (usa la hora del reloj del sistema).
@@ -331,21 +421,26 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
 
     job_id: video del que salió el cruce, para poder borrar los cruces
     anteriores si ese mismo video se vuelve a procesar.
+
+    zone_id: calzada dibujada dentro de la que ocurrió el cruce. Es lo que
+    permite separar los sentidos cuando en perspectiva las dos calzadas
+    quedan una encima de la otra y la línea de conteo cruza ambas.
     """
     conn = get_connection()
     if timestamp:
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
-                                      confidence, timestamp, job_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (lane_id, track_id, direction, vehicle_type, confidence, timestamp, job_id)
+                                      confidence, timestamp, job_id, zone_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (lane_id, track_id, direction, vehicle_type, confidence, timestamp,
+             job_id, zone_id)
         )
     else:
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
-                                      confidence, job_id)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (lane_id, track_id, direction, vehicle_type, confidence, job_id)
+                                      confidence, job_id, zone_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (lane_id, track_id, direction, vehicle_type, confidence, job_id, zone_id)
         )
     conn.commit()
 

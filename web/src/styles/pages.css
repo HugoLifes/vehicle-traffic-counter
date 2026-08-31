@@ -297,9 +297,18 @@
   gap: var(--space-5);
   align-items: start;
 }
+/* Carriles y zonas se apilan en la columna derecha, no debajo del video:
+   las dos se dibujan MIRANDO la mesa de trabajo, así que mandarlas abajo
+   obligaría a hacer scroll entre el lienzo y el panel a cada punto. */
+@media (min-width: 941px) {
+  .calib-main { grid-row: 1 / span 2; }
+  .lane-panel { grid-column: 2; }
+}
 @media (max-width: 940px) {
   .calib-layout { grid-template-columns: minmax(0, 1fr); }
 }
+
+.zone-panel .sc-info { margin-bottom: var(--space-3); }
 
 .calib-main { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .calib-main > .section-title { margin: 0; }

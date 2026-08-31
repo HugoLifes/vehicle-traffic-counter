@@ -80,6 +80,7 @@ from src.api.routes_counts import router as counts_router  # noqa: E402
 from src.api.routes_videos import router as videos_router  # noqa: E402
 from src.api.routes_camera import router as camera_router  # noqa: E402
 from src.api.routes_lanes import router as lanes_router  # noqa: E402
+from src.api.routes_zones import router as zones_router  # noqa: E402
 from src.api.routes_projects import router as projects_router  # noqa: E402
 from src.api.routes_geo import router as geo_router  # noqa: E402
 from src.api.routes_video_frames import router as frames_router  # noqa: E402
@@ -87,6 +88,7 @@ app.include_router(counts_router)
 app.include_router(videos_router)
 app.include_router(camera_router)
 app.include_router(lanes_router)
+app.include_router(zones_router)
 app.include_router(projects_router)
 app.include_router(geo_router)
 app.include_router(frames_router)

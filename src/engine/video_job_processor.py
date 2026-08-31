@@ -27,6 +27,8 @@ from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
 from src.engine.lanes import build_lane_counters
+from src.engine.zones import (band_from_zones, draw_zones, filter_detections,
+                              load_zones, zone_for_bbox)
 from src.visualizer import Visualizer
 
 
@@ -216,18 +218,27 @@ class VideoJobProcessor:
                     "de conteo antes de procesar este video."
                 )
 
-            # La detección se limita a la franja donde están los carriles.
-            # En este footage la vía ocupa una fracción chica del encuadre y
-            # el resto es terreno sin tránsito; inferir solo sobre la franja
-            # hace que el vehículo llegue al modelo mucho más grande. Medido:
-            # 75 -> 112 cruces en 2 min del mismo video.
+            # Zonas dibujadas a mano sobre la calzada. Cuando existen mandan
+            # ellas: describen el área real de la vía, así que acotan mejor
+            # que un rectángulo deducido de las líneas y además permiten
+            # atribuir cada cruce a su calzada.
+            zonas = load_zones(job.get('project_id'))
+
+            # La detección se limita a la franja donde está la vía. En este
+            # footage la vía ocupa una fracción chica del encuadre y el resto
+            # es terreno sin tránsito; inferir solo sobre la franja hace que
+            # el vehículo llegue al modelo mucho más grande. Medido: 75 ->
+            # 112 cruces en 2 min del mismo video.
             band_cfg = self.config.get('detector', {}).get('band', {})
             if band_cfg.get('enabled', True):
-                detector.set_detection_band(VehicleDetector.band_from_lanes(
-                    [m['points'] for m in lane_meta.values()],
-                    frame_height,
-                    margin_ratio=band_cfg.get('margin_ratio', 0.15)
-                ))
+                banda = band_from_zones(zonas, frame_height) if zonas else None
+                if banda is None:
+                    banda = VehicleDetector.band_from_lanes(
+                        [m['points'] for m in lane_meta.values()],
+                        frame_height,
+                        margin_ratio=band_cfg.get('margin_ratio', 0.15)
+                    )
+                detector.set_detection_band(banda)
             else:
                 detector.set_detection_band(None)
 
@@ -256,6 +267,11 @@ class VideoJobProcessor:
 
             frame_count = 0
             last_progress_update = time.time()
+            # Cuánto descarta el filtro de zonas. Una zona mal dibujada
+            # recorta el conteo SIN ERROR: el video termina "listo" con la
+            # mitad de los vehículos. Se mide para poder avisarlo.
+            det_crudas = 0
+            det_en_zona = 0
 
             while not self._stop_event.is_set():
                 ret, frame = cap.read()
@@ -263,6 +279,12 @@ class VideoJobProcessor:
                     break
 
                 detections, _ = detector.detect(frame)
+                # Se filtra ANTES del tracker, no después: un vehículo
+                # estacionado fuera de la calzada que llega a formar track
+                # ya ensucia el conteo aunque después se descarte.
+                det_crudas += len(detections)
+                detections = filter_detections(zonas, detections)
+                det_en_zona += len(detections)
                 tracks = tracker.update(detections)
 
                 # Hora real de este frame dentro del video (no la hora en
@@ -275,15 +297,23 @@ class VideoJobProcessor:
                         video_start_time + timedelta(seconds=frame_count / fps)
                     ).strftime("%Y-%m-%d %H:%M:%S")
 
-                annotated = visualizer.draw_tracks(frame, tracks)
+                # Las zonas van debajo de las cajas para que no las tapen.
+                annotated = visualizer.draw_tracks(draw_zones(frame, zonas), tracks)
 
                 resumen = []
                 for idx, (lane_id, counter) in enumerate(lane_counters.items()):
                     crossings = counter.update(tracks)
                     for crossing in crossings['in'] + crossings['out']:
-                        confidence = next(
-                            (t['confidence'] for t in tracks if t['id'] == crossing['track_id']),
+                        track = next(
+                            (t for t in tracks if t['id'] == crossing['track_id']),
                             None
+                        )
+                        confidence = track['confidence'] if track else None
+                        # En qué calzada ocurrió. Es lo que separa los dos
+                        # sentidos cuando la misma línea cruza las dos.
+                        zone_id = (
+                            zone_for_bbox(zonas, track['bbox'])
+                            if track and zonas else None
                         )
                         traffic_db.record_crossing(
                             lane_id=lane_id,
@@ -292,7 +322,8 @@ class VideoJobProcessor:
                             vehicle_type=crossing['vehicle_type'],
                             confidence=confidence,
                             timestamp=crossing_timestamp,
-                            job_id=job_id
+                            job_id=job_id,
+                            zone_id=zone_id
                         )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
@@ -342,6 +373,19 @@ class VideoJobProcessor:
                 )
                 traffic_db.mark_video_job_finished(job_id)
                 logging.info(f"Video procesado: {job['original_name']} ({frame_count} frames)")
+
+                # Una zona mal dibujada no da error: el video queda "listo"
+                # con la mitad de los vehículos descartados en silencio. Si
+                # el filtro se comió la mayor parte, hay que decirlo.
+                if zonas and det_crudas:
+                    descartado = 1 - det_en_zona / det_crudas
+                    if descartado > 0.4:
+                        logging.warning(
+                            f"Las zonas descartaron el {descartado:.0%} de las detecciones de "
+                            f"{job['original_name']} ({det_crudas - det_en_zona} de {det_crudas}). "
+                            "Si el conteo sale bajo, revisa que los polígonos cubran la calzada "
+                            "completa."
+                        )
 
             # Ya no hay nada corriendo: limpiar el cuadro en vivo para que el
             # visor no siga mostrando el último cuadro de un video terminado.

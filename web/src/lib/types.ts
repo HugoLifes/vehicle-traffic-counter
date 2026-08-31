@@ -52,6 +52,24 @@ export interface Lane {
 
 export type Point = [number, number];
 
+/**
+ * Área dibujada sobre el video que delimita una calzada.
+ *
+ * Complementa a Lane, no la reemplaza: la línea dice DÓNDE se cuenta y la
+ * zona dice CUÁL calzada es. En perspectiva las dos calzadas quedan una
+ * encima de la otra, así que una sola línea cruza ambas y sin la zona no
+ * hay forma de separar los sentidos.
+ */
+export interface Zone {
+  id: number;
+  project_id: number;
+  name: string;
+  /** 'calzada' cuenta y atribuye; 'excluir' descarta lo que caiga dentro. */
+  kind: 'calzada' | 'excluir';
+  /** Tres o más vértices, en píxeles del frame. */
+  points: Point[];
+}
+
 export interface VideoJob {
   id: number;
   original_name: string;

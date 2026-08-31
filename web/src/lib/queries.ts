@@ -22,6 +22,7 @@ const LIVE_MS = 3000;
 export const keys = {
   projects: ['projects'] as const,
   lanes: (projectId: number) => ['lanes', projectId] as const,
+  zones: (projectId: number) => ['zones', projectId] as const,
   videos: (projectId?: number) => ['videos', projectId ?? 'all'] as const,
   metrics: (projectId: number, minutes: number) => ['metrics', projectId, minutes] as const,
   engine: ['engine'] as const,
@@ -107,6 +108,40 @@ export function useDeleteLane(projectId: number) {
       qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
       qc.invalidateQueries({ queryKey: keys.projects });
     },
+  });
+}
+
+export function useZones(projectId: number | null) {
+  return useQuery({
+    queryKey: keys.zones(projectId ?? 0),
+    queryFn: () => api.listZones(projectId as number),
+    enabled: projectId !== null,
+  });
+}
+
+export function useCreateZone(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string; points: Point[]; kind?: string }) =>
+      api.createZone({ project_id: projectId, ...data }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+  });
+}
+
+export function useRenameZone(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ zoneId, name }: { zoneId: number; name: string }) =>
+      api.renameZone(zoneId, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+  });
+}
+
+export function useDeleteZone(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (zoneId: number) => api.deleteZone(zoneId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
   });
 }
 

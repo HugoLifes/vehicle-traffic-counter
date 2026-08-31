@@ -27,7 +27,7 @@ import {
   TextField,
 } from '../components/ui';
 import { IconClose } from '../components/Icons';
-import { VideoWorkspace, laneColor } from '../components/VideoWorkspace';
+import { VideoWorkspace, laneColor, zoneColor } from '../components/VideoWorkspace';
 import {
   useCreateLane,
   useDeleteLane,
@@ -35,11 +35,15 @@ import {
   useRenameLane,
   useStartCounting,
   useVideos,
+  useCreateZone,
+  useDeleteZone,
+  useRenameZone,
+  useZones,
 } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
 import { errorMessage, fetchImage, heatmapUrl, listVideoSegments } from '../lib/api';
 import { plural } from '../lib/format';
-import type { FuenteVideo, Lane, Point } from '../lib/types';
+import type { FuenteVideo, Lane, Point, Zone } from '../lib/types';
 
 /**
  * Revisa que la línea recién dibujada sirva para contar.
@@ -79,6 +83,10 @@ export default function Calibrar() {
   const { projectId, projects, setProjectId } = useProjectParam();
 
   const { data: lanes } = useLanes(projectId);
+  const { data: zones } = useZones(projectId);
+  const createZone = useCreateZone(projectId ?? 0);
+  const renameZone = useRenameZone(projectId ?? 0);
+  const removeZone = useDeleteZone(projectId ?? 0);
   const { data: jobs } = useVideos(projectId ?? undefined);
   const createLane = useCreateLane(projectId ?? 0);
   const renameLane = useRenameLane(projectId ?? 0);
@@ -106,7 +114,12 @@ export default function Calibrar() {
   const [showHeatmap, setShowHeatmap] = useState(false);
 
   const [drawMode, setDrawMode] = useState(false);
+  /* 'linea' dibuja una línea de conteo (2 puntos); 'zona' dibuja el área de
+     una calzada (3 o más). Comparten el mismo lienzo y el mismo arreglo de
+     puntos porque para el usuario es el mismo gesto: marcar sobre el video. */
+  const [drawKind, setDrawKind] = useState<'linea' | 'zona'>('linea');
   const [points, setPoints] = useState<Point[]>([]);
+  const [zoneToDelete, setZoneToDelete] = useState<Zone | null>(null);
   const [newName, setNewName] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [hint, setHint] = useState<string | null>(null);
@@ -149,6 +162,17 @@ export default function Calibrar() {
 
   const onCanvasPoint = useCallback(
     (p: Point) => {
+      // Una zona acumula vértices sin tope: el usuario decide cuándo la
+      // cierra. Solo se le exige que tenga al menos 3 para encerrar un área.
+      if (drawKind === 'zona') {
+        setPoints((prev) => [...prev, p]);
+        setHint(
+          points.length + 1 >= 3
+            ? 'Sigue marcando el contorno, o cierra la zona cuando ya rodee la calzada.'
+            : 'Marca las esquinas de la calzada. Con 3 puntos ya se puede cerrar.',
+        );
+        return;
+      }
       setPoints((prev) => {
         if (prev.length >= 2) return prev;
         const next = [...prev, p];
@@ -167,7 +191,7 @@ export default function Calibrar() {
         return next;
       });
     },
-    [segment, heatmap, lanes],
+    [segment, heatmap, lanes, drawKind, points.length],
   );
 
   async function saveLane() {
@@ -179,9 +203,19 @@ export default function Calibrar() {
     setHint('Carril guardado. Puedes agregar otro o editar los que ya existen.');
   }
 
+  async function saveZone() {
+    if (points.length < 3 || !newName.trim() || projectId === null) return;
+    await createZone.mutateAsync({ name: newName.trim(), points, kind: 'calzada' });
+    setPoints([]);
+    setNewName('');
+    setDrawKind('linea');
+    setHint('Zona guardada. Los cruces que ocurran dentro se le atribuyen a ella.');
+  }
+
   function cancelarDibujo() {
     setPoints([]);
     setDrawMode(false);
+    setDrawKind('linea');
     setWarnings([]);
     setHint(null);
   }
@@ -229,8 +263,10 @@ export default function Calibrar() {
               jobId={jobId}
               onJobChange={setJobId}
               lanes={lanes ?? []}
+              zones={zones ?? []}
               drawing={points}
               drawMode={drawMode}
+              drawKind={drawKind}
               onCanvasPoint={onCanvasPoint}
               heatmap={heatmap}
               showHeatmap={showHeatmap}
@@ -307,7 +343,49 @@ export default function Calibrar() {
               ))}
             </div>
 
-            {points.length === 2 ? (
+            {drawKind === 'zona' ? (
+              <>
+                <p className="sc-info">
+                  {points.length < 3
+                    ? `Marca las esquinas de la calzada sobre el video (${points.length}/3 mínimo).`
+                    : `${points.length} puntos marcados. Ponle nombre y cierra la zona.`}
+                </p>
+                {points.length >= 3 && (
+                  <div className="new-lane-form rise">
+                    <TextField
+                      label="Nombre de la zona"
+                      ref={nameRef}
+                      value={newName}
+                      placeholder="Calzada norte"
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void saveZone();
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="primary"
+                      onClick={() => void saveZone()}
+                      disabled={createZone.isPending || !newName.trim()}
+                    >
+                      Cerrar zona
+                    </Button>
+                  </div>
+                )}
+                <Button block onClick={cancelarDibujo} style={{ marginTop: 'var(--space-2)' }}>
+                  Cancelar
+                </Button>
+                {createZone.isError && (
+                  <div style={{ marginTop: 'var(--space-3)' }}>
+                    <Notice title="No se pudo guardar la zona">
+                      {errorMessage(createZone.error)}
+                    </Notice>
+                  </div>
+                )}
+              </>
+            ) : points.length === 2 ? (
               <>
                 <div className="new-lane-form rise">
                   <TextField
@@ -420,8 +498,84 @@ export default function Calibrar() {
               </div>
             )}
           </Card>
+
+          {/* Las zonas van en su propia tarjeta y no mezcladas con los
+              carriles: son cosas distintas y confundirlas es justo el
+              error que llevó a dibujar líneas paralelas a la vía. */}
+          <Card className="lane-panel zone-panel">
+            <h2>Zonas de calzada</h2>
+            <p className="sc-info">
+              La línea dice <strong>dónde</strong> se cuenta; la zona dice{' '}
+              <strong>cuál calzada</strong> es. En perspectiva las dos calzadas quedan una encima de
+              la otra y una sola línea cruza ambas — sin zonas no hay forma de separar los sentidos.
+            </p>
+
+            <div className="lane-list">
+              {(zones?.length ?? 0) === 0 && (
+                <EmptyState
+                  title="Sin zonas todavía"
+                  body="Rodea cada calzada con un polígono. Lo que quede fuera deja de contarse."
+                />
+              )}
+              {zones?.map((zone, i) => (
+                <div className="lane-item" key={zone.id}>
+                  <span className="lane-swatch" style={{ background: zoneColor(i, zone.kind) }} />
+                  <input
+                    className="lane-name-input"
+                    defaultValue={zone.name}
+                    aria-label={`Nombre de la zona ${zone.name}`}
+                    onBlur={(e) => {
+                      const name = e.target.value.trim();
+                      if (name && name !== zone.name) renameZone.mutate({ zoneId: zone.id, name });
+                    }}
+                  />
+                  <IconButton
+                    label={`Eliminar la zona ${zone.name}`}
+                    tone="danger"
+                    onClick={() => setZoneToDelete(zone)}
+                  >
+                    <IconClose />
+                  </IconButton>
+                </div>
+              ))}
+            </div>
+
+            {drawKind !== 'zona' && points.length === 0 && (
+              <Button
+                block
+                disabled={!segment || fuente === 'procesado'}
+                onClick={() => {
+                  setDrawKind('zona');
+                  setDrawMode(true);
+                  setPoints([]);
+                  setWarnings([]);
+                  setNewName(`Calzada ${(zones?.length ?? 0) + 1}`);
+                  setHint('Marca las esquinas de la calzada. Con 3 puntos ya se puede cerrar.');
+                }}
+              >
+                Nueva zona
+              </Button>
+            )}
+          </Card>
         </div>
       )}
+
+      <ConfirmDialog
+        open={zoneToDelete !== null}
+        title="¿Eliminar esta zona?"
+        body={
+          zoneToDelete
+            ? `Se borra el área "${zoneToDelete.name}". Los cruces que ya se le atribuyeron se conservan en el histórico.`
+            : ''
+        }
+        confirmLabel="Eliminar zona"
+        destructive
+        onConfirm={() => {
+          if (zoneToDelete) removeZone.mutate(zoneToDelete.id);
+          setZoneToDelete(null);
+        }}
+        onCancel={() => setZoneToDelete(null)}
+      />
 
       <ConfirmDialog
         open={toDelete !== null}

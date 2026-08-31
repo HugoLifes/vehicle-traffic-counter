@@ -18,6 +18,7 @@ import type {
   ProjectMetrics,
   VideoJob,
   VideoSegment,
+  Zone,
 } from './types';
 import type { FuenteVideo } from './types';
 
@@ -88,6 +89,28 @@ export const renameLane = (laneId: number, name: string) =>
 
 export const deleteLane = (laneId: number) =>
   request<void>(`/api/lanes/${laneId}`, { method: 'DELETE' });
+
+/* --- Zonas de calzada -------------------------------------------------- */
+
+export const listZones = (projectId: number) =>
+  request<Zone[]>(`/api/zones?project_id=${projectId}`);
+
+export const createZone = (data: {
+  project_id: number;
+  name: string;
+  points: Point[];
+  kind?: string;
+}) => request<Zone>('/api/zones', json(data));
+
+export const renameZone = (zoneId: number, name: string) =>
+  request<Zone>(`/api/zones/${zoneId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+
+export const deleteZone = (zoneId: number) =>
+  request<void>(`/api/zones/${zoneId}`, { method: 'DELETE' });
 
 /* --- Videos ------------------------------------------------------------ */
 
