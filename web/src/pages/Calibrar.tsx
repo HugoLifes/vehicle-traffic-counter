@@ -35,6 +35,7 @@ import {
   useRenameLane,
   useStartCounting,
   useVideos,
+  useCopyCalibration,
   useCreateZone,
   useDeleteZone,
   useRenameZone,
@@ -87,6 +88,7 @@ export default function Calibrar() {
   const createZone = useCreateZone(projectId ?? 0);
   const renameZone = useRenameZone(projectId ?? 0);
   const removeZone = useDeleteZone(projectId ?? 0);
+  const copiarCalibracion = useCopyCalibration(projectId ?? 0);
   const { data: jobs } = useVideos(projectId ?? undefined);
   const createLane = useCreateLane(projectId ?? 0);
   const renameLane = useRenameLane(projectId ?? 0);
@@ -120,6 +122,7 @@ export default function Calibrar() {
   const [drawKind, setDrawKind] = useState<'linea' | 'zona'>('linea');
   const [points, setPoints] = useState<Point[]>([]);
   const [zoneToDelete, setZoneToDelete] = useState<Zone | null>(null);
+  const [copiarDe, setCopiarDe] = useState<number | ''>('');
   const [newName, setNewName] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [hint, setHint] = useState<string | null>(null);
@@ -221,6 +224,7 @@ export default function Calibrar() {
   }
 
   const awaiting = (jobs ?? []).filter((j) => j.status === 'awaiting_calibration');
+  const otrosProyectos = (projects ?? []).filter((p) => p.id !== projectId);
   const laneCount = lanes?.length ?? 0;
   const sinVideos = projectId !== null && !cargandoVideos && (segments?.length ?? 0) === 0;
 
@@ -320,6 +324,51 @@ export default function Calibrar() {
                   body="Un carril es la línea que los vehículos tienen que cruzar para ser contados."
                 />
               )}
+            </div>
+
+            {/* La cámara de un punto de medición no se mueve entre
+                grabaciones, así que la calibración se puede reutilizar. Y
+                conviene: dos líneas trazadas a ojo en días distintos no
+                caen en el mismo píxel, y los conteos dejan de ser
+                comparables entre sesiones. */}
+            {laneCount === 0 && (zones?.length ?? 0) === 0 && otrosProyectos.length > 0 && (
+              <div className="copy-calib">
+                <label className="field">
+                  <span className="field-label">Copiar calibración de otra intersección</span>
+                  <select
+                    value={copiarDe}
+                    onChange={(e) => setCopiarDe(e.target.value ? Number(e.target.value) : '')}
+                  >
+                    <option value="">Elige una intersección…</option>
+                    {otrosProyectos.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  block
+                  disabled={copiarDe === '' || copiarCalibracion.isPending}
+                  onClick={() => {
+                    if (copiarDe !== '') copiarCalibracion.mutate(copiarDe);
+                  }}
+                >
+                  {copiarCalibracion.isPending ? 'Copiando…' : 'Copiar líneas y zonas'}
+                </Button>
+                <p className="sc-info">
+                  Se copia solo la geometría. Los conteos de la otra intersección se quedan donde
+                  están.
+                </p>
+                {copiarCalibracion.isError && (
+                  <Notice title="No se pudo copiar">
+                    {errorMessage(copiarCalibracion.error)}
+                  </Notice>
+                )}
+              </div>
+            )}
+
+            <div className="lane-list">
               {lanes?.map((lane, i) => (
                 <div className="lane-item" key={lane.id}>
                   <span className="lane-swatch" style={{ background: laneColor(i) }} />

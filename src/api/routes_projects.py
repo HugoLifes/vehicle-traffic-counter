@@ -28,6 +28,10 @@ class ProjectCreate(BaseModel):
     interval_minutes: int = 15
 
 
+class CopyCalibration(BaseModel):
+    from_project_id: int
+
+
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -85,6 +89,55 @@ def delete_project(project_id: int):
         raise HTTPException(404, "Proyecto no encontrado")
     traffic_db.delete_project(project_id)
     return {"deleted": project_id}
+
+
+@router.post("/{project_id}/copy-calibration")
+def copy_calibration(project_id: int, data: CopyCalibration):
+    """
+    Copia los carriles y las zonas de otra intersección a esta.
+
+    La cámara de un punto de medición no se mueve entre grabaciones, así
+    que la calibración es la misma sesión tras sesión. Volver a dibujarla
+    a mano cada vez no solo es trabajo repetido: es una fuente de error,
+    porque dos líneas trazadas a ojo en días distintos NO quedan en el
+    mismo píxel y los conteos dejan de ser comparables entre sesiones.
+
+    Se copia la geometría, no el histórico: los conteos de la intersección
+    de origen se quedan donde están.
+    """
+    if project_id == data.from_project_id:
+        raise HTTPException(400, "El proyecto de origen y el de destino son el mismo")
+    for pid in (project_id, data.from_project_id):
+        if traffic_db.get_project(pid) is None:
+            raise HTTPException(404, f"Proyecto {pid} no encontrado")
+
+    destino = traffic_db.get_project(project_id)
+    origen_lanes = traffic_db.list_lanes(project_id=data.from_project_id)
+    origen_zones = traffic_db.list_zones(project_id=data.from_project_id)
+    if not origen_lanes and not origen_zones:
+        raise HTTPException(409, "La intersección de origen no tiene nada calibrado que copiar")
+
+    # Se rechaza si el destino ya tiene algo, en vez de duplicarlo en
+    # silencio: acabar con dos juegos de líneas superpuestas cuenta cada
+    # vehículo dos veces y no hay nada en pantalla que lo delate.
+    if traffic_db.list_lanes(project_id=project_id) or traffic_db.list_zones(project_id=project_id):
+        raise HTTPException(
+            409,
+            "Esta intersección ya tiene carriles o zonas. Bórralos antes de copiar, "
+            "para no terminar con dos juegos de líneas encimadas contando doble."
+        )
+
+    for lane in origen_lanes:
+        traffic_db.create_lane(
+            camera_source=destino["name"], project_id=project_id,
+            name=lane["name"], line_type=lane["line_type"], points=lane["points"],
+        )
+    for zone in origen_zones:
+        traffic_db.create_zone(
+            project_id=project_id, name=zone["name"],
+            points=zone["points"], kind=zone["kind"],
+        )
+    return {"lanes": len(origen_lanes), "zones": len(origen_zones)}
 
 
 @router.post("/{project_id}/start-counting")

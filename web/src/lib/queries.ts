@@ -111,6 +111,18 @@ export function useDeleteLane(projectId: number) {
   });
 }
 
+export function useCopyCalibration(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fromProjectId: number) => api.copyCalibration(projectId, fromProjectId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
+      qc.invalidateQueries({ queryKey: keys.zones(projectId) });
+      qc.invalidateQueries({ queryKey: keys.projects });
+    },
+  });
+}
+
 export function useZones(projectId: number | null) {
   return useQuery({
     queryKey: keys.zones(projectId ?? 0),

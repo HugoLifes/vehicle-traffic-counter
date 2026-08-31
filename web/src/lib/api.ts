@@ -69,6 +69,12 @@ export const listProjects = () => request<Project[]>('/api/projects');
 export const getProject = (id: number) => request<Project>(`/api/projects/${id}`);
 export const createProject = (data: ProjectCreate) =>
   request<Project>('/api/projects', json(data));
+export const copyCalibration = (id: number, fromProjectId: number) =>
+  request<{ lanes: number; zones: number }>(
+    `/api/projects/${id}/copy-calibration`,
+    json({ from_project_id: fromProjectId }),
+  );
+
 export const startCounting = (id: number) =>
   request<{ started: number }>(`/api/projects/${id}/start-counting`, { method: 'POST' });
 
