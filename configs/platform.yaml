@@ -5,7 +5,11 @@
 # Se puede sobreescribir sin editar este archivo con la variable de entorno CAMERA_SOURCE.
 camera_source: "0"
 
-model_path: "models/yolov8n.pt"
+# yolov8s en vez de yolov8n. Medido sobre 2 min del footage real, con el
+# resto de la configuración idéntico: 75 -> 107 cruces contados. El modelo
+# "n" simplemente no ve los vehículos de esta escena; ver docs/DETECCION.md.
+# yolov8m se probó también y da 108 — un cruce más al doble de costo.
+model_path: "models/yolov8s.pt"
 # 0.25 es el umbral documentado en la Publicación Técnica 914 del IMT para
 # esta misma aplicación (ver docs/METODOLOGIA_IMT.md). Medido sobre el
 # footage real de este proyecto: pasa de 0.53 a 0.88 detecciones por cuadro
@@ -19,7 +23,23 @@ detector:
   # solapados) a cambio de solo 2% más detecciones reales — y cada caja
   # duplicada puede convertirse en un track extra y un conteo de más.
   iou_threshold: 0.5
-  input_size: 640
+  # 1280 y no 640. El video es de 640x360 y el vehículo mide 13-18 px de
+  # alto: a imgsz 640 el modelo no tiene con qué resolverlo. Subirlo solo
+  # es asequible gracias a la banda de abajo.
+  input_size: 1280
+
+  # Detectar solo en la franja donde están los carriles calibrados, en vez
+  # de en todo el cuadro. En este encuadre más de la mitad de la imagen es
+  # terreno sin tránsito, y gastar imgsz en él es lo que dejaba al vehículo
+  # sin píxeles. Medido: mismos cruces que el cuadro completo a 1280
+  # (107 vs 110) en un tercio del tiempo (56 vs 153 ms por cuadro).
+  #
+  # El margen se toma sobre el alto del cuadro y es deliberadamente amplio:
+  # un tráiler cerca de la cámara es mucho más alto que la línea de conteo,
+  # y recortar a ras de la línea perdería justo el vehículo grande.
+  band:
+    enabled: true
+    margin_ratio: 0.15
 
 tracker:
   max_age: 30

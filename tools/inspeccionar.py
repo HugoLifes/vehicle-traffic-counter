@@ -136,21 +136,29 @@ def main():
     ap.add_argument('--sin-detectar', action='store_true',
                     help='solo el video crudo, sin pasar YOLO (mucho mas rapido)')
     ap.add_argument('--conf', type=float, default=0.25)
+    ap.add_argument('--modelo', default='models/yolov8n.pt')
+    ap.add_argument('--imgsz', type=int, default=640)
+    ap.add_argument('--banda', action='store_true',
+                    help='detectar solo en la franja de los carriles, como en produccion')
     ap.add_argument('--salida', default=None)
     args = ap.parse_args()
 
+    from src.detector import VehicleDetector
     detector = None
     if not args.sin_detectar:
-        from src.detector import VehicleDetector
-        detector = VehicleDetector(model_path='models/yolov8n.pt',
+        detector = VehicleDetector(model_path=args.modelo,
                                    confidence_threshold=args.conf,
-                                   iou_threshold=0.5, input_size=640, device='auto')
+                                   iou_threshold=0.5, input_size=args.imgsz, device='auto')
 
     celdas = []
     for job_id in args.job:
         info = job_info(job_id)
         lanes = carriles(info['project_id'])
         cap = cv2.VideoCapture(info['stored_path'])
+        if detector is not None:
+            detector.set_detection_band(
+                VehicleDetector.band_from_lanes([l['points'] for l in lanes], 360)
+                if args.banda else None)
 
         for k in range(args.n):
             t = args.desde + k * args.cada

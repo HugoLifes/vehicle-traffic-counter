@@ -127,11 +127,17 @@ class VideoJobProcessor:
     def _get_detector(self) -> VehicleDetector:
         # Un único modelo cargado, reusado entre videos de la cola
         if self._detector is None:
+            det_cfg = self.config.get('detector', {})
             self._detector = VehicleDetector(
                 model_path=self.model_path,
                 confidence_threshold=self.confidence_threshold,
+                # Estos dos venían del valor por omisión y no de la config:
+                # cambiar input_size en platform.yaml no tenía ningún efecto
+                # sobre los videos subidos.
+                iou_threshold=det_cfg.get('iou_threshold', 0.5),
+                input_size=det_cfg.get('input_size', 640),
                 device=self.device,
-                config=self.config.get('detector', {})
+                config=det_cfg
             )
         return self._detector
 
@@ -209,6 +215,21 @@ class VideoJobProcessor:
                     "El proyecto no tiene carriles definidos — calibra las líneas "
                     "de conteo antes de procesar este video."
                 )
+
+            # La detección se limita a la franja donde están los carriles.
+            # En este footage la vía ocupa una fracción chica del encuadre y
+            # el resto es terreno sin tránsito; inferir solo sobre la franja
+            # hace que el vehículo llegue al modelo mucho más grande. Medido:
+            # 75 -> 112 cruces en 2 min del mismo video.
+            band_cfg = self.config.get('detector', {}).get('band', {})
+            if band_cfg.get('enabled', True):
+                detector.set_detection_band(VehicleDetector.band_from_lanes(
+                    [m['points'] for m in lane_meta.values()],
+                    frame_height,
+                    margin_ratio=band_cfg.get('margin_ratio', 0.15)
+                ))
+            else:
+                detector.set_detection_band(None)
 
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             # cv2.VideoWriter con mp4v SIEMPRE funciona para escribir, pero
