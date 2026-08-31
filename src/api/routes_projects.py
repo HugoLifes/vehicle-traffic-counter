@@ -8,11 +8,14 @@ el proyecto como entidad real la empresa acumula el histórico de aforos
 de cada intersección a lo largo del tiempo.
 """
 
+import logging
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from src.api.routes_video_frames import cerrar_captura
 from src.engine.video_job_processor import get_processor
 from src.storage import traffic_db
 
@@ -87,8 +90,26 @@ def update_project(project_id: int, project: ProjectUpdate):
 def delete_project(project_id: int):
     if traffic_db.get_project(project_id) is None:
         raise HTTPException(404, "Proyecto no encontrado")
-    traffic_db.delete_project(project_id)
-    return {"deleted": project_id}
+
+    # Los videos abiertos por el visor de cuadros hay que cerrarlos antes
+    # de borrar el archivo: en Windows no se puede eliminar un archivo que
+    # otro proceso tiene abierto, y el borrado fallaría a medias.
+    for job in traffic_db.list_video_jobs(project_id=project_id):
+        cerrar_captura(job["id"])
+
+    borrados = traffic_db.delete_project(project_id)
+
+    eliminados = 0
+    for ruta in borrados.pop("archivos", []):
+        try:
+            Path(ruta).unlink(missing_ok=True)
+            eliminados += 1
+        except OSError as e:
+            # Que un archivo quede atrás no debe abortar el borrado: el
+            # proyecto ya no existe en la base y eso es lo que importa.
+            logging.warning(f"No se pudo borrar {ruta}: {e}")
+    borrados["archivos_eliminados"] = eliminados
+    return {"deleted": project_id, **borrados}
 
 
 @router.get("/{project_id}/calibration-status")

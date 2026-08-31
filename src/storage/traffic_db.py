@@ -265,10 +265,51 @@ def update_project(project_id: int, **fields):
     conn.commit()
 
 
-def delete_project(project_id: int):
+def delete_project(project_id: int) -> Dict:
+    """
+    Borra el proyecto y TODO lo que colgaba de él.
+
+    Antes esto solo quitaba la fila de `projects` y dejaba atrás los
+    carriles, las zonas, los cruces y los video_jobs apuntando a un
+    proyecto inexistente. El aforo desaparecía de la lista pero sus
+    conteos seguían sumando en las vistas que agregan por carril, y los
+    archivos subidos se quedaban ocupando disco para siempre — justo lo
+    contrario de lo que se pide al borrar un proyecto para limpiar.
+
+    Devuelve qué se borró, y los archivos a eliminar del disco: la base no
+    es quien debe tocar el sistema de archivos.
+    """
     conn = get_connection()
+    jobs = conn.execute(
+        "SELECT id, stored_path, output_video_path FROM video_jobs WHERE project_id = ?",
+        (project_id,)
+    ).fetchall()
+    archivos = []
+    for j in jobs:
+        for ruta in (j["stored_path"], j["output_video_path"]):
+            if ruta:
+                archivos.append(ruta)
+
+    borrados = {
+        "crossings": conn.execute(
+            """DELETE FROM crossings WHERE lane_id IN
+               (SELECT id FROM lane_configs WHERE project_id = ?)""",
+            (project_id,)
+        ).rowcount,
+        "videos": conn.execute(
+            "DELETE FROM video_jobs WHERE project_id = ?", (project_id,)
+        ).rowcount,
+        "lanes": conn.execute(
+            "DELETE FROM lane_configs WHERE project_id = ?", (project_id,)
+        ).rowcount,
+        "zones": conn.execute(
+            "DELETE FROM zones WHERE project_id = ?", (project_id,)
+        ).rowcount,
+    }
     conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
     conn.commit()
+    borrados["archivos"] = archivos
+    return borrados
 
 
 # --- Carriles / líneas de conteo -------------------------------------------
