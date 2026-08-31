@@ -10,11 +10,13 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, EmptyState, Notice, Pill, SelectField } from '../components/ui';
+import { Button, Card, EmptyState, Notice, Pill, SelectField } from '../components/ui';
+import { IconDownload, IconPrint } from '../components/Icons';
 import { CompositionChart, IntervalChart } from '../components/charts';
+import { EscenaFlujo } from '../components/EscenaFlujo';
 import { useMetrics } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { errorMessage } from '../lib/api';
+import { errorMessage, exportIntervalsUrl, exportSummaryUrl } from '../lib/api';
 import {
   VEHICLE_LABEL_PLURAL,
   formatNumber,
@@ -220,6 +222,35 @@ export default function Reporte() {
             </option>
           ))}
         </SelectField>
+
+        {/* La exportación es lo que se entrega al cliente, así que vive
+            junto al control que define qué se exporta: cambiar el
+            intervalo cambia el archivo. */}
+        {projectId !== null && m && m.lanes.length > 0 && (
+          <div className="report-export">
+            <span className="re-label">Exportar</span>
+            <div className="re-actions">
+              {/* Descargas de verdad: el navegador pone su barra de
+                  progreso y respeta el nombre que manda el servidor. */}
+              <a className="btn btn-secondary" href={exportSummaryUrl(projectId, effective)} download>
+                <IconDownload size={15} />
+                Resumen (CSV)
+              </a>
+              <a className="btn btn-secondary" href={exportIntervalsUrl(projectId, effective)} download>
+                <IconDownload size={15} />
+                Por intervalo (CSV)
+              </a>
+              {/* El PDF lo hace el propio navegador con la hoja de
+                  impresión: así las gráficas salen vectoriales y no hay
+                  que mantener una segunda versión del informe en el
+                  servidor. */}
+              <Button onClick={() => window.print()}>
+                <IconPrint size={15} />
+                Imprimir o guardar en PDF
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
 
@@ -244,6 +275,17 @@ export default function Reporte() {
       {m && m.lanes.length > 0 && (
         <>
           <Metrics m={m} />
+
+          {m.totals.total > 0 && (
+            <Card className="chart-card">
+              <h3>El aforo en movimiento</h3>
+              <p className="chart-sub">
+                Cada tramo es un carril medido: lleva los vehículos que le tocan por su volumen,
+                repartidos entre los dos sentidos y con la mezcla de tipos que se contó.
+              </p>
+              <EscenaFlujo lanes={m.lanes} />
+            </Card>
+          )}
           {m.lanes.map((lane) => (
             <LaneReport key={lane.lane_id} lane={lane} intervalMinutes={m.interval_minutes} />
           ))}

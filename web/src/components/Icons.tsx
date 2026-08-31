@@ -199,3 +199,18 @@ export const IconArrowRight = (p: IconProps) => (
     <path d="M5 12h13M13 6l6 6-6 6" />
   </Svg>
 );
+
+export const IconDownload = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M12 3v12M7 11l5 5 5-5" />
+    <path d="M4 20h16" />
+  </Svg>
+);
+
+export const IconPrint = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M7 9V3h10v6" />
+    <path d="M7 19H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2" />
+    <path d="M7 15h10v6H7z" />
+  </Svg>
+);

@@ -156,6 +156,17 @@ export const getMetrics = (projectId: number, minutes: number) =>
 
 export const videoUrl = (jobId: number) => `/api/videos/${jobId}/video`;
 
+/* --- Exportación --------------------------------------------------------
+   Enlaces directos, no fetch: así el navegador maneja la descarga con su
+   propia barra de progreso y el nombre de archivo que manda el servidor,
+   en vez de tener que armar un blob y un <a download> a mano. */
+
+export const exportIntervalsUrl = (projectId: number, minutes: number) =>
+  `/api/export/intervalos.csv?project_id=${projectId}&minutes=${minutes}`;
+
+export const exportSummaryUrl = (projectId: number, minutes: number) =>
+  `/api/export/resumen.csv?project_id=${projectId}&minutes=${minutes}`;
+
 /* --- Motor en vivo ----------------------------------------------------- */
 
 export const getEngineState = () => request<EngineState>('/api/status');

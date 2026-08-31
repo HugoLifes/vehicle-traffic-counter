@@ -8,6 +8,7 @@ import './styles/base.css';
 import './styles/components.css';
 import './styles/layout.css';
 import './styles/pages.css';
+import './styles/print.css';
 
 import Proyectos from './pages/Proyectos';
 import Proyecto from './pages/Proyecto';

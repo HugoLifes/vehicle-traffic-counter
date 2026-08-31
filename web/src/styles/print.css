@@ -1,0 +1,98 @@
+/*
+  Hoja de impresión.
+
+  Es la que produce el PDF del informe: el navegador ya sabe generar uno
+  desde una página, y las gráficas son SVG, así que salen vectoriales —
+  nítidas a cualquier zoom y en papel. Generarlo en el servidor obligaría
+  a redibujarlas con otra librería y a mantener dos versiones del mismo
+  informe, que es como se acaba entregando un PDF que no coincide con lo
+  que el ingeniero vio en pantalla.
+
+  El criterio de qué se queda: lo que sustenta el dato. Se va todo lo que
+  solo sirve para navegar o para operar la plataforma.
+*/
+
+@media print {
+  /* Papel blanco: el degradado de fondo y el tema oscuro se comerían el
+     tóner y no aportan nada impreso. */
+  :root,
+  :root[data-theme='dark'] {
+    --surface-0: #ffffff;
+    --surface-1: #ffffff;
+    --surface-2: #f2f2f2;
+    --border: #c8c8c8;
+    --border-strong: #6b6b6b;
+    --shadow: rgba(0, 0, 0, 0.15);
+    --text-primary: #000000;
+    --text-secondary: #333333;
+    --text-muted: #4a4a4a;
+    --accent: #123f8c;
+    --accent-strong: #123f8c;
+    --accent-soft: #e8eef8;
+    --accent-ink: #ffffff;
+  }
+
+  body { background: #fff; }
+  body::before { display: none; }
+
+  /* Fuera lo que solo sirve para navegar u operar. */
+  .skip-link,
+  .nav-host,
+  .guia,
+  .proj-tools,
+  .report-export,
+  .page-controls .field,
+  .escena,
+  .btn,
+  .btn-icon {
+    display: none !important;
+  }
+
+  .wrap { max-width: none; padding: 0; }
+
+  /* Las tarjetas pasan a ser bloques con filo fino: la sombra sale como
+     una mancha gris en papel. */
+  .card,
+  .metric-card,
+  .chart-card,
+  .data-table {
+    box-shadow: none !important;
+    border: 1px solid var(--border);
+  }
+
+  /* Un carril no se parte entre dos hojas: su gráfica y su tabla se leen
+     juntas o no se leen. */
+  .lane-report,
+  .chart-card,
+  .metric-card {
+    break-inside: avoid;
+  }
+  .lane-report { break-before: page; }
+  .lane-report:first-of-type { break-before: auto; }
+
+  /* La tabla de cifras exactas es el anexo del informe: se imprime
+     siempre, aunque en pantalla estuviera plegada. */
+  details.disclosure > summary { display: none; }
+  details.disclosure > div,
+  details.disclosure[open] > div { display: block !important; }
+  details.disclosure { margin-top: var(--space-4); }
+
+  .table-scroll { overflow: visible; }
+  .data-table { width: 100%; font-size: 10pt; }
+  .data-table thead { display: table-header-group; } /* cabecera en cada hoja */
+  .data-table tr { break-inside: avoid; }
+
+  /* La cabecera del proyecto encabeza el informe: sin ella, un PDF suelto
+     no dice de qué intersección son las cifras. */
+  .proj-head { break-after: avoid; margin-bottom: var(--space-4); }
+
+  .chart { max-width: 100%; }
+
+  /* La fila resaltada del intervalo pico tiene que sobrevivir a la
+     impresión en blanco y negro, donde el ámbar desaparece. */
+  .data-table tr.is-peak { background: #f0f0f0 !important; font-weight: 700; }
+
+  @page {
+    margin: 16mm;
+  }
+}
