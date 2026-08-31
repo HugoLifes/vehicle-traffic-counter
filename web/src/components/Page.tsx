@@ -15,14 +15,12 @@ import { useProjectParam } from '../lib/useProjectParam';
 interface PageProps {
   title: string;
   subtitle: string;
-  /** Muestra la barra de pasos del proyecto (subir → calibrar → reporte). */
-  projectScoped?: boolean;
   /** Oculta la guía en pantallas donde no aporta (la cámara en vivo). */
   hideGuide?: boolean;
   children: ReactNode;
 }
 
-export function Page({ title, subtitle, projectScoped, hideGuide, children }: PageProps) {
+export function Page({ title, subtitle, hideGuide, children }: PageProps) {
   const { project, projects } = useProjectParam();
 
   /*
@@ -50,13 +48,7 @@ export function Page({ title, subtitle, projectScoped, hideGuide, children }: Pa
         Saltar al contenido
       </a>
       <div className="wrap">
-        <Nav
-          title={title}
-          subtitle={subtitle}
-          projectScoped={projectScoped}
-          projectId={project?.id ?? null}
-          projectName={project?.name ?? null}
-        />
+        <Nav title={title} subtitle={subtitle} />
         {!hideGuide && <Guia project={project ?? guideReference} projectCount={projects.length} />}
         <main id="contenido" tabIndex={-1}>
           {children}

@@ -79,6 +79,22 @@ export function useCreateProject() {
   });
 }
 
+export function useUpdateProject(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<ProjectCreate>) => api.updateProject(projectId, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.projects }),
+  });
+}
+
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: number) => api.deleteProject(projectId),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
 export function useCreateLane(projectId: number) {
   const qc = useQueryClient();
   return useMutation({

@@ -1,28 +1,20 @@
 /*
-  Navegación en dos niveles, porque la app tiene dos modos que no son del
-  mismo rango:
+  Barra superior: la marca, los dos modos de la app y el tema.
 
-    Global →  Proyectos  |  Cámara en vivo
-    Local  →  (dentro de un proyecto)  1 Subir · 2 Calibrar · 3 Reporte
-
-  El nivel local solo aparece en las páginas de un proyecto, y lleva el
-  nombre de la intersección: estando en "Calibrar" hay que poder saber qué
-  intersección se está calibrando sin volver atrás.
+  Los pasos de un aforo (subir → calibrar → reporte) estuvieron aquí, en
+  un segundo nivel. Ya no: son las pestañas del contenedor de la
+  intersección, porque solo tienen sentido dentro de una — y tenerlos
+  arriba obligaba a arrastrar la intersección elegida hasta la barra de
+  navegación para que el usuario supiera de cuál estaba hablando.
 */
 
 import { NavLink, Link } from 'react-router-dom';
-import { IconBrand, IconMoon, IconPin, IconSun } from './Icons';
+import { IconBrand, IconMoon, IconSun } from './Icons';
 import { useTheme } from '../lib/useTheme';
 
 const GLOBAL = [
   { to: '/', label: 'Proyectos', end: true },
   { to: '/en-vivo', label: 'Cámara en vivo', end: false },
-];
-
-const STEPS = [
-  { to: '/subir', label: 'Subir videos' },
-  { to: '/calibrar', label: 'Calibrar' },
-  { to: '/reporte', label: 'Reporte' },
 ];
 
 function ThemeToggle() {
@@ -48,15 +40,15 @@ function ThemeToggle() {
 interface NavProps {
   title: string;
   subtitle: string;
-  /** Muestra la barra de pasos del proyecto. */
-  projectScoped?: boolean;
-  projectId?: number | null;
-  projectName?: string | null;
 }
 
-export function Nav({ title, subtitle, projectScoped, projectId, projectName }: NavProps) {
-  const query = projectId !== null && projectId !== undefined ? `?project=${projectId}` : '';
-
+/*
+  Solo el nivel global: Proyectos y Cámara en vivo, los dos modos de la
+  app. Los pasos de un aforo (subir → calibrar → reporte) ya no viven
+  aquí — son las pestañas del contenedor de la intersección, que es donde
+  tienen contexto.
+*/
+export function Nav({ title, subtitle }: NavProps) {
   return (
     <div className="nav-host">
       <div className="topbar">
@@ -76,9 +68,7 @@ export function Nav({ title, subtitle, projectScoped, projectId, projectName }: 
                 end={item.end}
                 /* El estado activo NO depende solo del color: también
                    cambia el peso de la tipografía. */
-                className={({ isActive }) =>
-                  isActive || (projectScoped && item.end) ? 'active' : undefined
-                }
+                className={({ isActive }) => (isActive ? 'active' : undefined)}
               >
                 {item.label}
               </NavLink>
@@ -88,26 +78,6 @@ export function Nav({ title, subtitle, projectScoped, projectId, projectName }: 
         </div>
       </div>
 
-      {projectScoped && (
-        <div className="nav-local">
-          <div className="nav-project">
-            <IconPin size={13} />
-            <span className="np-name">{projectName ?? 'Sin intersección seleccionada'}</span>
-          </div>
-          <nav className="nav-steps" aria-label="Pasos del proyecto">
-            {STEPS.map((step, i) => (
-              <NavLink
-                key={step.to}
-                to={`${step.to}${query}`}
-                className={({ isActive }) => (isActive ? 'nav-step active' : 'nav-step')}
-              >
-                <span className="step-num">{i + 1}</span>
-                {step.label}
-              </NavLink>
-            ))}
-          </nav>
-        </div>
-      )}
     </div>
   );
 }

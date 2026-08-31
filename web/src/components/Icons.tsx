@@ -193,3 +193,9 @@ export const IconRepeat = (p: IconProps) => (
     <path d="M20 16V8a3 3 0 0 0-3-3M4 8v8a3 3 0 0 0 3 3" />
   </Svg>
 );
+
+export const IconArrowRight = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2}>
+    <path d="M5 12h13M13 6l6 6-6 6" />
+  </Svg>
+);

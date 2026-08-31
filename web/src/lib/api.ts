@@ -84,6 +84,16 @@ export const getCalibrationStatus = (id: number) =>
 export const recount = (id: number) =>
   request<{ requeued: number }>(`/api/projects/${id}/recount`, { method: 'POST' });
 
+export const updateProject = (id: number, data: Partial<ProjectCreate>) =>
+  request<Project>(`/api/projects/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+export const deleteProject = (id: number) =>
+  request<{ deleted: number }>(`/api/projects/${id}`, { method: 'DELETE' });
+
 export const startCounting = (id: number) =>
   request<{ started: number }>(`/api/projects/${id}/start-counting`, { method: 'POST' });
 

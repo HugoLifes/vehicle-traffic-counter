@@ -28,7 +28,40 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* La tarjeta entera es un enlace. */
+  text-decoration: none;
+  color: inherit;
+  transition-property: box-shadow, translate;
+  transition-duration: var(--dur-fast);
+  transition-timing-function: var(--ease-out);
 }
+/* El levantamiento va acotado a punteros: en pantalla tactil el estado
+   de hover se queda pegado tras el toque y la tarjeta parece rota. */
+@media (hover: hover) {
+  .project-card:hover {
+    box-shadow: 0 0 0 1px var(--accent), 0 6px 16px var(--shadow);
+    translate: 0 -2px;
+  }
+  .project-card:hover .pc-open { color: var(--accent); }
+}
+.project-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.project-card:active { translate: 0 0; }
+
+/* Cierre de la tarjeta: dice que pasa al pulsarla, en vez de dejar que
+   se adivine. */
+.pc-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-secondary);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.pc-open svg { flex: 0 0 auto; }
 .project-card .pc-head {
   display: flex;
   align-items: baseline;
@@ -66,20 +99,6 @@
   font-variant-numeric: tabular-nums;
 }
 .pc-stat.accent .pc-stat-value { color: var(--accent); }
-
-.project-card .pc-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.project-card .pc-actions a {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-decoration: none;
-  color: var(--accent);
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-strong);
-  transition: background-color var(--dur-fast) var(--ease-out);
-}
-.project-card .pc-actions a:hover { background: var(--accent-soft); }
-.project-card .pc-actions a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .pc-badge {
   font-size: var(--text-xs);
@@ -904,3 +923,180 @@
   font: inherit;
 }
 .copy-calib .sc-info { margin: 0; }
+
+/* ================================================================
+   Contenedor de la intersección
+   ================================================================ */
+
+.proj-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.proj-identity { min-width: 0; flex: 1 1 340px; }
+.proj-name {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+.proj-address {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3);
+}
+.proj-address svg { flex: 0 0 auto; margin-top: 3px; color: var(--accent); }
+.proj-address-missing { color: var(--text-muted); }
+.proj-address-missing svg { color: var(--text-muted); }
+
+.proj-tags { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.proj-notes {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin: var(--space-3) 0 0;
+  max-width: 60ch;
+}
+
+/* Las tres cifras que responden "como va esto" de un vistazo. Van en la
+   cabecera y no dentro de una herramienta, porque describen el proyecto
+   entero. */
+.proj-stats { display: flex; gap: var(--space-5); flex: 0 0 auto; }
+.proj-stat { display: flex; flex-direction: column; gap: 2px; }
+.proj-stat .ps-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.proj-stat.accent .ps-value { color: var(--accent); }
+.proj-stat .ps-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* --- Pestañas de herramienta ------------------------------------- */
+
+.proj-tools {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-5);
+}
+.proj-tool {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 10px 14px 11px;
+  border-bottom: 2px solid transparent;
+  transition-property: color, border-color, background-color;
+  transition-duration: var(--dur-fast);
+  transition-timing-function: var(--ease-out);
+}
+.proj-tool:hover { color: var(--text-primary); background: var(--surface-2); }
+/* Tres señales para la pestaña activa: color, peso y barra inferior. */
+.proj-tool.active { color: var(--accent); font-weight: 800; border-bottom-color: var(--accent); }
+.proj-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
+
+.proj-tool .pt-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.proj-tool.active .pt-num { background: var(--accent); color: var(--accent-ink); }
+
+/* --- Resumen: avance y herramientas del proyecto ------------------ */
+
+.proj-resumen { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.proj-progress { padding: var(--space-4) var(--space-5); }
+.pp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.pp-step { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; }
+.pp-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pp-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.pp-detail { font-size: var(--text-xs); color: var(--text-muted); }
+/* El paso hecho se distingue por la palomita y el tachado, no solo por
+   el color. */
+.pp-step.done .pp-title { color: var(--text-muted); text-decoration: line-through; }
+.pp-step.current .pp-title { color: var(--text-primary); font-weight: 700; }
+
+.pp-mark {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pp-mark.done { background: var(--good); border-color: var(--good); color: var(--good-ink); }
+.pp-mark.current { border-color: var(--accent); border-style: dashed; }
+.pp-action { flex: 0 0 auto; text-decoration: none; }
+
+.proj-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.proj-tool-card { padding: var(--space-5); display: flex; flex-direction: column; }
+.proj-tool-card .section-title { margin-bottom: var(--space-3); }
+.ptc-body { font-size: var(--text-sm); color: var(--text-secondary); margin: 0 0 var(--space-3); line-height: 1.55; }
+.ptc-empty { font-size: var(--text-xs); color: var(--text-muted); margin: 0; line-height: 1.5; }
+
+.proj-dl { margin: 0 0 var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.proj-dl > div { display: flex; flex-direction: column; gap: 2px; }
+.proj-dl dt {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.proj-dl dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); }
+.proj-coords { display: block; font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+
+/* Lo irreversible va aparte y con su propio tratamiento: mezclarlo con
+   las demás acciones invita al clic por error. */
+.proj-danger { box-shadow: 0 0 0 1px var(--critical), 0 1px 2px var(--shadow); }
+.proj-danger .section-title { color: var(--critical); }
+
+@media (max-width: 620px) {
+  .proj-stats { gap: var(--space-4); }
+  .proj-stat .ps-value { font-size: var(--text-xl); }
+}
+
+.map-canvas { display: grid; place-items: center; }
+.map-offline {
+  margin: 0;
+  padding: var(--space-4);
+  max-width: 44ch;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}

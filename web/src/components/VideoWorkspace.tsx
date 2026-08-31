@@ -104,6 +104,8 @@ interface Props {
      como se llega desde la cola de procesamiento. */
   fuente: FuenteVideo;
   onFuenteChange: (f: FuenteVideo) => void;
+  /** Ancho real del video, en cuanto se conoce por el primer cuadro. */
+  onTamano?: (ancho: number, alto: number) => void;
 }
 
 export function VideoWorkspace({
@@ -121,9 +123,15 @@ export function VideoWorkspace({
   showHeatmap,
   fuente,
   onFuenteChange,
+  onTamano,
 }: Props) {
   const segment = segments.find((s) => s.job_id === jobId) ?? null;
 
+  /* Dimensiones reales del video. Arrancan con lo que diga el listado (que
+     puede no saberlas) y se corrigen con el primer cuadro que llega: la
+     imagen cargada es la fuente exacta, y evita que el servidor tenga que
+     abrir cada archivo solo para medirlo. */
+  const [tamano, setTamano] = useState<{ ancho: number; alto: number } | null>(null);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -145,6 +153,8 @@ export function VideoWorkspace({
   const frameRef = useRef(0);
   frameRef.current = frame;
 
+  const ancho = tamano?.ancho ?? segment?.ancho ?? null;
+  const alto = tamano?.alto ?? segment?.alto ?? null;
   const total = segment?.total_frames ?? 0;
   const fps = segment?.fps ?? 15;
   const hayProcesado = segment?.tiene_procesado ?? false;
@@ -156,6 +166,7 @@ export function VideoWorkspace({
     setPlaying(false);
     setTerminado(false);
     setLoadError(false);
+    setTamano(null);
   }, [jobId]);
 
   // Si el segmento elegido no tiene versión con detecciones, se vuelve al
@@ -191,6 +202,13 @@ export function VideoWorkspace({
         const pre = new Image();
         pre.onload = () => {
           if (imgRef.current) imgRef.current.src = url;
+          if (pre.naturalWidth && pre.naturalHeight) {
+            setTamano((prev) =>
+              prev && prev.ancho === pre.naturalWidth && prev.alto === pre.naturalHeight
+                ? prev
+                : { ancho: pre.naturalWidth, alto: pre.naturalHeight },
+            );
+          }
           setLoadError(false);
           resolve(true);
         };
@@ -206,6 +224,10 @@ export function VideoWorkspace({
   useEffect(() => {
     void loadFrame(frame);
   }, [frame, loadFrame]);
+
+  useEffect(() => {
+    if (tamano) onTamano?.(tamano.ancho, tamano.alto);
+  }, [tamano, onTamano]);
 
   /* --- Bucle de reproducción ------------------------------------------
      Encadenado, no por intervalo: cada cuadro espera a que el anterior
@@ -288,10 +310,10 @@ export function VideoWorkspace({
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !segment) return;
+    if (!canvas || !ctx || !segment || ancho === null || alto === null) return;
 
-    canvas.width = segment.ancho;
-    canvas.height = segment.alto;
+    canvas.width = ancho;
+    canvas.height = alto;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Sobre el video procesado la IA ya dibujó sus propias líneas y cajas.
@@ -509,11 +531,11 @@ export function VideoWorkspace({
       return;
     }
     const stage = stageRef.current;
-    if (!stage) return;
+    if (!stage || ancho === null || alto === null) return;
     const r = stage.getBoundingClientRect();
     onCanvasPoint([
-      ((e.clientX - r.left) * segment.ancho) / r.width,
-      ((e.clientY - r.top) * segment.alto) / r.height,
+      ((e.clientX - r.left) * ancho) / r.width,
+      ((e.clientY - r.top) * alto) / r.height,
     ]);
   };
 
@@ -598,7 +620,9 @@ export function VideoWorkspace({
         className={`ws-stage${drawMode ? ' is-drawing' : ''}`}
         ref={stageRef}
         onClick={onStageClick}
-        style={{ aspectRatio: `${segment.ancho} / ${segment.alto}` }}
+        /* Hasta que llega el primer cuadro se reserva 16:9, para que la
+           tarjeta no salte de alto y mueva los controles bajo el cursor. */
+        style={{ aspectRatio: ancho && alto ? `${ancho} / ${alto}` : '16 / 9' }}
       >
         <img ref={imgRef} alt={`Cuadro ${frame + 1} de ${segment.nombre}`} />
         {/* El lienzo solo pinta; los clics los recoge el contenedor, que

@@ -10,10 +10,13 @@ import './styles/layout.css';
 import './styles/pages.css';
 
 import Proyectos from './pages/Proyectos';
+import Proyecto from './pages/Proyecto';
+import ProyectoResumen from './pages/ProyectoResumen';
 import Subir from './pages/Subir';
 import Calibrar from './pages/Calibrar';
 import Reporte from './pages/Reporte';
 import EnVivo from './pages/EnVivo';
+import { RedirigirALaIntersección } from './pages/redirects';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,13 +38,29 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          {/* Los proyectos son la puerta de entrada: subir, calibrar y
-              reportar necesitan una intersección elegida. */}
+          {/* La lista de intersecciones es la puerta de entrada. */}
           <Route path="/" element={<Proyectos />} />
-          <Route path="/subir" element={<Subir />} />
-          <Route path="/calibrar" element={<Calibrar />} />
-          <Route path="/reporte" element={<Reporte />} />
+
+          {/*
+            El proyecto es el contenedor y las herramientas viven dentro.
+            Cada una conserva su propia URL, así que el botón atrás
+            funciona y se puede enlazar directo a la que importa.
+          */}
+          <Route path="/proyecto/:projectId" element={<Proyecto />}>
+            <Route index element={<ProyectoResumen />} />
+            <Route path="subir" element={<Subir />} />
+            <Route path="calibrar" element={<Calibrar />} />
+            <Route path="reporte" element={<Reporte />} />
+          </Route>
+
           <Route path="/en-vivo" element={<EnVivo />} />
+
+          {/* Rutas anteriores: había enlaces repartidos con ?project=, y
+              romperlos no aporta nada. Se traducen a la forma nueva. */}
+          <Route path="/subir" element={<RedirigirALaIntersección a="subir" />} />
+          <Route path="/calibrar" element={<RedirigirALaIntersección a="calibrar" />} />
+          <Route path="/reporte" element={<RedirigirALaIntersección a="reporte" />} />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

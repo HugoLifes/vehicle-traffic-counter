@@ -26,6 +26,7 @@ reproducir sale prácticamente gratis. Buscar solo cuesta cuando el
 usuario salta con la barra de tiempo, que es justo cuando no importa.
 """
 
+import os
 import threading
 from collections import OrderedDict
 from typing import Dict, Optional
@@ -148,19 +149,82 @@ def cerrar_captura(job_id: int) -> None:
             entrada["cap"].release()
 
 
-def _metadatos(job: Dict) -> Optional[Dict]:
-    """Duración y dimensiones de un video, leídas de su cabecera."""
-    from pathlib import Path as _Path
+# Metadatos ya leídos, por archivo. La clave incluye tamaño y fecha de
+# modificación: si el archivo cambia, la entrada deja de valer sola.
+_meta_cache: Dict[tuple, Optional[dict]] = {}
 
-    cap = cv2.VideoCapture(job["stored_path"])
+
+def _sondear(ruta: str) -> Optional[dict]:
+    """
+    Lee fps, cuadros y dimensiones de la cabecera de un archivo.
+
+    Abrir una captura cuesta unos 18 ms. Con un aforo de 24 horas —144
+    segmentos— eso son 2.6 segundos cada vez que se abre la pantalla de
+    calibrar, y durante ese rato la mesa de trabajo se queda diciendo que
+    no hay videos. De ahí la caché.
+    """
+    try:
+        st = os.stat(ruta)
+    except OSError:
+        return None
+    clave = (ruta, st.st_mtime_ns, st.st_size)
+    if clave in _meta_cache:
+        return _meta_cache[clave]
+
+    cap = cv2.VideoCapture(ruta)
     if not cap.isOpened():
         cap.release()
+        _meta_cache[clave] = None
         return None
-    fps = cap.get(cv2.CAP_PROP_FPS) or 0
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
-    ancho = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    datos = {
+        "fps": cap.get(cv2.CAP_PROP_FPS) or 0,
+        "total": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0,
+        "ancho": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        "alto": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+    }
     cap.release()
+    _meta_cache[clave] = datos
+    return datos
+
+
+def _cacheado(ruta: str) -> Optional[dict]:
+    """Lo que ya se sabe de un archivo, sin abrirlo."""
+    try:
+        st = os.stat(ruta)
+    except OSError:
+        return None
+    return _meta_cache.get((ruta, st.st_mtime_ns, st.st_size))
+
+
+def _metadatos(job: Dict) -> Optional[Dict]:
+    """Duración y dimensiones de un video."""
+    from pathlib import Path as _Path
+
+    # Se evita abrir el archivo cuando la base ya sabe lo que hace falta.
+    # El procesador guarda el número de cuadros que REALMENTE leyó, que es
+    # además más fiable que el de la cabecera: en MKV ese total va estimado
+    # como duración por fps y suele sobrar (9001 declarados contra 8988
+    # legibles en el material de este proyecto).
+    fps = job.get("fps")
+    total = job.get("total_frames")
+
+    if fps and total:
+        # Las dimensiones solo se dan si ya estaban en caché. No se abre el
+        # archivo por ellas: el cliente las saca del primer cuadro que
+        # carga, que es exacto y no cuesta nada. Sondear los 144 segmentos
+        # de un aforo de 24 horas tardaba 5 segundos, y durante ese rato la
+        # mesa de trabajo decía que no había videos.
+        cacheado = _cacheado(job["stored_path"])
+        ancho = cacheado["ancho"] if cacheado else None
+        alto = cacheado["alto"] if cacheado else None
+    else:
+        sondeo = _sondear(job["stored_path"])
+        if sondeo is None:
+            return None
+        fps = fps or sondeo["fps"]
+        total = total or sondeo["total"]
+        ancho, alto = sondeo["ancho"], sondeo["alto"]
+
     if not fps or not total:
         return None
     return {

@@ -175,8 +175,11 @@ export interface VideoSegment {
   fps: number;
   total_frames: number;
   duracion_s: number;
-  ancho: number;
-  alto: number;
+  /* Pueden venir sin saberse: el listado no abre los archivos para
+     averiguarlas — el cliente las toma del primer cuadro que carga, que
+     es exacto y no cuesta una apertura por video. */
+  ancho: number | null;
+  alto: number | null;
   hora_inicio: string | null;
   /** Si ya existe la versión que dibujó la IA sobre este video. */
   tiene_procesado: boolean;

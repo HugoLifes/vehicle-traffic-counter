@@ -15,8 +15,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Page } from '../components/Page';
-import { ProjectPicker } from '../components/ProjectPicker';
 import {
   Button,
   Card,
@@ -83,7 +81,7 @@ function validarLinea(p1: Point, p2: Point, anchoVideo: number, hayRastro: boole
 }
 
 export default function Calibrar() {
-  const { projectId, projects, setProjectId } = useProjectParam();
+  const { projectId, projects } = useProjectParam();
 
   const { data: lanes } = useLanes(projectId);
   const { data: zones } = useZones(projectId);
@@ -168,6 +166,11 @@ export default function Calibrar() {
     };
   }, [projectId]);
 
+  /* El ancho real del video lo descubre la mesa al cargar el primer
+     cuadro; la validación de la línea lo necesita para saber qué
+     proporción de la calzada cubre. */
+  const [anchoVideo, setAnchoVideo] = useState<number | null>(null);
+
   const onCanvasPoint = useCallback(
     (p: Point) => {
       // Una zona acumula vértices sin tope: el usuario decide cuándo la
@@ -186,7 +189,7 @@ export default function Calibrar() {
         const next = [...prev, p];
         if (next.length === 2 && segment) {
           setDrawMode(false);
-          setWarnings(validarLinea(next[0], next[1], segment.ancho, heatmap !== null));
+          setWarnings(validarLinea(next[0], next[1], anchoVideo ?? 640, heatmap !== null));
           setNewName(`Carril ${(lanes?.length ?? 0) + 1}`);
           setHint('Ponle nombre al carril y guárdalo.');
           setTimeout(() => {
@@ -234,21 +237,14 @@ export default function Calibrar() {
   const sinVideos = projectId !== null && !cargandoVideos && (segments?.length ?? 0) === 0;
 
   return (
-    <Page
-      title="Calibrar carriles"
-      subtitle="Recorre el video y dibuja la línea donde cruzan los vehículos"
-      projectScoped
-    >
-      <div className="page-controls">
-        <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} />
-      </div>
+    <>
 
       {sinVideos && (
         <EmptyState
           title="Esta intersección todavía no tiene videos"
           body="Para calibrar hace falta la grabación: las líneas se dibujan sobre el video real, no sobre un plano."
           action={
-            <Link className="btn btn-primary" to={`/subir?project=${projectId}`}>
+            <Link className="btn btn-primary" to={`/proyecto/${projectId}/subir`}>
               Subir videos
             </Link>
           }
@@ -282,6 +278,7 @@ export default function Calibrar() {
               showHeatmap={showHeatmap}
               fuente={fuente}
               onFuenteChange={setFuente}
+              onTamano={(a) => setAnchoVideo(a)}
             />
 
             <div className="canvas-tools">
@@ -598,7 +595,7 @@ export default function Calibrar() {
               <div style={{ marginTop: 'var(--space-3)' }}>
                 <Notice tone="good" title="Conteo iniciado">
                   Puedes seguir el avance en{' '}
-                  <Link to={`/subir?project=${projectId}`}>Subir videos</Link>.
+                  <Link to={`/proyecto/${projectId}/subir`}>Subir videos</Link>.
                 </Notice>
               </div>
             )}
@@ -705,6 +702,6 @@ export default function Calibrar() {
         }}
         onCancel={() => setToDelete(null)}
       />
-    </Page>
+    </>
   );
 }

@@ -64,6 +64,11 @@
   --accent-strong: #123f8c;
   --accent-soft: #e3ebfa;
   --accent-ink: #ffffff;
+  /* Extremo claro del degradado del botón primario. Medido: con la tinta
+     blanca encima da 6.21:1, por encima del mínimo — el degradado no
+     puede aclarar más que esto sin comerse el contraste de la etiqueta. */
+  --accent-lift: #355bbd;
+  --accent-base: #1d54b3;
 
   /* Semánticos — nunca se usan como acento */
   --good: #136c3f;
@@ -143,6 +148,10 @@
     --accent-strong: #7aabff;
     --accent-soft: rgba(79, 143, 240, 0.16);
     --accent-ink: #0a0e14;
+    /* De noche el degradado va al revés: la tinta es oscura, así que el
+       punto que manda es el MÁS oscuro. #3d7ede da 4.82:1. */
+    --accent-lift: #6ba0f5;
+    --accent-base: #3d7ede;
 
     --good: #34c77a;
     --good-soft: rgba(52, 199, 122, 0.16);
@@ -187,6 +196,10 @@
   --accent-strong: #7aabff;
   --accent-soft: rgba(79, 143, 240, 0.16);
   --accent-ink: #0a0e14;
+  /* De noche el degradado va al revés: la tinta es oscura, así que el
+     punto que manda es el MÁS oscuro. #3d7ede da 4.82:1. */
+  --accent-lift: #6ba0f5;
+  --accent-base: #3d7ede;
 
   --good: #34c77a;
   --good-soft: rgba(52, 199, 122, 0.16);

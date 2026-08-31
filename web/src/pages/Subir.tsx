@@ -10,8 +10,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Page } from '../components/Page';
-import { ProjectPicker } from '../components/ProjectPicker';
 import { Button, Card, EmptyState, IconButton, Notice, Pill } from '../components/ui';
 import { IconClose, IconEye, IconTrash, IconUpload, IconVideo } from '../components/Icons';
 import { useDeleteVideo, useStartCounting, useUploadVideos, useVideos } from '../lib/queries';
@@ -236,7 +234,7 @@ function JobRow({
               <input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} />
               <span>Repetir en bucle</span>
             </label>
-            <Link className="jp-link" to={`/calibrar?project=${projectId}&job=${job.id}&ver=procesado`}>
+            <Link className="jp-link" to={`/proyecto/${projectId}/calibrar?job=${job.id}&ver=procesado`}>
               Revisar cuadro a cuadro
             </Link>
           </div>
@@ -249,7 +247,7 @@ function JobRow({
 /* --- Página --------------------------------------------------------------- */
 
 export default function Subir() {
-  const { projectId, project, projects, setProjectId } = useProjectParam();
+  const { projectId, project } = useProjectParam();
   // La cola se acota a la intersección elegida: con varios aforos en curso,
   // ver los videos de todos mezclados no ayuda a nadie.
   const { data: jobs } = useVideos(projectId ?? undefined, true);
@@ -259,13 +257,11 @@ export default function Subir() {
 
   const [pending, setPending] = useState<Pending[]>([]);
   const [rejections, setRejections] = useState<Rejection[]>([]);
-  const [projectError, setProjectError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [toDelete, setToDelete] = useState<VideoJob | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const selectorRef = useRef<HTMLDivElement>(null);
 
   const awaiting = (jobs ?? []).filter((j) => j.status === 'awaiting_calibration');
 
@@ -296,11 +292,10 @@ export default function Subir() {
   }
 
   async function confirmUpload() {
-    if (projectId === null) {
-      setProjectError('Elige a qué intersección pertenecen estos videos.');
-      selectorRef.current?.querySelector('select')?.focus();
-      return;
-    }
+    // La intersección la fija la ruta (/proyecto/:projectId/subir), así que
+    // aquí no puede faltar; si faltara, subir sin destino sería peor que
+    // no hacer nada.
+    if (projectId === null) return;
 
     const form = new FormData();
     const startTimes: Record<string, string> = {};
@@ -330,11 +325,7 @@ export default function Subir() {
   }
 
   return (
-    <Page
-      title="Subir videos"
-      subtitle="Procesamiento por lote — uno o varios archivos a la vez"
-      projectScoped
-    >
+    <>
       {/* --- Zona de arrastrar y soltar ---
           Es un <button> de verdad, no un <div role="button">: así el
           teclado, el foco y el anuncio funcionan sin código extra. */}
@@ -382,7 +373,7 @@ export default function Subir() {
           {message && (
             <Notice tone="good" onDismiss={() => setMessage(null)}>
               {message}{' '}
-              <Link to={projectId ? `/calibrar?project=${projectId}` : '/calibrar'}>
+              <Link to={`/proyecto/${projectId}/calibrar`}>
                 Ir a calibrar
               </Link>
             </Notice>
@@ -404,24 +395,6 @@ export default function Subir() {
         <Card className="staging rise">
           <h2 className="section-title">Antes de subir</h2>
 
-          <div className="staging-shared" ref={selectorRef}>
-            <ProjectPicker
-              projects={projects}
-              value={projectId}
-              error={projectError}
-              onChange={(id) => {
-                setProjectId(id);
-                setProjectError(null);
-              }}
-              hint={
-                <>
-                  Todos los videos de la misma intersección comparten sus carriles y se unen en un
-                  solo reporte por intervalos. ¿Falta la intersección?{' '}
-                  <Link to="/">Créala aquí</Link>.
-                </>
-              }
-            />
-          </div>
 
           <div className="staging-files">
             {pending.map((entry) => (
@@ -540,6 +513,6 @@ export default function Subir() {
         }}
         onCancel={() => setToDelete(null)}
       />
-    </Page>
+    </>
   );
 }

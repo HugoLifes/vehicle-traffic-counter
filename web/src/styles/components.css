@@ -18,7 +18,7 @@
   border: 1px solid transparent;
   cursor: pointer;
   /* Nunca `transition: all`: solo lo que de verdad cambia. */
-  transition-property: background-color, border-color, color, scale;
+  transition-property: background-color, background-image, border-color, color, box-shadow, scale;
   transition-duration: var(--dur-fast);
   transition-timing-function: var(--ease-out);
   white-space: nowrap;
@@ -31,17 +31,45 @@
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* Exactamente UNA acción rellena por vista: la primaria. Las demás van
-   neutras, para que el color signifique jerarquía y no decoración. */
-.btn-primary { background: var(--accent); color: var(--accent-ink); }
-.btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
+/*
+  Exactamente UNA acción rellena por vista: la primaria. Las demás van
+  neutras, para que el color signifique jerarquía y no decoración.
+
+  El relleno es un degradado vertical muy corto más un filo claro arriba.
+  No es decoración: reproduce cómo cae la luz sobre una superficie
+  ligeramente convexa, y es lo que hace que el botón se lea como algo
+  que se puede hundir en vez de como un rectángulo pintado. Es vertical
+  y de un solo tono a propósito — el degradado diagonal de dos tonos es
+  otra cosa, y se nota.
+
+  Las dos paradas están medidas contra la tinta de la etiqueta: en claro
+  el extremo que manda es el más claro (6.21:1 con blanco encima); en
+  oscuro se invierte, porque ahí la tinta es oscura (4.82:1).
+*/
+.btn-primary {
+  background-image: linear-gradient(180deg in oklab, var(--accent-lift), var(--accent-base));
+  background-color: var(--accent);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    0 1px 2px var(--shadow);
+}
+.btn-primary:hover:not(:disabled) {
+  background-image: none;
+  background-color: var(--accent-strong);
+}
 
 .btn-secondary {
   background: var(--surface-1);
   border-color: var(--border-strong);
   color: var(--text-secondary);
+  box-shadow: 0 1px 2px var(--shadow);
 }
-.btn-secondary:hover:not(:disabled) { color: var(--text-primary); border-color: var(--text-secondary); }
+.btn-secondary:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: var(--surface-2);
+}
 
 .btn-danger { background: var(--critical); color: var(--critical-ink); }
 .btn-danger:hover:not(:disabled) { filter: brightness(0.92); }

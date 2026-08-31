@@ -10,8 +10,6 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Page } from '../components/Page';
-import { ProjectPicker } from '../components/ProjectPicker';
 import { Card, EmptyState, Notice, Pill, SelectField } from '../components/ui';
 import { CompositionChart, IntervalChart } from '../components/charts';
 import { useMetrics } from '../lib/queries';
@@ -199,7 +197,7 @@ function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinu
 /* --- Página --------------------------------------------------------------- */
 
 export default function Reporte() {
-  const { projectId, project, projects, setProjectId } = useProjectParam();
+  const { projectId, project } = useProjectParam();
   const [minutes, setMinutes] = useState<number | null>(null);
 
   // El intervalo por defecto es el que se eligió al crear la intersección;
@@ -208,13 +206,8 @@ export default function Reporte() {
   const { data: m, isLoading, isError, error } = useMetrics(projectId, effective);
 
   return (
-    <Page
-      title="Reporte de aforo"
-      subtitle="Métricas, gráficas por intervalo y cifras exactas"
-      projectScoped
-    >
+    <>
       <div className="page-controls">
-        <ProjectPicker projects={projects} value={projectId} onChange={setProjectId} />
         <SelectField
           label="Intervalo"
           narrow
@@ -229,19 +222,6 @@ export default function Reporte() {
         </SelectField>
       </div>
 
-      {projectId === null && (
-        <EmptyState
-          title="Elige una intersección"
-          body="El reporte reúne todos los videos de un mismo punto de medición y los ordena por hora real."
-          action={
-            projects.length === 0 ? (
-              <Link className="btn btn-primary" to="/">
-                Crear la primera intersección
-              </Link>
-            ) : undefined
-          }
-        />
-      )}
 
       {projectId !== null && isLoading && <EmptyState title="Calculando el reporte…" />}
 
@@ -254,7 +234,7 @@ export default function Reporte() {
           title="Esta intersección todavía no tiene carriles"
           body="Un carril es la línea que los vehículos cruzan para ser contados. Sin al menos uno, no hay nada que reportar."
           action={
-            <Link className="btn btn-primary" to={`/calibrar?project=${projectId}`}>
+            <Link className="btn btn-primary" to={`/proyecto/${projectId}/calibrar`}>
               Calibrar carriles
             </Link>
           }
@@ -269,6 +249,6 @@ export default function Reporte() {
           ))}
         </>
       )}
-    </Page>
+    </>
   );
 }
