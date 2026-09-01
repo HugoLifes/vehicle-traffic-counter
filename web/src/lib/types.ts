@@ -82,6 +82,10 @@ export interface Zone {
 
 export interface VideoJob {
   id: number;
+  /* A qué intersección pertenece. Lo devuelve la API desde siempre; hacía
+     falta declararlo para que el vigilante pueda llevar al usuario al
+     proyecto correcto cuando avisa de que un video terminó. */
+  project_id: number;
   original_name: string;
   source_label: string;
   status: JobStatus;

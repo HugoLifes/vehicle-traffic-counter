@@ -14,6 +14,10 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from './api';
+import { avisar } from './avisos';
+import { navegarA } from './navegar';
+import { errorMessage } from './api';
+import { plural } from './format';
 import type { Point, ProjectCreate } from './types';
 
 /** La cola y la cámara se miran en vivo; 3 s es el ritmo del backend. */
@@ -69,13 +73,62 @@ export function useCounts() {
   return useQuery({ queryKey: keys.counts, queryFn: api.getCounts, refetchInterval: LIVE_MS });
 }
 
-/* --- Mutaciones --------------------------------------------------------- */
+/* --- Mutaciones ----------------------------------------------------------
+
+   Cada una avisa de su desenlace. Antes ninguna lo hacía: el resultado se
+   deducía de que la lista cambiara —o no cambiara— y un fallo solo se
+   veía si la pantalla que lo provocó seguía abierta. Al cambiar de
+   pestaña el error desaparecía sin haberse leído.
+
+   El aviso de fallo dice qué se intentaba, no solo que algo salió mal:
+   "No se pudo borrar el carril" con la causa del servidor debajo. */
+
+/** Envuelve una mutación para que avise siempre de cómo terminó. */
+function conAviso<TDatos, TVars>(
+  opciones: {
+    mutationFn: (v: TVars) => Promise<TDatos>;
+    exito?: (
+      d: TDatos,
+      v: TVars,
+    ) => {
+      titulo: string;
+      detalle?: string;
+      /** A dónde lleva el aviso. Sustituye al enlace que traían los
+          avisos en línea: encolar el conteo y no decir dónde se ve el
+          avance obliga a buscarlo a mano. */
+      ir?: { etiqueta: string; a: string };
+    } | null;
+    fallo: string;
+    alTerminar?: () => void;
+  },
+) {
+  return {
+    mutationFn: opciones.mutationFn,
+    onSuccess: (d: TDatos, v: TVars) => {
+      const msg = opciones.exito?.(d, v);
+      if (msg) {
+        avisar.ok(msg.titulo, {
+          detalle: msg.detalle,
+          accion: msg.ir
+            ? { etiqueta: msg.ir.etiqueta, alPulsar: () => navegarA(msg.ir!.a) }
+            : undefined,
+        });
+      }
+      opciones.alTerminar?.();
+    },
+    onError: (e: unknown) => avisar.error(opciones.fallo, { detalle: errorMessage(e) }),
+  };
+}
 
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: ProjectCreate) => api.createProject(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.projects }),
+    ...conAviso({
+      mutationFn: (data: ProjectCreate) => api.createProject(data),
+      exito: (p) => ({ titulo: 'Intersección creada', detalle: p.name }),
+      fallo: 'No se pudo crear la intersección',
+      alTerminar: () => qc.invalidateQueries({ queryKey: keys.projects }),
+    }),
   });
 }
 
@@ -101,48 +154,68 @@ export function useEvents(projectId: number | null) {
 export function useUpdateProject(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: Partial<ProjectCreate>) => api.updateProject(projectId, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.projects }),
+    ...conAviso({
+      mutationFn: (data: Partial<ProjectCreate>) => api.updateProject(projectId, data),
+      exito: () => ({ titulo: 'Cambios guardados' }),
+      fallo: 'No se pudieron guardar los cambios',
+      alTerminar: () => qc.invalidateQueries({ queryKey: keys.projects }),
+    }),
   });
 }
 
 export function useDeleteProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (projectId: number) => api.deleteProject(projectId),
-    onSuccess: () => qc.invalidateQueries(),
+    ...conAviso({
+      mutationFn: (projectId: number) => api.deleteProject(projectId),
+      exito: () => ({ titulo: 'Intersección borrada' }),
+      fallo: 'No se pudo borrar la intersección',
+      alTerminar: () => qc.invalidateQueries(),
+    }),
   });
 }
 
 export function useCreateLane(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; points: [Point, Point] }) =>
-      api.createLane({ project_id: projectId, ...data }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
-      qc.invalidateQueries({ queryKey: keys.projects });
-    },
+    ...conAviso({
+      mutationFn: (data: { name: string; points: [Point, Point] }) =>
+        api.createLane({ project_id: projectId, ...data }),
+      exito: (_d, v) => ({ titulo: 'Carril guardado', detalle: v.name }),
+      fallo: 'No se pudo guardar el carril',
+      alTerminar: () => {
+        qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
+        qc.invalidateQueries({ queryKey: keys.projects });
+      },
+    }),
   });
 }
 
 export function useRenameLane(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ laneId, name }: { laneId: number; name: string }) =>
-      api.renameLane(laneId, name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.lanes(projectId) }),
+    ...conAviso({
+      mutationFn: ({ laneId, name }: { laneId: number; name: string }) =>
+        api.renameLane(laneId, name),
+      exito: (_d, v) => ({ titulo: 'Carril renombrado', detalle: v.name }),
+      fallo: 'No se pudo renombrar el carril',
+      alTerminar: () => qc.invalidateQueries({ queryKey: keys.lanes(projectId) }),
+    }),
   });
 }
 
 export function useDeleteLane(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (laneId: number) => api.deleteLane(laneId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
-      qc.invalidateQueries({ queryKey: keys.projects });
-    },
+    ...conAviso({
+      mutationFn: (laneId: number) => api.deleteLane(laneId),
+      exito: () => ({ titulo: 'Carril eliminado' }),
+      fallo: 'No se pudo eliminar el carril',
+      alTerminar: () => {
+        qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
+        qc.invalidateQueries({ queryKey: keys.projects });
+      },
+    }),
   });
 }
 
@@ -160,20 +233,36 @@ export function useCalibrationStatus(projectId: number | null) {
 export function useRecount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (projectId: number) => api.recount(projectId),
-    onSuccess: () => qc.invalidateQueries(),
+    ...conAviso({
+      mutationFn: (projectId: number) => api.recount(projectId),
+      exito: (r, projectId) => ({
+        titulo: 'Reconteo encolado',
+        detalle: `${plural(r.requeued, 'video', 'videos')} con la calibración actual. Te aviso cuando terminen.`,
+        ir: { etiqueta: 'Ver la cola', a: `/proyecto/${projectId}/subir` },
+      }),
+      fallo: 'No se pudo volver a contar',
+      alTerminar: () => qc.invalidateQueries(),
+    }),
   });
 }
 
 export function useCopyCalibration(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (fromProjectId: number) => api.copyCalibration(projectId, fromProjectId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
-      qc.invalidateQueries({ queryKey: keys.zones(projectId) });
-      qc.invalidateQueries({ queryKey: keys.projects });
-    },
+    ...conAviso({
+      mutationFn: (fromProjectId: number) => api.copyCalibration(projectId, fromProjectId),
+      exito: (r) => ({
+        titulo: 'Calibración copiada',
+        detalle: `${plural(r.lanes, 'carril', 'carriles')} y ${plural(r.zones, 'zona', 'zonas')}. Revísala antes de contar.`,
+        ir: { etiqueta: 'Revisar los carriles', a: `/proyecto/${projectId}/calibrar` },
+      }),
+      fallo: 'No se pudo copiar la calibracion',
+      alTerminar: () => {
+        qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
+        qc.invalidateQueries({ queryKey: keys.zones(projectId) });
+        qc.invalidateQueries({ queryKey: keys.projects });
+      },
+    }),
   });
 }
 
@@ -188,58 +277,101 @@ export function useZones(projectId: number | null) {
 export function useCreateZone(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; points: Point[]; kind?: string }) =>
-      api.createZone({ project_id: projectId, ...data }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+    ...conAviso({
+      mutationFn: (data: { name: string; points: Point[]; kind?: string }) =>
+        api.createZone({ project_id: projectId, ...data }),
+      exito: (_d, v) => ({ titulo: 'Zona guardada', detalle: v.name }),
+      fallo: 'No se pudo guardar la zona',
+      alTerminar: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+    }),
   });
 }
 
 export function useRenameZone(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ zoneId, name }: { zoneId: number; name: string }) =>
-      api.renameZone(zoneId, name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+    ...conAviso({
+      mutationFn: ({ zoneId, name }: { zoneId: number; name: string }) =>
+        api.renameZone(zoneId, name),
+      exito: (_d, v) => ({ titulo: 'Zona renombrada', detalle: v.name }),
+      fallo: 'No se pudo renombrar la zona',
+      alTerminar: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+    }),
   });
 }
 
 export function useDeleteZone(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (zoneId: number) => api.deleteZone(zoneId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+    ...conAviso({
+      mutationFn: (zoneId: number) => api.deleteZone(zoneId),
+      exito: () => ({ titulo: 'Zona eliminada' }),
+      fallo: 'No se pudo eliminar la zona',
+      alTerminar: () => qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+    }),
   });
 }
 
 export function useDeleteVideo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (jobId: number) => api.deleteVideo(jobId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['videos'] });
-      qc.invalidateQueries({ queryKey: keys.projects });
-    },
+    ...conAviso({
+      mutationFn: (jobId: number) => api.deleteVideo(jobId),
+      exito: () => ({ titulo: 'Video eliminado' }),
+      fallo: 'No se pudo eliminar el video',
+      alTerminar: () => {
+        qc.invalidateQueries({ queryKey: ['videos'] });
+        qc.invalidateQueries({ queryKey: keys.projects });
+      },
+    }),
   });
 }
 
 export function useUploadVideos() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (form: FormData) => api.uploadVideos(form),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['videos'] });
-      qc.invalidateQueries({ queryKey: keys.projects });
-    },
+    ...conAviso({
+      mutationFn: (form: FormData) => api.uploadVideos(form),
+      exito: (r) => {
+        const n = r.accepted?.length ?? 0;
+        // Una subida parcial no es un exito a secas: lo rechazado va en
+        // su propio aviso, porque es lo que hay que revisar.
+        if (r.rejected?.length) {
+          avisar.aviso(plural(r.rejected.length, 'archivo rechazado', 'archivos rechazados'), {
+            detalle: r.rejected.map((x) => `${x.filename}: ${x.reason}`).join(' \u00b7 '),
+          });
+        }
+        return n
+          ? {
+              titulo: plural(n, 'video subido', 'videos subidos'),
+              detalle: 'El siguiente paso es calibrar los carriles.',
+            }
+          : null;
+      },
+      fallo: 'No se pudieron subir los videos',
+      alTerminar: () => {
+        qc.invalidateQueries({ queryKey: ['videos'] });
+        qc.invalidateQueries({ queryKey: keys.projects });
+      },
+    }),
   });
 }
 
 export function useStartCounting() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (projectId: number) => api.startCounting(projectId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['videos'] });
-      qc.invalidateQueries({ queryKey: keys.projects });
-    },
+    ...conAviso({
+      mutationFn: (projectId: number) => api.startCounting(projectId),
+      exito: (r, projectId) => ({
+        titulo: 'Conteo iniciado',
+        detalle: `${plural(r.started, 'video en cola', 'videos en cola')}. Te aviso cuando terminen.`,
+        ir: { etiqueta: 'Ver la cola', a: `/proyecto/${projectId}/subir` },
+      }),
+      fallo: 'No se pudo empezar el conteo',
+      alTerminar: () => {
+        qc.invalidateQueries({ queryKey: ['videos'] });
+        qc.invalidateQueries({ queryKey: keys.projects });
+      },
+    }),
   });
 }

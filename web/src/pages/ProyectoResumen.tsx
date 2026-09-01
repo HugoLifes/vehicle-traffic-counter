@@ -31,7 +31,6 @@ import {
   useRecount,
   useUpdateProject,
 } from '../lib/queries';
-import { errorMessage } from '../lib/api';
 import { plural } from '../lib/format';
 import type { Project } from '../lib/types';
 
@@ -255,18 +254,6 @@ export default function ProyectoResumen() {
               )}
             </>
           )}
-          {copiar.isError && (
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <Notice title="No se pudo copiar">{errorMessage(copiar.error)}</Notice>
-            </div>
-          )}
-          {copiar.isSuccess && (
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <Notice tone="good">
-                Calibración copiada. Revísala en <Link to={`${base}/calibrar`}>Calibrar</Link>.
-              </Notice>
-            </div>
-          )}
         </Card>
 
         {/* --- Volver a contar --- */}
@@ -288,19 +275,6 @@ export default function ProyectoResumen() {
           >
             {recontar.isPending ? 'Encolando…' : 'Volver a contar todo'}
           </Button>
-          {recontar.isError && (
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <Notice title="No se pudo volver a contar">{errorMessage(recontar.error)}</Notice>
-            </div>
-          )}
-          {recontar.isSuccess && (
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <Notice tone="good">
-                {plural(recontar.data.requeued, 'video encolado', 'videos encolados')}. Puedes
-                seguir el avance en <Link to={`${base}/subir`}>Subir videos</Link>.
-              </Notice>
-            </div>
-          )}
         </Card>
 
         {/* --- Zona irreversible ---
@@ -315,11 +289,6 @@ export default function ProyectoResumen() {
           <Button variant="danger" onClick={() => setConfirmarBorrado(true)}>
             Borrar esta intersección
           </Button>
-          {borrar.isError && (
-            <div style={{ marginTop: 'var(--space-3)' }}>
-              <Notice title="No se pudo borrar">{errorMessage(borrar.error)}</Notice>
-            </div>
-          )}
         </Card>
       </div>
 

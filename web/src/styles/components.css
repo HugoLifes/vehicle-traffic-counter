@@ -425,3 +425,88 @@ details.disclosure > summary:focus-visible { outline: 2px solid var(--accent); o
     forced-color-adjust: none;
   }
 }
+
+/* ================================================================
+   Avisos (toasts)
+   ================================================================
+   Sonner pone el apilado, la pausa al pasar el cursor, el deslizar para
+   descartar y la región de anuncio. El aspecto lo pone esto, con los
+   tokens del sistema — por eso van en modo headless: vencer los estilos
+   propios de Sonner exigiría un `!important` por cada regla.
+*/
+
+.aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: min(420px, calc(100vw - var(--space-5)));
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  /* Sombra profunda: el aviso flota sobre todo lo demás y tiene que
+     leerse como una capa aparte, no como una tarjeta más de la página. */
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 10px 30px var(--shadow),
+    0 2px 6px var(--shadow);
+}
+
+/* El tono va en una barra lateral, no en el fondo: un relleno de color
+   detrás del texto obliga a recalcular el contraste de cada tono, y a
+   media opacidad se vuelve turbio. La barra lo dice igual de claro y
+   deja el texto sobre la superficie normal. */
+.aviso::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 4px;
+  border-start-start-radius: var(--radius-lg);
+  border-end-start-radius: var(--radius-lg);
+}
+.aviso { position: relative; overflow: hidden; }
+
+.aviso.tono-good::before { background: var(--good); }
+.aviso.tono-critical::before { background: var(--critical); }
+.aviso.tono-warning::before { background: var(--warning); }
+.aviso.tono-info::before { background: var(--accent); }
+
+.av-icono { flex: 0 0 auto; display: flex; margin-top: 1px; }
+.aviso.tono-good .av-icono { color: var(--good); }
+.aviso.tono-critical .av-icono { color: var(--critical); }
+.aviso.tono-warning .av-icono { color: var(--warning); }
+.aviso.tono-info .av-icono { color: var(--accent); }
+
+.av-texto { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.av-titulo { font-size: var(--text-sm); font-weight: 700; color: var(--text-primary); }
+.av-detalle {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  /* Los nombres de archivo y los mensajes de error no llevan espacios
+     donde partir; sin esto desbordan el aviso. */
+  overflow-wrap: anywhere;
+}
+
+.av-accion { flex: 0 0 auto; padding: 7px 12px; font-size: var(--text-xs); }
+/* Sin achicar el area tactil: el resto de la plataforma usa 36px y el
+   aviso mide 420px de ancho, asi que no hay nada que apretar. */
+.av-cerrar { flex: 0 0 auto; }
+
+@media (max-width: 520px) {
+  /* En móvil la acción se lleva su fila: junto al texto deja los dos
+     demasiado estrechos para leerse o acertarles. */
+  .aviso { flex-wrap: wrap; }
+  /* La base descuenta la sangría: con `width: 100%` más el margen, el
+     botón se salía 28px por la derecha del aviso. Con `flex-grow` llena
+     exactamente lo que queda de su línea. */
+  .av-accion { flex: 1 1 calc(100% - 28px); margin-inline-start: 28px; }
+}
+
+@media (forced-colors: active) {
+  .aviso { border: 1px solid ButtonText; }
+  /* La barra de tono es color puro: en contraste forzado desaparece y con
+     ella la única señal de si esto es un éxito o un fallo. El icono y el
+     texto siguen diciéndolo. */
+  .aviso::before { forced-color-adjust: none; }
+}

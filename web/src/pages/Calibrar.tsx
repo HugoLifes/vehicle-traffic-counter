@@ -41,7 +41,7 @@ import {
   useZones,
 } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { errorMessage, fetchImage, heatmapUrl, listVideoSegments } from '../lib/api';
+import { fetchImage, heatmapUrl, listVideoSegments } from '../lib/api';
 import { plural } from '../lib/format';
 import type { FuenteVideo, Lane, Point, Zone } from '../lib/types';
 
@@ -413,13 +413,7 @@ export default function Calibrar() {
                 <Button block onClick={cancelarDibujo} style={{ marginTop: 'var(--space-2)' }}>
                   Cancelar
                 </Button>
-                {createZone.isError && (
-                  <div style={{ marginTop: 'var(--space-3)' }}>
-                    <Notice title="No se pudo guardar la zona">
-                      {errorMessage(createZone.error)}
-                    </Notice>
-                  </div>
-                )}
+
               </>
             ) : points.length === 2 ? (
               <>
@@ -490,13 +484,6 @@ export default function Calibrar() {
               </>
             )}
 
-            {createLane.isError && (
-              <div style={{ marginTop: 'var(--space-3)' }}>
-                <Notice title="No se pudo guardar el carril">
-                  {errorMessage(createLane.error)}
-                </Notice>
-              </div>
-            )}
 
             {/* El botón de arrancar solo aparece cuando hay algo que
                 arrancar: carriles definidos Y videos esperando. Así no se
@@ -525,11 +512,7 @@ export default function Calibrar() {
                 >
                   {recontar.isPending ? 'Reencolando…' : 'Volver a contar con estas líneas'}
                 </Button>
-                {recontar.isError && (
-                  <div style={{ marginTop: 'var(--space-2)' }}>
-                    <Notice title="No se pudo reencolar">{errorMessage(recontar.error)}</Notice>
-                  </div>
-                )}
+
               </div>
             )}
 
@@ -561,21 +544,7 @@ export default function Calibrar() {
               </div>
             )}
 
-            {startCounting.isSuccess && (
-              <div style={{ marginTop: 'var(--space-3)' }}>
-                <Notice tone="good" title="Conteo iniciado">
-                  Puedes seguir el avance en{' '}
-                  <Link to={`/proyecto/${projectId}/subir`}>Subir videos</Link>.
-                </Notice>
-              </div>
-            )}
-            {startCounting.isError && (
-              <div style={{ marginTop: 'var(--space-3)' }}>
-                <Notice title="No se pudo empezar el conteo">
-                  {errorMessage(startCounting.error)}
-                </Notice>
-              </div>
-            )}
+
           </Card>
 
           {/* Las zonas van en su propia tarjeta y no mezcladas con los

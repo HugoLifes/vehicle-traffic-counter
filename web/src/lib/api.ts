@@ -151,8 +151,11 @@ export const listVideos = (projectId?: number) =>
 export const deleteVideo = (jobId: number) =>
   request<void>(`/api/videos/${jobId}`, { method: 'DELETE' });
 
+/* El servidor devuelve `accepted`, no `jobs`. El tipo decía lo segundo
+   desde el principio y nadie lo notó porque la interfaz solo leía
+   `rejected`; al empezar a avisar de cuántos videos entraron, salió. */
 export const uploadVideos = (form: FormData) =>
-  request<{ jobs: VideoJob[]; rejected: { filename: string; reason: string }[] }>(
+  request<{ accepted: VideoJob[]; rejected: { filename: string; reason: string }[] }>(
     '/api/videos/upload',
     { method: 'POST', body: form },
   );
