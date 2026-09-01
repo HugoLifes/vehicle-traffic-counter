@@ -309,6 +309,11 @@ class VideoJobProcessor:
                             None
                         )
                         confidence = track['confidence'] if track else None
+                        # Alto de la caja en píxeles: la medida de si el
+                        # detector tiene con qué trabajar en este material.
+                        alto_caja = (
+                            int(track['bbox'][3] - track['bbox'][1]) if track else None
+                        )
                         # En qué calzada ocurrió. Es lo que separa los dos
                         # sentidos cuando la misma línea cruza las dos.
                         zone_id = (
@@ -323,7 +328,8 @@ class VideoJobProcessor:
                             confidence=confidence,
                             timestamp=crossing_timestamp,
                             job_id=job_id,
-                            zone_id=zone_id
+                            zone_id=zone_id,
+                            bbox_height=alto_caja
                         )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]

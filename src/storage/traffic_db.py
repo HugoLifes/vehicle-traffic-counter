@@ -98,6 +98,13 @@ def init_schema():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_crossings_job ON crossings(job_id)"
     )
+    # Alto de la caja del vehículo, en píxeles, en el momento del cruce.
+    # Es la cifra que decide si el detector puede con el material: la
+    # PT-914 y nuestra propia medición coinciden en que por debajo de unos
+    # 40 px el detector empieza a perder vehículos, y con 18 px de día y 13
+    # de noche —lo que da la cámara actual— eso ya está pasando. Guardarlo
+    # en cada cruce convierte esa medición puntual en un dato continuo.
+    _ensure_column(conn, "crossings", "bbox_height", "INTEGER")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS video_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +156,24 @@ def init_schema():
     # zonas dibujadas, que es el caso de todos los aforos anteriores.
     _ensure_column(conn, "crossings", "zone_id", "INTEGER")
 
+    # Registro de lo que se le ha hecho a cada intersección. Un aforo
+    # sustenta decisiones de obra, así que tiene que poder responder
+    # "¿de dónde salió esta cifra?": con qué calibración se contó, cuándo
+    # se recalibró, qué videos entraron y cuáles se quitaron. Sin esto,
+    # dos reportes distintos del mismo proyecto no se pueden explicar.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS project_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id),
+            kind TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_project ON project_events(project_id, id DESC)"
+    )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS geocode_cache (
             query TEXT PRIMARY KEY,
@@ -451,7 +476,8 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
                      vehicle_type: str, confidence: float,
                      timestamp: Optional[str] = None,
                      job_id: Optional[int] = None,
-                     zone_id: Optional[int] = None):
+                     zone_id: Optional[int] = None,
+                     bbox_height: Optional[int] = None):
     """
     timestamp: hora REAL del cruce en formato ISO ('YYYY-MM-DD HH:MM:SS').
     En la cámara en vivo se omite (usa la hora del reloj del sistema).
@@ -471,17 +497,19 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
     if timestamp:
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
-                                      confidence, timestamp, job_id, zone_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                      confidence, timestamp, job_id, zone_id,
+                                      bbox_height)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (lane_id, track_id, direction, vehicle_type, confidence, timestamp,
-             job_id, zone_id)
+             job_id, zone_id, bbox_height)
         )
     else:
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
-                                      confidence, job_id, zone_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (lane_id, track_id, direction, vehicle_type, confidence, job_id, zone_id)
+                                      confidence, job_id, zone_id, bbox_height)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (lane_id, track_id, direction, vehicle_type, confidence, job_id,
+             zone_id, bbox_height)
         )
     conn.commit()
 
@@ -773,3 +801,87 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
         })
 
     return {"lanes": result_lanes, "interval_minutes": interval_minutes}
+
+
+# --- Registro del proyecto ------------------------------------------------
+
+def log_event(project_id: Optional[int], kind: str, summary: str,
+              detail: Optional[str] = None) -> None:
+    """
+    Anota algo que le pasó a una intersección.
+
+    Nunca lanza: el registro es para poder explicar el aforo después, no
+    una parte del aforo. Si escribirlo falla, lo que estaba haciendo el
+    usuario tiene que seguir adelante igual — perder una línea de
+    historial es mucho menos grave que perder la subida de un video.
+    """
+    if project_id is None:
+        return
+    try:
+        conn = get_connection()
+        conn.execute(
+            """INSERT INTO project_events (project_id, kind, summary, detail)
+               VALUES (?, ?, ?, ?)""",
+            (project_id, kind, summary, detail),
+        )
+        conn.commit()
+    except Exception:
+        logger.warning("No se pudo registrar el evento del proyecto", exc_info=True)
+
+
+def list_events(project_id: int, limit: int = 200) -> List[Dict]:
+    conn = get_connection()
+    filas = conn.execute(
+        """SELECT id, kind, summary, detail, created_at
+           FROM project_events
+           WHERE project_id = ?
+           ORDER BY id DESC
+           LIMIT ?""",
+        (project_id, limit),
+    ).fetchall()
+    return [dict(f) for f in filas]
+
+
+def vehicle_height_stats(project_id: int) -> Dict:
+    """
+    Distribución del alto de los vehículos, en píxeles, medido en el
+    momento del cruce.
+
+    Es la cifra que decide si el detector puede con el material. Solo
+    existe para lo contado después de que se empezó a guardar, así que se
+    devuelve también cuántos cruces la tienen: un percentil sacado de
+    veinte muestras no significa lo mismo que uno sacado de cuarenta mil.
+    """
+    conn = get_connection()
+    fila = conn.execute(
+        """SELECT COUNT(*) AS con_medida
+           FROM crossings c
+           JOIN lane_configs l ON l.id = c.lane_id
+           WHERE l.project_id = ? AND c.bbox_height IS NOT NULL""",
+        (project_id,),
+    ).fetchone()
+    con_medida = fila["con_medida"] if fila else 0
+    if not con_medida:
+        return {"con_medida": 0, "mediana": None, "p10": None, "p90": None}
+
+    alturas = [
+        r["bbox_height"]
+        for r in conn.execute(
+            """SELECT c.bbox_height
+               FROM crossings c
+               JOIN lane_configs l ON l.id = c.lane_id
+               WHERE l.project_id = ? AND c.bbox_height IS NOT NULL
+               ORDER BY c.bbox_height""",
+            (project_id,),
+        ).fetchall()
+    ]
+
+    def pct(p: float) -> int:
+        return alturas[min(len(alturas) - 1, int(len(alturas) * p))]
+
+    return {
+        "con_medida": con_medida,
+        "mediana": pct(0.5),
+        "p10": pct(0.10),
+        "p90": pct(0.90),
+    }

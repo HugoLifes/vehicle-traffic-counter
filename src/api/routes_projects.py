@@ -67,6 +67,7 @@ def create_project(project: ProjectCreate):
         address=project.address,
         interval_minutes=project.interval_minutes,
     )
+    traffic_db.log_event(project_id, "proyecto", "Se creó la intersección", name)
     return traffic_db.get_project(project_id)
 
 
@@ -80,9 +81,22 @@ def get_project(project_id: int):
 
 @router.put("/{project_id}")
 def update_project(project_id: int, project: ProjectUpdate):
-    if traffic_db.get_project(project_id) is None:
+    antes = traffic_db.get_project(project_id)
+    if antes is None:
         raise HTTPException(404, "Proyecto no encontrado")
-    traffic_db.update_project(project_id, **project.model_dump(exclude_none=True))
+
+    cambios = project.model_dump(exclude_none=True)
+    traffic_db.update_project(project_id, **cambios)
+
+    # Se anota QUÉ cambió, no solo que hubo un cambio: "se editó el
+    # proyecto" no ayuda a explicar por qué dos reportes difieren.
+    detalle = ", ".join(
+        f"{campo}: '{antes.get(campo)}' → '{valor}'"
+        for campo, valor in cambios.items()
+        if antes.get(campo) != valor
+    )
+    if detalle:
+        traffic_db.log_event(project_id, "proyecto", "Se editaron los datos", detalle)
     return traffic_db.get_project(project_id)
 
 
@@ -163,6 +177,10 @@ def recount(project_id: int):
         traffic_db.update_video_job(job["id"], status="queued", processed_frames=0)
         if processor:
             processor.enqueue(job["id"])
+    traffic_db.log_event(
+        project_id, "conteo", "Se volvió a contar todo",
+        f"{len(conn_jobs)} videos reencolados con la calibración actual",
+    )
     return {"requeued": len(conn_jobs)}
 
 
@@ -212,6 +230,11 @@ def copy_calibration(project_id: int, data: CopyCalibration):
             project_id=project_id, name=zone["name"],
             points=zone["points"], kind=zone["kind"],
         )
+    origen = traffic_db.get_project(data.from_project_id)
+    traffic_db.log_event(
+        project_id, "calibracion", "Se copió la calibración de otra intersección",
+        f"Desde '{origen['name']}': {len(origen_lanes)} carriles, {len(origen_zones)} zonas",
+    )
     return {"lanes": len(origen_lanes), "zones": len(origen_zones)}
 
 

@@ -160,16 +160,22 @@ class CountingService:
                 for lane_id, counter in counters:
                     crossings = counter.update(tracks)
                     for crossing in crossings['in'] + crossings['out']:
-                        confidence = next(
-                            (t['confidence'] for t in tracks if t['id'] == crossing['track_id']),
+                        track = next(
+                            (t for t in tracks if t['id'] == crossing['track_id']),
                             None
+                        )
+                        # Alto de la caja en píxeles: la medida de si el
+                        # detector tiene con qué trabajar en este material.
+                        alto_caja = (
+                            int(track['bbox'][3] - track['bbox'][1]) if track else None
                         )
                         traffic_db.record_crossing(
                             lane_id=lane_id,
                             track_id=crossing['track_id'],
                             direction=crossing['direction'],
                             vehicle_type=crossing['vehicle_type'],
-                            confidence=confidence
+                            confidence=track['confidence'] if track else None,
+                            bbox_height=alto_caja
                         )
 
                 with self._frame_lock:
