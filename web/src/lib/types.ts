@@ -187,3 +187,39 @@ export interface VideoSegment {
 
 /** Qué video se está viendo: la grabación tal cual, o la anotada por la IA. */
 export type FuenteVideo = 'original' | 'procesado';
+
+
+/* --- Ficha de la cámara --------------------------------------------------
+   Qué tan buen material está recibiendo el detector. El alto del vehículo
+   se mide cruce a cruce; `con_medida` dice sobre cuántos, porque un
+   percentil de veinte muestras no vale lo mismo que uno de cuarenta mil. */
+export interface AlturaVehiculo {
+  con_medida: number;
+  mediana: number | null;
+  p10: number | null;
+  p90: number | null;
+}
+
+export interface FichaCamara {
+  videos: number;
+  videos_muestreados: number;
+  resoluciones: { resolucion: string; muestras: number }[];
+  fps: number | null;
+  bitrate_kbps: number | null;
+  altura_vehiculo: AlturaVehiculo;
+  alto_necesario_px: number;
+  bitrate_minimo_kbps: number;
+  avisos: string[];
+}
+
+/* --- Registro del proyecto ----------------------------------------------- */
+
+export type TipoEvento = 'proyecto' | 'video' | 'calibracion' | 'conteo';
+
+export interface EventoProyecto {
+  id: number;
+  kind: TipoEvento;
+  summary: string;
+  detail: string | null;
+  created_at: string;
+}

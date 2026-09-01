@@ -111,6 +111,13 @@ async def upload_videos(
         )
         accepted.append(traffic_db.get_video_job(job_id))
 
+    if accepted:
+        traffic_db.log_event(
+            project_id, "video",
+            f"Se subieron {len(accepted)} videos" if len(accepted) > 1 else "Se subió un video",
+            ", ".join(a["original_name"] for a in accepted[:8])
+            + (f" y {len(accepted) - 8} más" if len(accepted) > 8 else ""),
+        )
     return {"accepted": accepted, "rejected": rejected}
 
 
@@ -151,6 +158,9 @@ def delete_video(job_id: int):
             if path.exists():
                 path.unlink()
     traffic_db.delete_video_job(job_id)
+    traffic_db.log_event(
+        job.get("project_id"), "video", "Se eliminó un video", job["original_name"]
+    )
     return {"deleted": job_id}
 
 

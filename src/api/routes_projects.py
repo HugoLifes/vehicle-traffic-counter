@@ -238,6 +238,111 @@ def copy_calibration(project_id: int, data: CopyCalibration):
     return {"lanes": len(origen_lanes), "zones": len(origen_zones)}
 
 
+@router.get("/{project_id}/camara")
+def ficha_camara(project_id: int):
+    """
+    Qué tan buen material está recibiendo el detector.
+
+    El aforo de 24 horas dejó claro que el límite de este sistema no está
+    en el modelo sino en lo que le llega: un vehículo ocupa 18 px de alto
+    de día y 13 de noche, cuando el detector necesita unos 40 para
+    trabajar con holgura (ver docs/REQUISITOS_CAMARA.md). Esta ficha pone
+    esa medición delante de quien va a comprar la cámara, en vez de
+    dejarla en un documento que nadie abre.
+
+    El alto se mide de verdad, cruce a cruce, para lo contado desde que se
+    empezó a guardar. Para lo anterior no hay medición y se dice, en lugar
+    de estimar un número que parecería medido.
+    """
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Esa intersección no existe")
+
+    jobs = traffic_db.get_video_jobs_by_project(project_id)
+    from src.api.routes_video_frames import _metadatos, _sondear
+
+    resoluciones: dict = {}
+    fps_vistos: list = []
+    bitrates: list = []
+
+    # La resolución obliga a abrir el archivo, y con 144 segmentos eso son
+    # cinco segundos. Se sondea una MUESTRA repartida por toda la lista:
+    # los segmentos de un aforo salen de la misma cámara, así que si
+    # hubiera dos resoluciones distintas, una docena de muestras
+    # espaciadas la delata igual que sondearlos todos.
+    paso = max(1, len(jobs) // 12)
+    for job in jobs[::paso]:
+        sondeo = _sondear(job["stored_path"])
+        if sondeo and sondeo["ancho"] and sondeo["alto"]:
+            clave = f"{sondeo['ancho']}x{sondeo['alto']}"
+            resoluciones[clave] = resoluciones.get(clave, 0) + 1
+
+    for job in jobs:
+        meta = _metadatos(job)
+        if meta is None:
+            continue
+        if meta["fps"]:
+            fps_vistos.append(meta["fps"])
+        # Bitrate a partir del tamaño y la duración: es lo que de verdad
+        # determina cuánto detalle sobrevive al compresor, y ninguna
+        # cabecera lo declara de forma fiable.
+        if meta["duracion_s"] and job.get("size_bytes"):
+            bitrates.append(job["size_bytes"] * 8 / meta["duracion_s"] / 1000)
+
+    def media(xs):
+        return round(sum(xs) / len(xs), 1) if xs else None
+
+    alturas = traffic_db.vehicle_height_stats(project_id)
+
+    # Umbrales medidos sobre este mismo material, no inventados.
+    ALTO_NECESARIO = 40
+    BITRATE_MINIMO = 4000   # kb/s para 1080p con detalle utilizable
+
+    avisos = []
+    if alturas["mediana"] is not None and alturas["mediana"] < ALTO_NECESARIO:
+        avisos.append(
+            f"El vehículo típico mide {alturas['mediana']} px de alto y el detector "
+            f"necesita unos {ALTO_NECESARIO}. Por debajo de esa marca se pierden "
+            f"vehículos, sobre todo de noche, y ningún ajuste lo recupera: el "
+            f"detalle ya no está en la imagen."
+        )
+    br = media(bitrates)
+    if br is not None and br < BITRATE_MINIMO:
+        avisos.append(
+            f"El material va a {br:.0f} kb/s. Para 1080p con detalle utilizable hacen "
+            f"falta 4.000–8.000 kb/s: a este bitrate el compresor descarta justo el "
+            f"detalle que distingue un vehículo del asfalto."
+        )
+    alto_max = max((int(k.split("x")[1]) for k in resoluciones), default=0)
+    if alto_max and alto_max < 720:
+        avisos.append(
+            f"La grabación es de {alto_max}p. El mínimo aceptable es 720p y lo "
+            f"recomendado 1080p, donde el mismo vehículo pasaría de 18 a unos 54 px."
+        )
+
+    return {
+        "videos": len(jobs),
+        "resoluciones": [
+            {"resolucion": k, "muestras": v}
+            for k, v in sorted(resoluciones.items(), key=lambda kv: -kv[1])
+        ],
+        "videos_muestreados": len(jobs[::paso]),
+        "fps": media(fps_vistos),
+        "bitrate_kbps": br,
+        "altura_vehiculo": alturas,
+        "alto_necesario_px": ALTO_NECESARIO,
+        "bitrate_minimo_kbps": BITRATE_MINIMO,
+        "avisos": avisos,
+    }
+
+
+@router.get("/{project_id}/eventos")
+def eventos(project_id: int, limit: int = 200):
+    """Historial de lo que se le ha hecho a esta intersección."""
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Esa intersección no existe")
+    return traffic_db.list_events(project_id, limit)
+
+
 @router.post("/{project_id}/start-counting")
 def start_counting(project_id: int):
     """
@@ -269,4 +374,8 @@ def start_counting(project_id: int):
         if processor:
             processor.enqueue(job["id"])
 
+    traffic_db.log_event(
+        project_id, "conteo", "Empezó el conteo",
+        f"{len(pending)} videos, con {len(lanes)} carriles calibrados",
+    )
     return {"started": len(pending), "lanes": len(lanes)}

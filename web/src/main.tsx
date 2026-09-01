@@ -13,6 +13,9 @@ import './styles/print.css';
 import Proyectos from './pages/Proyectos';
 import Proyecto from './pages/Proyecto';
 import ProyectoResumen from './pages/ProyectoResumen';
+import ProyectoCamara from './pages/ProyectoCamara';
+import ProyectoRegistro from './pages/ProyectoRegistro';
+import Comparar from './pages/Comparar';
 import Subir from './pages/Subir';
 import Calibrar from './pages/Calibrar';
 import Reporte from './pages/Reporte';
@@ -52,7 +55,11 @@ createRoot(document.getElementById('root')!).render(
             <Route path="subir" element={<Subir />} />
             <Route path="calibrar" element={<Calibrar />} />
             <Route path="reporte" element={<Reporte />} />
+            <Route path="camara" element={<ProyectoCamara />} />
+            <Route path="registro" element={<ProyectoRegistro />} />
           </Route>
+
+          <Route path="/comparar" element={<Comparar />} />
 
           <Route path="/en-vivo" element={<EnVivo />} />
 

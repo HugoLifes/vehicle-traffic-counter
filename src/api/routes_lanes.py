@@ -60,6 +60,10 @@ def create_lane(lane: LaneCreate):
         points=lane.points,
     )
     _maybe_reload_live(project["name"])
+    traffic_db.log_event(
+        lane.project_id, "calibracion", "Se agregó un carril",
+        f"'{lane.name}' en {[[round(c) for c in pt] for pt in lane.points]}",
+    )
     return {"id": lane_id, "name": lane.name}
 
 
@@ -79,6 +83,18 @@ def update_lane(lane_id: int, lane: LaneUpdate):
         points=lane.points,
     )
     _maybe_reload_live(existing.get("camera_source"))
+    # Mover una línea después de contar es justo lo que hace que dos
+    # reportes del mismo proyecto no coincidan, así que se anota.
+    cambios = []
+    if lane.name is not None and lane.name != existing["name"]:
+        cambios.append(f"nombre: '{existing['name']}' → '{lane.name}'")
+    if lane.points is not None:
+        cambios.append("se movió la línea")
+    if cambios:
+        traffic_db.log_event(
+            existing.get("project_id"), "calibracion",
+            f"Se editó el carril '{existing['name']}'", "; ".join(cambios),
+        )
     return {"updated": lane_id}
 
 
@@ -91,4 +107,7 @@ def delete_lane(lane_id: int):
 
     traffic_db.delete_lane(lane_id)
     _maybe_reload_live(existing.get("camera_source"))
+    traffic_db.log_event(
+        existing.get("project_id"), "calibracion", "Se eliminó un carril", existing["name"]
+    )
     return {"deleted": lane_id}

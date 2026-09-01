@@ -21,7 +21,7 @@ import type {
   Zone,
   FrameDetection,
 } from './types';
-import type { FuenteVideo } from './types';
+import type { EventoProyecto, FichaCamara, FuenteVideo } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -93,6 +93,12 @@ export const updateProject = (id: number, data: Partial<ProjectCreate>) =>
 
 export const deleteProject = (id: number) =>
   request<{ deleted: number }>(`/api/projects/${id}`, { method: 'DELETE' });
+
+export const getCameraCard = (id: number) =>
+  request<FichaCamara>(`/api/projects/${id}/camara`);
+
+export const listEvents = (id: number) =>
+  request<EventoProyecto[]>(`/api/projects/${id}/eventos`);
 
 export const startCounting = (id: number) =>
   request<{ started: number }>(`/api/projects/${id}/start-counting`, { method: 'POST' });

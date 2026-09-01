@@ -79,6 +79,25 @@ export function useCreateProject() {
   });
 }
 
+export function useCameraCard(projectId: number | null) {
+  return useQuery({
+    queryKey: ['camara', projectId ?? 0],
+    queryFn: () => api.getCameraCard(projectId as number),
+    enabled: projectId !== null,
+  });
+}
+
+export function useEvents(projectId: number | null) {
+  return useQuery({
+    queryKey: ['eventos', projectId ?? 0],
+    queryFn: () => api.listEvents(projectId as number),
+    enabled: projectId !== null,
+    // El registro cambia cuando el usuario hace algo, y lo que hace suele
+    // ocurrir en otra pestaña del mismo proyecto.
+    refetchInterval: 10000,
+  });
+}
+
 export function useUpdateProject(projectId: number) {
   const qc = useQueryClient();
   return useMutation({

@@ -31,11 +31,19 @@ import { useProjects } from '../lib/queries';
 import { formatNumber } from '../lib/format';
 import type { Project } from '../lib/types';
 
+/*
+  Las tres primeras van numeradas porque son el flujo de un aforo, en
+  orden. Las de después no llevan número: son consultas sobre lo hecho,
+  no pasos que haya que recorrer, y numerarlas sugeriría un quinto y un
+  sexto paso que no existen.
+*/
 const HERRAMIENTAS = [
-  { to: '', label: 'Resumen', end: true },
-  { to: 'subir', label: 'Subir videos', end: false },
-  { to: 'calibrar', label: 'Calibrar', end: false },
-  { to: 'reporte', label: 'Reporte', end: false },
+  { to: '', label: 'Resumen', end: true, paso: false },
+  { to: 'subir', label: 'Subir videos', end: false, paso: true },
+  { to: 'calibrar', label: 'Calibrar', end: false, paso: true },
+  { to: 'reporte', label: 'Reporte', end: false, paso: true },
+  { to: 'camara', label: 'Cámara', end: false, paso: false },
+  { to: 'registro', label: 'Registro', end: false, paso: false },
 ];
 
 /*
@@ -138,7 +146,7 @@ export default function Proyecto() {
             end={h.end}
             className={({ isActive }) => (isActive ? 'proj-tool active' : 'proj-tool')}
           >
-            {i > 0 && <span className="pt-num">{i}</span>}
+            {h.paso && <span className="pt-num">{i}</span>}
             {h.label}
           </NavLink>
         ))}
