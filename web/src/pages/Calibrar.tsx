@@ -34,7 +34,6 @@ import {
   useStartCounting,
   useVideos,
   useCalibrationStatus,
-  useCopyCalibration,
   useRecount,
   useCreateZone,
   useDeleteZone,
@@ -88,7 +87,6 @@ export default function Calibrar() {
   const createZone = useCreateZone(projectId ?? 0);
   const renameZone = useRenameZone(projectId ?? 0);
   const removeZone = useDeleteZone(projectId ?? 0);
-  const copiarCalibracion = useCopyCalibration(projectId ?? 0);
   const { data: calibStatus } = useCalibrationStatus(projectId);
   const recontar = useRecount();
   const { data: jobs } = useVideos(projectId ?? undefined);
@@ -125,7 +123,6 @@ export default function Calibrar() {
   const [drawKind, setDrawKind] = useState<'linea' | 'zona'>('linea');
   const [points, setPoints] = useState<Point[]>([]);
   const [zoneToDelete, setZoneToDelete] = useState<Zone | null>(null);
-  const [copiarDe, setCopiarDe] = useState<number | ''>('');
   const [newName, setNewName] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [hint, setHint] = useState<string | null>(null);
@@ -343,46 +340,19 @@ export default function Calibrar() {
               )}
             </div>
 
-            {/* La cámara de un punto de medición no se mueve entre
-                grabaciones, así que la calibración se puede reutilizar. Y
-                conviene: dos líneas trazadas a ojo en días distintos no
-                caen en el mismo píxel, y los conteos dejan de ser
-                comparables entre sesiones. */}
+            {/* Reutilizar la calibración de otra intersección vive en el
+                Resumen del proyecto, no aquí: es una acción sobre el
+                proyecto entero y no parte de dibujar líneas. Estaba en los
+                dos sitios a la vez, con dos nombres y dos estilos
+                distintos; aquí queda el camino, no una segunda copia. */}
             {laneCount === 0 && (zones?.length ?? 0) === 0 && otrosProyectos.length > 0 && (
-              <div className="copy-calib">
-                <label className="field">
-                  <span className="field-label">Copiar calibración de otra intersección</span>
-                  <select
-                    value={copiarDe}
-                    onChange={(e) => setCopiarDe(e.target.value ? Number(e.target.value) : '')}
-                  >
-                    <option value="">Elige una intersección…</option>
-                    {otrosProyectos.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <Button
-                  block
-                  disabled={copiarDe === '' || copiarCalibracion.isPending}
-                  onClick={() => {
-                    if (copiarDe !== '') copiarCalibracion.mutate(copiarDe);
-                  }}
-                >
-                  {copiarCalibracion.isPending ? 'Copiando…' : 'Copiar líneas y zonas'}
-                </Button>
-                <p className="sc-info">
-                  Se copia solo la geometría. Los conteos de la otra intersección se quedan donde
-                  están.
-                </p>
-                {copiarCalibracion.isError && (
-                  <Notice title="No se pudo copiar">
-                    {errorMessage(copiarCalibracion.error)}
-                  </Notice>
-                )}
-              </div>
+              <p className="sc-info">
+                ¿Ya calibraste esta cámara antes? Puedes{' '}
+                <Link to={`/proyecto/${projectId}`}>
+                  copiar la calibración de otra intersección
+                </Link>{' '}
+                en vez de volver a dibujarla.
+              </p>
             )}
 
             <div className="lane-list">

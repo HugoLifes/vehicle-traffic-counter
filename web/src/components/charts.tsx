@@ -106,6 +106,12 @@ export function IntervalChart({ intervals, peakIntervalStart }: IntervalChartPro
               width={barW}
               height={h}
               rx={Math.min(3, barW / 2)}
+              /* Escalón de 12 ms, no de los 30-50 habituales, y con tope
+                 a 300 ms. Un aforo de 24 horas trae 96 barras: a 30 ms el
+                 recorrido duraría 2,9 s, muy por encima del máximo de
+                 700 ms que hace que una secuencia se lea como una sola
+                 cosa. Con el tope, el total queda en 700 ms exactos sin
+                 importar cuántas barras haya. */
               style={{ animationDelay: `${Math.min(i * 12, 300)}ms` }}
             >
               <title>{`${label} — ${iv.total} vehículos (${iv.in} entrada / ${iv.out} salida)`}</title>

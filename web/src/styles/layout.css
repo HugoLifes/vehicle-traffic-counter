@@ -73,7 +73,7 @@
 .nav-project {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-05);
   font-size: var(--text-sm);
   font-weight: 700;
   color: var(--text-primary);

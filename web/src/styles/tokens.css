@@ -92,6 +92,11 @@
   --font-display: 'Overpass', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Overpass Mono', ui-monospace, 'Cascadia Code', monospace;
   --text-xs: 0.75rem;
+  /* Rótulos dentro del SVG de las gráficas. Van en px y no en rem porque
+     dentro de un viewBox el rem no escala con el resto de la página: el
+     texto crecería o encogería respecto a las barras. */
+  --text-chart: 11px;
+  --text-chart-sm: 10px;
   --text-sm: 0.85rem;
   --text-base: 1rem;
   --text-lg: 1.15rem;
@@ -99,6 +104,10 @@
   --text-2xl: 2.4rem;
 
   /* Espaciado y forma */
+  /* El código pedía 6px diecinueve veces: no era deriva, era un escalón
+     que faltaba entre 4 y 8. Un token que hace falta y no existe se
+     convierte en un valor suelto repetido por todo el CSS. */
+  --space-05: 6px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;

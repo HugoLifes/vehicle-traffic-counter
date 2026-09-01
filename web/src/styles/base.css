@@ -112,7 +112,7 @@ p { text-wrap: pretty; }
 */
 .skip-link {
   position: absolute;
-  left: -9999px;
+  inset-inline-start: -9999px;
   top: var(--space-2);
   z-index: 100;
   background: var(--accent);
@@ -123,7 +123,7 @@ p { text-wrap: pretty; }
   text-decoration: none;
 }
 .skip-link:focus {
-  left: var(--space-4);
+  inset-inline-start: var(--space-4);
 }
 
 main:focus { outline: none; }
