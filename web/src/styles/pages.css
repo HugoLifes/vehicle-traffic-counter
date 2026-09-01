@@ -1350,3 +1350,9 @@
 .cmp-relleno.tono-warning { background: var(--warning); }
 
 .cmp-comp { min-width: 140px; }
+
+/* Coordenadas a mano: el camino cuando el mapa no puede cargar sus
+   imágenes, y el atajo para quien ya trae el dato de un GPS. */
+.coord-manual { margin-top: var(--space-3); }
+.coord-campos { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.coord-campos .field { flex: 1 1 160px; }

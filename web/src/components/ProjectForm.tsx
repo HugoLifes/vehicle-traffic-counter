@@ -23,10 +23,16 @@ import type { Project, ProjectCreate } from '../lib/types';
 
 const INTERVALS = [5, 10, 15, 30, 60];
 
-/* Leaflet se carga como <script> global desde /leaflet (autohospedado,
-   igual que las fuentes). Los *tiles* sí necesitan internet: crear o
-   editar una intersección se hace desde un navegador con conexión, no
-   desde el Jetson en campo. Si no cargan, se pueden teclear lat/long. */
+/* Leaflet se carga bajo demanda desde /leaflet (autohospedado, igual que
+   las fuentes), así que la librería nunca depende de la red. Los mosaicos
+   sí: crear o editar una intersección se hace desde un navegador con
+   conexión, no desde el Jetson en campo.
+
+   Cuando los mosaicos fallan la librería no se entera —el mapa sigue
+   "vivo", solo que en gris— así que hay que escuchar `tileerror` y
+   decirlo. Y decirlo no basta: por eso está la entrada manual de
+   coordenadas, que es lo que hace que el aforo se pueda registrar
+   igual. */
 declare const L: any;
 
 interface Location {
@@ -46,6 +52,7 @@ function useLeafletMap(
   onPickRef.current = onPick;
   const inicialRef = useRef(inicial);
   const [fallo, setFallo] = useState(false);
+  const [mosaicosCaidos, setMosaicosCaidos] = useState(false);
 
   const place = useCallback((lat: number, lon: number, zoom?: number) => {
     const map = mapRef.current;
@@ -78,10 +85,13 @@ function useLeafletMap(
           tieneUbicacion ? [latitude, longitude] : [23.6345, -102.5528], // México
           tieneUbicacion ? 17 : 5,
         );
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        const capa = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
           attribution: '© OpenStreetMap',
         }).addTo(map);
+        // Sin internet los mosaicos fallan uno a uno y Leaflet no avisa:
+        // el mapa queda en gris y parece que la app se rompió.
+        capa.on('tileerror', () => setMosaicosCaidos(true));
         map.on('click', (e: any) => onPickRef.current(e.latlng.lat, e.latlng.lng));
         mapRef.current = map;
 
@@ -108,7 +118,7 @@ function useLeafletMap(
     [],
   );
 
-  return { place, fallo };
+  return { place, fallo, mosaicosCaidos };
 }
 
 interface Props {
@@ -172,6 +182,30 @@ export function ProjectForm({
   useEffect(() => {
     nameRef.current?.focus();
   }, []);
+
+  /*
+    Coordenada escrita a mano. No se llama a la geocodificación inversa:
+    quien teclea una coordenada ya sabe dónde está, y pedirle la dirección
+    a Nominatim en cada pulsación sería un abuso de un servicio gratuito
+    cuya política pide una petición por segundo.
+  */
+  function aplicarCoordenada(campo: 'latitude' | 'longitude', bruto: string) {
+    const valor = bruto.trim() === '' ? null : Number(bruto);
+    if (valor !== null && Number.isNaN(valor)) return;
+
+    setLocation((prev) => {
+      const siguiente = { ...prev, [campo]: valor };
+      if (siguiente.latitude !== null && siguiente.longitude !== null) {
+        map.place(siguiente.latitude, siguiente.longitude, 16);
+      }
+      return siguiente;
+    });
+    setMapStatus(
+      valor === null
+        ? 'Escribe las dos coordenadas para fijar la ubicación.'
+        : 'Ubicación fijada a mano.',
+    );
+  }
 
   async function search() {
     const q = query.trim();
@@ -317,6 +351,49 @@ export function ProjectForm({
                 : ''}
             </span>
           </div>
+          {map.mosaicosCaidos && (
+            <div style={{ marginTop: 'var(--space-3)' }}>
+              <Notice tone="warning" title="El mapa no puede cargar sus imágenes">
+                Los mosaicos vienen de internet. Sin conexión el mapa se queda en gris, pero la
+                intersección se puede registrar igual: escribe las coordenadas abajo.
+              </Notice>
+            </div>
+          )}
+
+          {/*
+            Entrada manual de coordenadas. Plegada por defecto para no
+            competir con el mapa, y abierta sola cuando los mosaicos
+            fallan — que es justo cuando pasa a ser el único camino.
+            Sirve además a quien ya trae la coordenada de un GPS y no
+            necesita buscarla.
+          */}
+          <details className="disclosure coord-manual" open={map.mosaicosCaidos}>
+            <summary>Escribir las coordenadas a mano</summary>
+            <div className="coord-campos">
+              <TextField
+                label="Latitud"
+                type="number"
+                step="any"
+                inputMode="decimal"
+                placeholder="28.63530"
+                value={location.latitude ?? ''}
+                onChange={(e) => aplicarCoordenada('latitude', e.target.value)}
+              />
+              <TextField
+                label="Longitud"
+                type="number"
+                step="any"
+                inputMode="decimal"
+                placeholder="-106.08890"
+                value={location.longitude ?? ''}
+                onChange={(e) => aplicarCoordenada('longitude', e.target.value)}
+              />
+            </div>
+            <p className="field-hint">
+              En grados decimales. Si el mapa está cargado, el pin sigue lo que escribas.
+            </p>
+          </details>
+
           <p className="map-attribution">
             Mapa ©{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
