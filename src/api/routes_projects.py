@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.api.routes_video_frames import cerrar_captura
+from src.api.routes_videos import UPLOAD_DIR
 from src.engine.video_job_processor import get_processor
 from src.storage import traffic_db
 
@@ -102,8 +103,19 @@ def update_project(project_id: int, project: ProjectUpdate):
 
 @router.delete("/{project_id}")
 def delete_project(project_id: int):
-    if traffic_db.get_project(project_id) is None:
+    proyecto = traffic_db.get_project(project_id)
+    if proyecto is None:
         raise HTTPException(404, "Proyecto no encontrado")
+
+    # Se deja constancia ANTES de borrar, porque la bitácora del proyecto
+    # se va con él. Un aforo borrado por error no dejaba ningún rastro de
+    # qué se perdió ni cuándo — que es exactamente lo que hace falta saber
+    # cuando alguien pregunta a dónde se fue una intersección.
+    videos = traffic_db.list_video_jobs(project_id=project_id)
+    logging.warning(
+        f"BORRANDO proyecto {project_id} '{proyecto['name']}' "
+        f"con {len(videos)} videos"
+    )
 
     # Los videos abiertos por el visor de cuadros hay que cerrarlos antes
     # de borrar el archivo: en Windows no se puede eliminar un archivo que
@@ -113,8 +125,27 @@ def delete_project(project_id: int):
 
     borrados = traffic_db.delete_project(project_id)
 
+    # SOLO se borran archivos que la plataforma copió ella misma dentro de
+    # data/uploads. Un video puede estar registrado "en su sitio" —con
+    # stored_path apuntando a la carpeta original del usuario— y en ese
+    # caso el archivo NO es nuestro para borrarlo.
+    #
+    # Esto ya causó daño real: al borrar un proyecto cuyos 144 videos
+    # estaban registrados en D:\aforo24h, se eliminaron las grabaciones
+    # originales del usuario, no unas copias. Borrar un proyecto nunca
+    # debe destruir material que la plataforma no creó.
+    raiz_propia = UPLOAD_DIR.resolve()
     eliminados = 0
+    ajenos = 0
     for ruta in borrados.pop("archivos", []):
+        try:
+            if raiz_propia not in Path(ruta).resolve().parents:
+                ajenos += 1
+                logging.info(f"Se conserva {ruta}: está fuera de data/uploads")
+                continue
+        except OSError:
+            ajenos += 1
+            continue
         try:
             Path(ruta).unlink(missing_ok=True)
             eliminados += 1
@@ -123,6 +154,7 @@ def delete_project(project_id: int):
             # proyecto ya no existe en la base y eso es lo que importa.
             logging.warning(f"No se pudo borrar {ruta}: {e}")
     borrados["archivos_eliminados"] = eliminados
+    borrados["archivos_conservados"] = ajenos
     return {"deleted": project_id, **borrados}
 
 
