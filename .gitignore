@@ -75,6 +75,7 @@ output/
 data/*.db
 data/*.db-*
 data/uploads/
+data/_pid.txt
 *.mp4
 *.avi
 *.mov
