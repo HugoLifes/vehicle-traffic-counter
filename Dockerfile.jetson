@@ -51,6 +51,20 @@ COPY --from=frontend /build/dist ./web/dist
 
 RUN mkdir -p models data data/uploads
 
+# El modelo se descarga AQUÍ, al construir, no en el primer arranque.
+#
+# Los .pt están en .gitignore (pesan y se regeneran), así que al clonar el
+# repo la carpeta models/ llega vacía. Sin esta línea, el Jetson tendría
+# que bajarlo la primera vez que cuenta —justo en campo, que es donde
+# menos internet hay— y volvería a bajarlo cada vez que se recrea el
+# contenedor.
+#
+# Es yolov8s y no yolov8n: medido sobre el material del proyecto, el "n"
+# no ve los vehículos de esta escena (75 contra 107 cruces en 2 min).
+# Ver docs/DETECCION.md.
+RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8s.pt')" \
+    && mv yolov8s.pt models/ 2>/dev/null || true
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

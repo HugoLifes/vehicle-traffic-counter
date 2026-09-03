@@ -129,6 +129,68 @@ docker compose -f docker-compose.jetson.yml down
 docker compose -f docker-compose.jetson.yml exec aforo-vehicular python3 test_nvidia_api.py
 ```
 
+## 6.5 Velocidad: lo primero que hay que medir y ajustar
+
+El detector está en **yolov8s a imgsz 1280 sobre la franja de la vía**
+(ver [DETECCION.md](DETECCION.md) para el porqué de cada valor). Eso da,
+en la PC de desarrollo con una GPU de escritorio:
+
+| imgsz | ms por cuadro | Un video de 10 min tarda |
+|---|---|---|
+| 640 | 11.1 | 1.7 min |
+| 960 | 17.1 | 2.6 min |
+| **1280** *(actual)* | **30.6** | **4.6 min** |
+
+El Orin Nano es del orden de **5 a 8 veces más lento**, así que sin
+acelerar, un video de 10 minutos tardaría entre 23 y 37 minutos: más
+lento que el tiempo real, y un aforo de 24 h no acabaría nunca.
+
+**Lo primero al tener el equipo encendido es medirlo de verdad**, porque
+esa horquilla es una estimación:
+
+```bash
+docker compose -f docker-compose.jetson.yml exec aforo-vehicular   python3 -c "
+import time, cv2, numpy as np
+from src.detector import VehicleDetector
+d = VehicleDetector('models/yolov8s.pt', 0.25, 0.5, 1280, 'auto')
+f = np.zeros((360, 640, 3), np.uint8)
+for _ in range(5): d.detect(f)
+t = time.time()
+for _ in range(30): d.detect(f)
+print(f'{(time.time()-t)/30*1000:.0f} ms por cuadro')
+"
+```
+
+### Si sale por encima de unos 60 ms, encender TensorRT
+
+En [`configs/platform.yaml`](../configs/platform.yaml):
+
+```yaml
+detector:
+  use_tensorrt: true
+  half_precision: true
+```
+
+TensorRT compila el modelo **para esa GPU concreta**: la primera vez
+tarda varios minutos y deja un `.engine` junto al `.pt`, que se reutiliza
+en los arranques siguientes. Da del orden de 2-3x. Como el `.engine` es
+específico del equipo, no se sube al repo ni se copia a otro Jetson.
+
+### Si aun así no alcanza
+
+En este orden, porque así es como menos exactitud se pierde:
+
+1. **`input_size: 960`** — casi la mitad de tiempo. Se pierden algunos
+   vehículos de la calzada del fondo, que ya son los más difíciles.
+2. **`input_size: 640`** — un tercio del tiempo, pero sobre este material
+   el conteo baja bastante; ver la tabla de DETECCION.md antes de bajar
+   aquí.
+3. Procesar de noche o por lotes, dejando el equipo trabajando sin prisa:
+   un aforo grabado no tiene que procesarse en tiempo real.
+
+Lo que **no** conviene tocar es el modelo: volver a yolov8n hace que el
+equipo vea la mitad de los vehículos, y entonces la velocidad da igual.
+
 ## 7. Ajustar rendimiento del sistema (fuera de Docker)
 
 Independiente del contenedor — configura el propio Jetson para máximo
@@ -145,6 +207,8 @@ Esta guía está lista para usarse, pero como no hay acceso al Jetson
 físico todavía, quedan pendientes de confirmar en el primer deploy real:
 
 - Que la versión de JetPack sea efectivamente 6.x (paso 0)
-- FPS real de YOLOv8n sobre el Orin Nano con la cámara definitiva
+- **Los ms por cuadro reales** (paso 6.5) — es lo que decide si hace
+  falta TensorRT o bajar `input_size`
+- Que el `.engine` de TensorRT se compile sin errores en este JetPack
 - Que los límites de memoria (6GB) sean suficientes con las IAs de
   NVIDIA activas (Fase D-F) corriendo junto al conteo

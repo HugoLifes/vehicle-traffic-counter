@@ -41,6 +41,18 @@ detector:
     enabled: true
     margin_ratio: 0.15
 
+  # Aceleración del Jetson. En una GPU de escritorio no hacen falta; en el
+  # Orin Nano son lo que decide si el aforo se procesa en un tiempo útil.
+  # TensorRT compila el modelo para ESA GPU concreta: la primera vez tarda
+  # varios minutos y deja un .engine junto al .pt, que se reutiliza.
+  #
+  # Medido en la PC de desarrollo (RTX), imgsz 1280 sobre la franja:
+  #   30.6 ms/cuadro -> 4.6 min por cada video de 10 min.
+  # El Orin Nano es del orden de 5-8x más lento, así que sin TensorRT un
+  # video de 10 min tardaría entre 23 y 37 minutos.
+  use_tensorrt: false
+  half_precision: false
+
 tracker:
   max_age: 30
   min_hits: 3

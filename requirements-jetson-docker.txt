@@ -10,6 +10,10 @@
 
 # Motor de conteo (tracking)
 filterpy==1.4.5
+# scipy va explícito aunque filterpy lo arrastre: en ARM64 su instalación
+# es lenta o falla si pip decide compilarlo, y conviene que aparezca en el
+# error de build en vez de descubrirlo al primer conteo.
+scipy
 scikit-learn
 pandas
 pyyaml

@@ -138,6 +138,12 @@ class VideoJobProcessor:
                 # sobre los videos subidos.
                 iou_threshold=det_cfg.get('iou_threshold', 0.5),
                 input_size=det_cfg.get('input_size', 640),
+                # En el Jetson estos dos son la diferencia entre procesar
+                # más rápido que el tiempo real y no llegar: TensorRT y FP16
+                # dan del orden de 2-3x sobre el modelo .pt tal cual. En una
+                # GPU de escritorio no hacen falta y quedan apagados.
+                use_tensorrt=det_cfg.get('use_tensorrt', False),
+                half_precision=det_cfg.get('half_precision', False),
                 device=self.device,
                 config=det_cfg
             )
