@@ -302,10 +302,24 @@ class VideoJobProcessor:
 
                 resumen = []
                 for idx, (lane_id, counter) in enumerate(lane_counters.items()):
-                    crossings = counter.update(tracks)
+                    # Si la línea está atada a una calzada, solo ve los
+                    # vehículos de esa calzada. En perspectiva las dos se
+                    # superponen, así que una línea trazada sobre la del
+                    # fondo recoge también los de la cercana y el conteo de
+                    # cada sentido queda revuelto.
+                    zona_carril = lane_meta[lane_id].get('zone_id')
+                    if zona_carril and zonas:
+                        vistos = [
+                            t for t in tracks
+                            if zone_for_bbox(zonas, t['bbox']) == zona_carril
+                        ]
+                    else:
+                        vistos = tracks
+
+                    crossings = counter.update(vistos)
                     for crossing in crossings['in'] + crossings['out']:
                         track = next(
-                            (t for t in tracks if t['id'] == crossing['track_id']),
+                            (t for t in vistos if t['id'] == crossing['track_id']),
                             None
                         )
                         confidence = track['confidence'] if track else None

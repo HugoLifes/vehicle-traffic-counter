@@ -293,9 +293,23 @@ class BidirectionalCounter:
             track_id = track['id']
             seen_ids.add(track_id)
 
-            # Obtener posición actual (centro del bbox)
+            # Punto de contacto con el pavimento: centro del borde INFERIOR
+            # de la caja, no el centro geométrico.
+            #
+            # Una línea de conteo es una marca sobre el asfalto, y un
+            # vehículo la cruza cuando la cruzan sus llantas. Con el centro
+            # geométrico, el punto probado flota media altura por encima del
+            # suelo: en este material son unos 10 px, sobre un corredor que
+            # mide 15, así que una línea trazada exactamente sobre la vía
+            # quedaba POR DEBAJO del punto que se comprobaba y no contaba
+            # casi nada. Pasó de verdad: una línea bien puesta a ojo contaba
+            # 4 vehículos donde había 29.
+            #
+            # Además es el mismo criterio que usan las zonas para decidir en
+            # qué calzada está el vehículo (zones._punto_de_apoyo), así que
+            # ahora línea y zona hablan del mismo punto.
             x1, y1, x2, y2 = track['bbox']
-            curr_position = ((x1 + x2) / 2, (y1 + y2) / 2)
+            curr_position = ((x1 + x2) / 2, y2)
 
             # Verificar si ya tenemos estado previo de este track
             if track_id in self.track_states:

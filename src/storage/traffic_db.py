@@ -156,6 +156,18 @@ def init_schema():
     # zonas dibujadas, que es el caso de todos los aforos anteriores.
     _ensure_column(conn, "crossings", "zone_id", "INTEGER")
 
+    # Calzada a la que pertenece una línea de conteo.
+    #
+    # Sin esto, una línea cuenta CUALQUIER vehículo que la cruce, venga de
+    # la calzada que venga. En perspectiva las dos calzadas se superponen,
+    # así que una línea trazada sobre la calzada del fondo también recoge
+    # los vehículos de la cercana: medido en un aforo real, la línea de
+    # arriba se llevó 240 cruces que eran de abajo, y la de abajo se quedó
+    # corta. Atar la línea a su calzada es lo que separa los dos flujos.
+    #
+    # Nulo = cuenta todo lo que la cruce, como antes.
+    _ensure_column(conn, "lane_configs", "zone_id", "INTEGER")
+
     # Registro de lo que se le ha hecho a cada intersección. Un aforo
     # sustenta decisiones de obra, así que tiene que poder responder
     # "¿de dónde salió esta cifra?": con qué calibración se contó, cuándo
@@ -344,13 +356,15 @@ def create_lane(
     name: str,
     line_type: str,
     points: List[List[float]],
-    project_id: Optional[int] = None
+    project_id: Optional[int] = None,
+    zone_id: Optional[int] = None
 ) -> int:
     conn = get_connection()
     cur = conn.execute(
-        """INSERT INTO lane_configs (camera_source, project_id, name, line_type, points_json)
-           VALUES (?, ?, ?, ?, ?)""",
-        (camera_source, project_id, name, line_type, json.dumps(points))
+        """INSERT INTO lane_configs
+               (camera_source, project_id, name, line_type, points_json, zone_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (camera_source, project_id, name, line_type, json.dumps(points), zone_id)
     )
     conn.commit()
     return cur.lastrowid
@@ -384,7 +398,8 @@ def list_lanes(camera_source: Optional[str] = None, active_only: bool = True,
 
 def update_lane(lane_id: int, name: Optional[str] = None,
                  line_type: Optional[str] = None,
-                 points: Optional[List[List[float]]] = None):
+                 points: Optional[List[List[float]]] = None,
+                 zone_id: Optional[int] = None):
     conn = get_connection()
     fields, params = [], []
     if name is not None:
@@ -396,6 +411,12 @@ def update_lane(lane_id: int, name: Optional[str] = None,
     if points is not None:
         fields.append("points_json = ?")
         params.append(json.dumps(points))
+    # 0 se interpreta como "desatar de la calzada": desde el formulario no
+    # hay forma de mandar NULL, y sin esto una línea atada por error se
+    # quedaba atada para siempre.
+    if zone_id is not None:
+        fields.append("zone_id = ?")
+        params.append(zone_id or None)
     if not fields:
         return
     fields.append("updated_at = datetime('now')")

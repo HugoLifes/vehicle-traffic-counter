@@ -23,11 +23,16 @@ class LaneCreate(BaseModel):
     project_id: int
     name: str
     points: List[List[float]]  # exactamente 2 puntos [[x1,y1],[x2,y2]]
+    # Calzada a la que pertenece. Sin ella la línea cuenta todo lo que la
+    # cruce, incluidos los vehículos de la otra calzada.
+    zone_id: Optional[int] = None
 
 
 class LaneUpdate(BaseModel):
     name: Optional[str] = None
     points: Optional[List[List[float]]] = None
+    # 0 desata la línea de su calzada; None deja el valor como estaba.
+    zone_id: Optional[int] = None
 
 
 def _maybe_reload_live(camera_source: Optional[str]):
@@ -58,6 +63,7 @@ def create_lane(lane: LaneCreate):
         name=lane.name,
         line_type="diagonal",
         points=lane.points,
+        zone_id=lane.zone_id,
     )
     _maybe_reload_live(project["name"])
     traffic_db.log_event(
@@ -81,6 +87,7 @@ def update_lane(lane_id: int, lane: LaneUpdate):
         name=lane.name,
         line_type="diagonal" if lane.points is not None else None,
         points=lane.points,
+        zone_id=lane.zone_id,
     )
     _maybe_reload_live(existing.get("camera_source"))
     # Mover una línea después de contar es justo lo que hace que dos
