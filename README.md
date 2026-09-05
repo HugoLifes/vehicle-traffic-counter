@@ -176,7 +176,7 @@ El sistema incluye optimizaciones específicas:
 
 ```bash
 # Convertir modelo a TensorRT (recomendado)
-python optimize_model.py --model models/yolov8n.pt --output models/yolov8n_trt.engine
+python optimize_model.py --model models/yolov8s.pt --output models/yolov8s_trt.engine
 ```
 
 ## 🔍 Algoritmos Implementados
@@ -223,7 +223,8 @@ Es esperado: Python 3.6 de JetPack 4.6 no es compatible con `ultralytics`
 ### Bajo FPS en Jetson Nano
 - Usar modelo YOLOv8n (nano) en lugar de versiones más grandes
 - Usar `configs/jetson_optimized.yaml` (input_size 416, skip_frames, TensorRT)
-- Convertir a TensorRT: `python optimize_model.py --model models/yolov8n.pt --jetson`
+- Convertir a TensorRT: `python optimize_model.py --model models/yolov8s.pt --jetson`
+  (medido en el Orin Nano Super: NO hace falta, ya va sobre tiempo real)
 - Habilitar modo de máximo rendimiento: `sudo bash configure_jetson_performance.sh`
 
 ### Cámara IP se desconecta durante el monitoreo

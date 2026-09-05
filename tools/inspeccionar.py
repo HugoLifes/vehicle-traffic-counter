@@ -120,6 +120,28 @@ def hoja_de_contactos(celdas, columnas):
     return hoja
 
 
+def _config():
+    """
+    Valores del detector tal como los usa producción.
+
+    Las herramientas de diagnóstico traían yolov8n y imgsz 640 escritos a
+    mano, que es la configuración que este proyecto ABANDONÓ por medición
+    (75 contra 107 cruces). Quien las corriera sin pasar --modelo obtenía
+    un diagnóstico que no correspondía a lo que de verdad cuenta el
+    sistema — y sin ningún aviso de que estaba mirando otra cosa.
+    """
+    try:
+        import yaml
+        with open('configs/platform.yaml', encoding='utf-8') as fh:
+            cfg = yaml.safe_load(fh) or {}
+        det = cfg.get('detector', {})
+        return (cfg.get('model_path', 'models/yolov8s.pt'),
+                det.get('input_size', 1280),
+                cfg.get('confidence_threshold', 0.25))
+    except Exception:
+        return 'models/yolov8s.pt', 1280, 0.25
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -135,9 +157,10 @@ def main():
                     help='recorta la franja alrededor de los carriles y la amplia')
     ap.add_argument('--sin-detectar', action='store_true',
                     help='solo el video crudo, sin pasar YOLO (mucho mas rapido)')
-    ap.add_argument('--conf', type=float, default=0.25)
-    ap.add_argument('--modelo', default='models/yolov8n.pt')
-    ap.add_argument('--imgsz', type=int, default=640)
+    modelo_cfg, imgsz_cfg, conf_cfg = _config()
+    ap.add_argument('--conf', type=float, default=conf_cfg)
+    ap.add_argument('--modelo', default=modelo_cfg)
+    ap.add_argument('--imgsz', type=int, default=imgsz_cfg)
     ap.add_argument('--banda', action='store_true',
                     help='detectar solo en la franja de los carriles, como en produccion')
     ap.add_argument('--salida', default=None)

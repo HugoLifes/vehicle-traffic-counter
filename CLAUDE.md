@@ -44,10 +44,12 @@ cuadro: 8 vehículos visibles y 0 detectados. **Antes de sacar conclusiones
 sobre la escena a partir de promedios, mira la imagen.**
 
 ```bash
-python tools/inspeccionar.py --job N --modelo models/yolov8s.pt --imgsz 1280 --banda
+python tools/inspeccionar.py --job N --banda
 ```
 
-Genera un PNG que se puede abrir con la herramienta Read.
+Genera un PNG que se puede abrir con la herramienta Read. Las
+herramientas leen el modelo y el imgsz de `configs/platform.yaml`, así que
+siempre diagnostican con la misma configuración que cuenta producción.
 
 ### 3. No re-derivar la geometría de la escena
 

@@ -85,7 +85,7 @@ Este documento describe la arquitectura completa del sistema de aforo vehicular 
 **Configuración:**
 ```yaml
 detector:
-  model_path: "models/yolov8n.pt"
+  model_path: "models/yolov8s.pt"
   confidence_threshold: 0.4
   iou_threshold: 0.5
   input_size: 640
@@ -411,7 +411,7 @@ sudo jetson_clocks
 pip install -r requirements.txt
 
 # 3. Optimizar modelo
-python optimize_model.py --model models/yolov8n.pt --jetson
+python optimize_model.py --model models/yolov8s.pt --jetson
 
 # 4. Ejecutar con config optimizada
 python main.py \

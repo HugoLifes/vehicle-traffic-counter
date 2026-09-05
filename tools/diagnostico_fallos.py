@@ -48,6 +48,28 @@ def iou_cubierto(blob, cajas):
     return mejor
 
 
+def _config():
+    """
+    Valores del detector tal como los usa producción.
+
+    Las herramientas de diagnóstico traían yolov8n y imgsz 640 escritos a
+    mano, que es la configuración que este proyecto ABANDONÓ por medición
+    (75 contra 107 cruces). Quien las corriera sin pasar --modelo obtenía
+    un diagnóstico que no correspondía a lo que de verdad cuenta el
+    sistema — y sin ningún aviso de que estaba mirando otra cosa.
+    """
+    try:
+        import yaml
+        with open('configs/platform.yaml', encoding='utf-8') as fh:
+            cfg = yaml.safe_load(fh) or {}
+        det = cfg.get('detector', {})
+        return (cfg.get('model_path', 'models/yolov8s.pt'),
+                det.get('input_size', 1280),
+                cfg.get('confidence_threshold', 0.25))
+    except Exception:
+        return 'models/yolov8s.pt', 1280, 0.25
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--job', type=int, required=True)
@@ -55,8 +77,9 @@ def main():
     ap.add_argument('--desde', type=float, default=30)
     ap.add_argument('--salto', type=int, default=3, help='procesar 1 de cada N cuadros')
     ap.add_argument('--conf', type=float, default=0.25)
-    ap.add_argument('--imgsz', type=int, default=640)
-    ap.add_argument('--modelo', default='models/yolov8n.pt')
+    modelo_cfg, imgsz_cfg, _ = _config()
+    ap.add_argument('--imgsz', type=int, default=imgsz_cfg)
+    ap.add_argument('--modelo', default=modelo_cfg)
     ap.add_argument('--area-min', type=int, default=250,
                     help='area minima del blob en px2 para considerarlo vehiculo')
     ap.add_argument('--guardar-fallos', default=None,
