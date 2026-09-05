@@ -141,12 +141,23 @@ en la PC de desarrollo con una GPU de escritorio:
 | 960 | 17.1 | 2.6 min |
 | **1280** *(actual)* | **30.6** | **4.6 min** |
 
-El Orin Nano es del orden de **5 a 8 veces más lento**, así que sin
-acelerar, un video de 10 minutos tardaría entre 23 y 37 minutos: más
-lento que el tiempo real, y un aforo de 24 h no acabaría nunca.
+### Medido en el equipo real (Orin Nano Super, JetPack 6.2, modo MAXN)
 
-**Lo primero al tener el equipo encendido es medirlo de verdad**, porque
-esa horquilla es una estimación:
+| imgsz | ms por cuadro | Un video de 10 min tarda |
+|---|---|---|
+| 640 | 21.3 | 3.2 min |
+| 960 | 24.0 | 3.6 min |
+| **1280** *(actual)* | **37.3** | **5.6 min** |
+
+Y de punta a punta sobre video real, con detector + tracker:
+**40.7 ms/cuadro → 6.1 min por cada video de 10 min**, sin un solo error.
+
+**El Orin Nano resultó solo 1.3 veces más lento que la PC**, no 5 a 8
+como se había estimado antes de tenerlo. Procesa por encima del tiempo
+real y **no hace falta TensorRT**: un aforo de 24 h (144 segmentos) sale
+en unas 15 horas de proceso continuo.
+
+Aun así conviene volver a medir al cambiar de equipo o de JetPack:
 
 ```bash
 docker compose -f docker-compose.jetson.yml exec aforo-vehicular   python3 -c "
@@ -161,7 +172,7 @@ print(f'{(time.time()-t)/30*1000:.0f} ms por cuadro')
 "
 ```
 
-### Si sale por encima de unos 60 ms, encender TensorRT
+### Si en otro equipo sale por encima de unos 60 ms, encender TensorRT
 
 En [`configs/platform.yaml`](../configs/platform.yaml):
 

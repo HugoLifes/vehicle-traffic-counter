@@ -202,10 +202,14 @@ el RAG (el usuario pidió expresamente dejarlo al final). El cliente NVIDIA
 Guía completa en [docs/JETSON_DEPLOY.md](docs/JETSON_DEPLOY.md). Lo
 esencial:
 
-**Lo primero es medir los ms por cuadro** (paso 6.5 de la guía). En la PC
-de desarrollo son 30.6 ms a `imgsz` 1280; el Orin Nano es del orden de 5 a
-8 veces más lento — **esa horquilla es una estimación, hay que medirla**.
-Si pasa de ~60 ms, encender `use_tensorrt` y `half_precision`.
+**La velocidad ya está medida en el equipo real** (Orin Nano Super,
+JetPack 6.2, modo MAXN): 37.3 ms por cuadro a `imgsz` 1280, y 40.7 ms de
+punta a punta con tracker incluido — **6.1 min por cada video de 10 min**,
+más rápido que el tiempo real. Un aforo de 24 h sale en unas 15 horas.
+
+El Orin Nano resultó **1.3 veces más lento que la PC de desarrollo**, no
+5 a 8 como se había estimado sin tenerlo. **No hace falta TensorRT**;
+`use_tensorrt` y `half_precision` se quedan apagados.
 
 Si aun así no alcanza, bajar `input_size` a 960 y luego a 640, en ese
 orden. **No volver a `yolov8n`**: el equipo vería la mitad de los
