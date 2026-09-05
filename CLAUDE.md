@@ -236,6 +236,55 @@ reinstalarlos por pip los rompe).
 
 Para levantar en la PC de desarrollo: `python serve.py`, en el puerto 8080.
 
+## Cómo ejecutar cosas EN EL JETSON
+
+En el Jetson no hay Python del proyecto en el host: torch, ultralytics y
+opencv viven **solo dentro del contenedor**. Cualquier comando del
+proyecto va con este prefijo, desde `~/vehicle-traffic-counter`:
+
+```bash
+docker compose -f docker-compose.jetson.yml exec aforo-vehicular   python3 tools/inspeccionar.py --job 1
+```
+
+Añade `-T` a `exec` cuando el comando no sea interactivo (scripts, tuberías,
+todo lo que corra sin terminal). Sin eso falla con "the input device is not
+a TTY".
+
+**Solo tres carpetas están montadas desde el host y sobreviven a recrear el
+contenedor: `data/`, `models/` y `configs/`.** El resto —`input/`, `tools/`,
+`src/`, `web/`— está horneado en la imagen. Consecuencia práctica: **las
+herramientas de diagnóstico tienen que escribir su salida en `data/`**, o
+el PNG o el clip se pierden con el contenedor:
+
+```bash
+docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular   python3 tools/inspeccionar.py --job 1 --salida data/inspeccion.png
+```
+
+Y como el contenedor corre como root, lo que escribe queda con dueño root:
+para borrarlo desde el host hace falta `sudo`.
+
+Al cambiar código hay que **reconstruir**, porque `COPY . .` lo hornea en la
+imagen; editar el archivo en el host no cambia lo que corre:
+
+```bash
+git pull && docker compose -f docker-compose.jetson.yml up -d --build
+```
+
+Comandos de operación:
+
+```bash
+docker compose -f docker-compose.jetson.yml logs -f      # ver qué hace
+docker compose -f docker-compose.jetson.yml restart      # reiniciar
+docker ps                                                # estado y salud
+```
+
+La plataforma queda en el puerto 8080 del Jetson. Desde otra máquina, sin
+exponer nada a internet:
+
+```bash
+ssh -L 8080:localhost:8080 apia@IP-DEL-JETSON
+```
+
 ## Convenciones
 
 - **Español** en código, comentarios, commits y interfaz.
