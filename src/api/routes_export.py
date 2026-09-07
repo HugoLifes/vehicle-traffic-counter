@@ -149,3 +149,43 @@ def exportar_resumen(project_id: int, minutes: int = 15):
         )
 
     return _respuesta_csv(filas, cabeceras, _nombre_archivo(proyecto["name"], "resumen"))
+
+
+@router.get("/aforo.xlsx")
+def exportar_excel(project_id: int):
+    """
+    El informe en el formato de la empresa, listo para entregar.
+
+    Los CSV de arriba sirven para hacer cuentas propias; esto es el
+    entregable: mismas hojas y misma disposición que los estudios que el
+    cliente ya recibe, para que no haya que rehacerlo a mano.
+
+    Se genera en memoria y no en disco: es un archivo por descarga, y
+    dejarlos acumularse en data/ solo crea basura que después hay que
+    limpiar.
+    """
+    from src.reports import aforo_excel
+
+    proyecto = traffic_db.get_project(project_id)
+    if proyecto is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+
+    import tempfile
+    import os
+    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    tmp.close()
+    try:
+        aforo_excel.generar(project_id, tmp.name)
+        with open(tmp.name, "rb") as fh:
+            datos = fh.read()
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    finally:
+        os.unlink(tmp.name)
+
+    nombre = _nombre_archivo(proyecto["name"], "aforo")
+    return StreamingResponse(
+        io.BytesIO(datos),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}.xlsx"'},
+    )

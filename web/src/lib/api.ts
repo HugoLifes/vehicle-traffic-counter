@@ -213,6 +213,13 @@ export const videoUrl = (jobId: number) => `/api/videos/${jobId}/video`;
 export const exportIntervalsUrl = (projectId: number, minutes: number) =>
   `/api/export/intervalos.csv?project_id=${projectId}&minutes=${minutes}`;
 
+/* El entregable: mismo formato que los estudios que el cliente ya recibe,
+   para que no haya que rehacerlo a mano. No depende del intervalo elegido
+   en pantalla porque el formato de la empresa es siempre por hora y por
+   cuartos de hora. */
+export const exportAforoExcelUrl = (projectId: number) =>
+  `/api/export/aforo.xlsx?project_id=${projectId}`;
+
 export const exportSummaryUrl = (projectId: number, minutes: number) =>
   `/api/export/resumen.csv?project_id=${projectId}&minutes=${minutes}`;
 

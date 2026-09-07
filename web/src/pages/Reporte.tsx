@@ -16,7 +16,12 @@ import { CompositionChart, IntervalChart } from '../components/charts';
 import { EscenaFlujo } from '../components/EscenaFlujo';
 import { useMetrics } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { errorMessage, exportIntervalsUrl, exportSummaryUrl } from '../lib/api';
+import {
+  errorMessage,
+  exportAforoExcelUrl,
+  exportIntervalsUrl,
+  exportSummaryUrl,
+} from '../lib/api';
 import {
   VEHICLE_LABEL_PLURAL,
   formatNumber,
@@ -232,6 +237,12 @@ export default function Reporte() {
             <div className="re-actions">
               {/* Descargas de verdad: el navegador pone su barra de
                   progreso y respeta el nombre que manda el servidor. */}
+              {/* Primero el entregable, luego los CSV para hacer cuentas
+                  propias: el orden refleja para qué se usa cada uno. */}
+              <a className="btn btn-primary" href={exportAforoExcelUrl(projectId)} download>
+                <IconDownload size={15} />
+                Informe de aforo (Excel)
+              </a>
               <a className="btn btn-secondary" href={exportSummaryUrl(projectId, effective)} download>
                 <IconDownload size={15} />
                 Resumen (CSV)
