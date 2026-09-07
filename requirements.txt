@@ -35,7 +35,10 @@ uvicorn[standard]==0.32.1
 python-multipart==0.0.17
 openai==1.57.4      # cliente OpenAI-compatible para las APIs de NVIDIA (build.nvidia.com)
 python-dotenv==1.0.1  # carga NVIDIA_API_KEY desde .env sin exportarla a mano
-sqlite-vec==0.1.6   # vector store local para el RAG
+# 0.1.9 y no 0.1.6: la rueda de 0.1.6 etiquetada como aarch64 contiene un
+# binario de 32 bits, y en el Jetson falla al cargar con
+# "wrong ELF class: ELFCLASS32". Solo se ve en ARM64 real.
+sqlite-vec==0.1.9   # vector store local para el RAG
 pypdf==5.1.0        # extracción de texto de documentos del RAG
 
 # Optional: TensorRT (para Jetson Nano)

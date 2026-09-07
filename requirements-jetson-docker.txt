@@ -33,5 +33,8 @@ python-multipart==0.0.17
 # IAs de NVIDIA (visual, validadora, RAG) + RAG local
 openai==1.57.4
 python-dotenv==1.0.1
-sqlite-vec==0.1.6
+# 0.1.9 y no 0.1.6: la rueda de 0.1.6 etiquetada como aarch64 contiene un
+# binario de 32 bits, y en el Jetson falla al cargar con
+# "wrong ELF class: ELFCLASS32". Solo se ve en ARM64 real.
+sqlite-vec==0.1.9
 pypdf==5.1.0
