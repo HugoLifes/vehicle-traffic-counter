@@ -162,6 +162,7 @@ se podía contestar de otro modo:
 | `trayectorias.py` | Medir por dónde y hacia dónde circulan los vehículos |
 | `diagnostico_fallos.py` | Dónde falla el detector, cruzando movimiento contra detección |
 | `verificar_conteo.py` | Clip con cada cruce numerado, para contar a mano |
+| `comparar_aforo_real.py` | Contrastar contra el aforo medido con contador de ejes |
 
 ---
 
@@ -174,28 +175,73 @@ Calzada poniente) y dos zonas que cubren el ancho completo del cuadro.
 Verificado sobre 5 minutos: **0 vehículos contados en más de una línea**,
 100 % de pureza de sentido en cada calzada.
 
+### Ya hay aforo real de contraste
+
+El usuario entregó el aforo del **mismo video, del mismo día**, medido con
+contador de ejes: `referencias/aforo_real/`, un archivo por sentido del
+19-ago-2026. Se compara con:
+
+```bash
+python tools/comparar_aforo_real.py --proyecto 11
+```
+
+**Advertencia que cambia toda la lectura:** cada archivo declara
+`Number of Lanes : 1`, con un contador distinto por sentido (serie 19079 y
+140084). **El tubo mide un carril; la cámara ve la calzada completa.** Donde
+la calzada tenga más de un carril, lo nuestro *debe* salir por encima del
+tubo sin que eso sea error. Por eso la herramienta reporta una razón y no un
+"porcentaje de acierto".
+
+Resultado contra los conteos de la calibración anterior (07:00–09:59):
+
+| | nuestro | real | razón |
+|---|---|---|---|
+| Calzada oriente (fondo) | 579 | 1 996 | **0.29×** |
+| Calzada poniente (cercana) | 2 638 | 1 916 | 1.38× |
+| Ambos sentidos | 3 217 | 3 912 | 0.82× |
+
+**Correlación del perfil de 15 min: r = +0.90** en el total, y **+0.98**
+entre la calzada cercana y el sentido pte-ote. Eso dice que el detector sí
+está viendo el tránsito real — el problema es de escala y de reparto, no
+ceguera.
+
+El reparto es el hallazgo: **51/49 % real contra 18/82 % nuestro.** La
+calzada del fondo, la de 14 px, aporta menos de un tercio de lo que debería.
+Confirma con datos externos lo que ya decía la tabla de píxeles.
+
+El emparejamiento calzada↔sentido lo hace la herramienta **por correlación,
+no por el nombre**: "Calzada poniente" es ambiguo (¿la del lado poniente o
+la que lleva al poniente?) y equivocarse invierte la comparación entera.
+
 ### Lo que falta, por orden de importancia
 
-1. **Un conteo manual de contraste.** Es lo más importante y lo más barato.
-   Todo lo medido es *relativo* ("cuenta un 43 % más que antes"); un
-   informe de aforo necesita declarar una exactitud. Hay un clip listo
-   (`verificar_conteo.py --job 181 --minutos 2 --desde 60`, el sistema
-   marcó **49**). Sin este dato no se puede cerrar el MVP.
-2. **Reprocesar** los 18 videos: sus conteos son anteriores a los arreglos
-   del contador. La interfaz ya lo marca como "calibración anterior".
+1. **Reprocesar** los 18 videos **en el Jetson** y volver a comparar: los
+   conteos de la tabla de arriba son anteriores a los arreglos del contador
+   y al filtro de zona por línea. En la base todavía se ve la fuga: 221
+   cruces de la línea `Carril 2` quedaron atribuidos a la calzada del
+   oriente, que es justo lo que el filtro impide. La interfaz ya lo marca
+   como "calibración anterior".
+2. **Decidir qué se entrega de la calzada del fondo.** Con 0.29× no se
+   puede vender como aforo. Las salidas honestas son declararla estimada
+   con su factor de corrección medido, o entregar solo la calzada cercana y
+   documentar por qué — que es lo que el usuario propuso.
 3. **El reporte por calzada.** `crossings.zone_id` ya guarda el dato; la
    pantalla todavía agrupa por línea.
 4. **Marcar las horas nocturnas** (20:00–05:00) como no medibles en el
    reporte, en vez de omitirlas.
 5. **Velocidad con dos líneas** (lo pide la PT-914) — además de dato
    vendible, sirve de control: una velocidad imposible delata un rastro mal
-   armado.
+   armado. El contador de ejes trae su propia tabla de velocidad por
+   intervalo, así que aquí también hay contra qué contrastar.
 6. **Validar la clasificación de vehículos.** El reporte dice "73.8 %
-   automóviles" y eso nunca se ha comprobado.
+   automóviles" y eso nunca se ha comprobado. Ahora sí hay referencia: el
+   contador reparte ote-pte en 5 % `Cars` + 57 % `2A-4T` (camionetas) +
+   20 % `2A-SU`. Ojo al comparar: la clase `car` de YOLO cubre a la vez
+   `Cars` y `2A-4T`, así que lo comparable es la suma, ~62 %.
 
-Sin empezar: IA visual e IA validadora con las APIs gratuitas de NVIDIA, y
-el RAG (el usuario pidió expresamente dejarlo al final). El cliente NVIDIA
-(`src/ai/nvidia_client.py`) ya está construido y verificado.
+Sin empezar: IA visual e IA validadora con las APIs gratuitas de NVIDIA. El
+cliente NVIDIA (`src/ai/nvidia_client.py`) ya está construido y verificado,
+y el RAG ya está en marcha sobre él.
 
 ---
 
