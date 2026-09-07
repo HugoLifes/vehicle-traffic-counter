@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from src.api.routes_video_frames import cerrar_captura
 from src.api.routes_videos import UPLOAD_DIR
+from src.ai import rag
 from src.engine.video_job_processor import get_processor
 from src.storage import traffic_db
 
@@ -123,7 +124,20 @@ def delete_project(project_id: int):
     for job in traffic_db.list_video_jobs(project_id=project_id):
         cerrar_captura(job["id"])
 
+    # El RAG guarda lo suyo en tablas propias y con su índice vectorial, que
+    # traffic_db no sabe tocar. Sin esto, borrar una intersección dejaba sus
+    # documentos y conversaciones vivos en el índice: invisibles en la
+    # interfaz pero el buscador seguiría citándolos.
+    try:
+        del_rag = rag.borrar_todo_del_proyecto(project_id)
+    except Exception as e:
+        logging.warning(f"No se pudo limpiar el RAG del proyecto {project_id}: {e}")
+        del_rag = {"documentos": 0, "conversaciones": 0, "archivos": []}
+
     borrados = traffic_db.delete_project(project_id)
+    borrados["rag_documentos"] = del_rag["documentos"]
+    borrados["rag_conversaciones"] = del_rag["conversaciones"]
+    borrados.setdefault("archivos", []).extend(del_rag["archivos"])
 
     # SOLO se borran archivos que la plataforma copió ella misma dentro de
     # data/uploads. Un video puede estar registrado "en su sitio" —con
@@ -134,12 +148,16 @@ def delete_project(project_id: int):
     # estaban registrados en D:\aforo24h, se eliminaron las grabaciones
     # originales del usuario, no unas copias. Borrar un proyecto nunca
     # debe destruir material que la plataforma no creó.
-    raiz_propia = UPLOAD_DIR.resolve()
+    # Las dos carpetas que la plataforma llena ella misma. Los documentos
+    # del RAG viven en data/rag_docs, no en data/uploads: si solo se
+    # permitiera la segunda, los PDF quedarían en disco para siempre.
+    propias = [UPLOAD_DIR.resolve(), Path("data/rag_docs").resolve()]
     eliminados = 0
     ajenos = 0
     for ruta in borrados.pop("archivos", []):
         try:
-            if raiz_propia not in Path(ruta).resolve().parents:
+            padres = Path(ruta).resolve().parents
+            if not any(r in padres for r in propias):
                 ajenos += 1
                 logging.info(f"Se conserva {ruta}: está fuera de data/uploads")
                 continue

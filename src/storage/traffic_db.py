@@ -42,6 +42,11 @@ def get_connection() -> sqlite3.Connection:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
+        # SQLite declara las claves foráneas pero NO las aplica salvo que
+        # se le pida explícitamente, y por conexión. Sin esto, un borrado
+        # incompleto deja huérfanos en silencio: ya pasó con 95 cruces y 7
+        # carriles que sobrevivieron al proyecto que los contenía.
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.row_factory = sqlite3.Row
         _local.conn = conn
     return _local.conn
@@ -341,6 +346,11 @@ def delete_project(project_id: int) -> Dict:
         ).rowcount,
         "zones": conn.execute(
             "DELETE FROM zones WHERE project_id = ?", (project_id,)
+        ).rowcount,
+        # La bitácora también se va con el proyecto: si quedara, apuntaría
+        # a una intersección que ya no existe y no se podría leer.
+        "eventos": conn.execute(
+            "DELETE FROM project_events WHERE project_id = ?", (project_id,)
         ).rowcount,
     }
     conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))

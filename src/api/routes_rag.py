@@ -93,8 +93,21 @@ async def subir(file: UploadFile = File(...), project_id: Optional[int] = Form(N
 
 @router.delete("/documentos/{doc_id}")
 def borrar(doc_id: int):
-    borrados = rag.borrar_documento(doc_id)
-    return {"deleted": doc_id, "fragmentos": borrados}
+    """Quita el documento del índice y su archivo del disco.
+
+    Borrar solo las filas dejaría el PDF ocupando espacio para siempre, y
+    la carpeta acabaría llena de copias de cosas que el usuario cree
+    haber quitado."""
+    res = rag.borrar_documento(doc_id)
+    ruta = res.get("archivo")
+    if ruta:
+        try:
+            Path(ruta).unlink(missing_ok=True)
+        except OSError as e:
+            # Que el archivo quede atrás no invalida el borrado: ya salió
+            # del índice, que es lo que decide qué se cita.
+            logging.warning(f"No se pudo borrar {ruta}: {e}")
+    return {"deleted": doc_id, "fragmentos": res["fragmentos"]}
 
 
 @router.post("/buscar")

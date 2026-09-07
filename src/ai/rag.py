@@ -88,6 +88,13 @@ def init_schema():
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+    # Dónde quedó el archivo. Sin esto no hay forma de borrarlo al eliminar
+    # el documento, y data/rag_docs crece para siempre con copias de cosas
+    # que el usuario cree haber quitado.
+    traffic_db._ensure_column(conn, "rag_documents", "stored_path", "TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rag_docs_project ON rag_documents(project_id)"
+    )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS rag_chunks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +142,9 @@ def init_schema():
     """)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_rag_msg_conv ON rag_mensajes(conversacion_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rag_conv_project ON rag_conversaciones(project_id)"
     )
     conn.commit()
 
@@ -230,10 +240,11 @@ def indexar(ruta: str, nombre: str, project_id: Optional[int] = None,
 
     conn = _conn()
     cur = conn.execute(
-        """INSERT INTO rag_documents (project_id, name, kind, size_bytes, chunks)
-           VALUES (?, ?, ?, ?, ?)""",
+        """INSERT INTO rag_documents
+               (project_id, name, kind, size_bytes, chunks, stored_path)
+           VALUES (?, ?, ?, ?, ?, ?)""",
         (project_id, nombre, "pdf" if nombre.lower().endswith(".pdf") else "texto",
-         size_bytes, len(trozos))
+         size_bytes, len(trozos), ruta)
     )
     doc_id = cur.lastrowid
 
@@ -278,13 +289,21 @@ def listar_documentos(project_id: Optional[int] = None) -> List[Dict]:
     return [dict(f) for f in filas]
 
 
-def borrar_documento(doc_id: int) -> int:
-    """Borra el documento y sus tres representaciones a la vez.
+def borrar_documento(doc_id: int) -> Dict:
+    """
+    Borra el documento y sus TRES representaciones: el texto, el índice
+    léxico y el vectorial.
 
     Si se olvidara alguna, el buscador seguiría devolviendo fragmentos de
-    un documento que el usuario cree eliminado.
+    un documento que el usuario cree eliminado — y peor, citándolo.
+
+    Devuelve la ruta del archivo en disco; borrarlo es de quien llama, no
+    de la capa de datos.
     """
+    init_schema()
     conn = _conn()
+    doc = conn.execute("SELECT stored_path FROM rag_documents WHERE id = ?",
+                       (doc_id,)).fetchone()
     ids = [r["id"] for r in conn.execute(
         "SELECT id FROM rag_chunks WHERE doc_id = ?", (doc_id,))]
     for chunk_id in ids:
@@ -293,7 +312,32 @@ def borrar_documento(doc_id: int) -> int:
     conn.execute("DELETE FROM rag_chunks WHERE doc_id = ?", (doc_id,))
     conn.execute("DELETE FROM rag_documents WHERE id = ?", (doc_id,))
     conn.commit()
-    return len(ids)
+    return {"fragmentos": len(ids),
+            "archivo": doc["stored_path"] if doc else None}
+
+
+def borrar_todo_del_proyecto(project_id: int) -> Dict:
+    """
+    Borra todo lo que el RAG guarda de una intersección.
+
+    Lo llama el borrado de proyectos. Sin esto, eliminar una intersección
+    dejaba atrás sus documentos, sus fragmentos, sus vectores y sus
+    conversaciones: invisibles en la interfaz pero vivos en el índice, y
+    el buscador seguiría citando documentos de un proyecto que ya no
+    existe.
+    """
+    init_schema()
+    conn = _conn()
+    archivos = []
+    for d in conn.execute("SELECT id FROM rag_documents WHERE project_id = ?",
+                          (project_id,)).fetchall():
+        archivos.append(borrar_documento(d["id"]).get("archivo"))
+    convs = [r["id"] for r in conn.execute(
+        "SELECT id FROM rag_conversaciones WHERE project_id = ?", (project_id,))]
+    for cid in convs:
+        borrar_conversacion(cid)
+    return {"documentos": len(archivos), "conversaciones": len(convs),
+            "archivos": [a for a in archivos if a]}
 
 
 # --- Búsqueda ----------------------------------------------------------
