@@ -14,10 +14,21 @@
 base_url: "https://integrate.api.nvidia.com/v1"
 
 models:
-  # IA validadora (sanity-check de conteos + grounding de respuestas del RAG)
-  # y generación de respuestas del RAG. Modelo de texto, funciona bien con
-  # prompts sin imagen aunque el nombre diga "vision".
-  chat: "meta/llama-3.2-90b-vision-instruct"
+  # IA validadora (sanity-check de conteos) y generación de respuestas del
+  # RAG.
+  #
+  # Era meta/llama-3.2-90b-vision-instruct, que dejó de responder: el
+  # catálogo de la cuenta cambió y ese modelo ya solo da timeouts, mientras
+  # que llama-3.1-8b y llama-3.3-70b devuelven 410 Gone. Se probaron los 55
+  # modelos de texto del catálogo: solo 12 responden.
+  #
+  # De esos 12, este es el que sirve para RAG. Medido con un prompt real de
+  # dos fuentes citadas: responde en 3.0 s, en español, y respeta las citas
+  # [1] [2]. Los descartados y por qué:
+  #   nemotron-3.5-lightning  - filtra su razonamiento interno en inglés
+  #   openai/gpt-oss-20b      - ignora el idioma pedido
+  #   moonshotai/kimi-k3      - correcto pero 3 veces más lento (10.5 s)
+  chat: "nvidia/nemotron-3-super-120b-a12b"
 
   # IA visual: contexto cualitativo de la escena (congestión, sentido
   # contrario, clima). Versión más chica/rápida para llamadas periódicas.
@@ -34,6 +45,10 @@ models:
 
 # Límites/comportamiento
 request_timeout_s: 30
+
+# El RAG manda seis fragmentos de contexto y pide cientos de tokens: con
+# 30 s se agota siempre. Medido contra la API real desde México.
+rag_timeout_s: 120
 max_retries: 2
 
 # Intervalos de las IAs periódicas (segundos) — no llamar la API en

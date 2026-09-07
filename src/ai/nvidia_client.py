@@ -15,7 +15,7 @@ import logging
 import os
 import time
 from functools import lru_cache
-from typing import Callable, List, TypeVar
+from typing import Callable, List, Optional, TypeVar
 
 import cv2
 import numpy as np
@@ -78,8 +78,16 @@ def _with_retries(label: str, call: Callable[[], T]) -> T:
     raise NvidiaClientError(f"Error llamando a {label} tras {max_retries + 1} intentos: {last_error}") from last_error
 
 
-def chat(messages: List[dict], max_tokens: int = 512, temperature: float = 0.2) -> str:
-    """Llamada de texto simple — la usan la IA validadora y la generación del RAG."""
+def chat(messages: List[dict], max_tokens: int = 512, temperature: float = 0.2,
+         timeout_s: Optional[float] = None) -> str:
+    """
+    Llamada de texto simple — la usan la IA validadora y el RAG.
+
+    timeout_s permite pedir más tiempo que el límite general. El RAG lo
+    necesita: manda seis fragmentos de contexto a un modelo de 90B y pide
+    varios cientos de tokens, y con los 30 s que bastan para un
+    sanity-check de conteos se agota siempre.
+    """
     client = _get_client()
     config = _load_config()
 
@@ -89,7 +97,7 @@ def chat(messages: List[dict], max_tokens: int = 512, temperature: float = 0.2) 
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            timeout=config.get("request_timeout_s", 30),
+            timeout=timeout_s or config.get("request_timeout_s", 30),
         )
         return response.choices[0].message.content or ""
 

@@ -28,10 +28,10 @@ respuesta, el modelo tiene instrucción de decirlo. Un informe de aforo
 sustenta decisiones de obra: una cita inventada es peor que un "no lo sé".
 """
 
-import json
 import logging
 import re
 import struct
+import threading
 from typing import Dict, List, Optional, Tuple
 
 from src.ai import nvidia_client
@@ -49,19 +49,21 @@ DIMENSION = 2048
 TAMANO_TROZO = 1200
 SOLAPE = 200
 
-_extension_cargada = False
+# La extensión se carga una vez por hilo, igual que la conexión de
+# traffic_db. No se puede marcar la propia conexión con un atributo:
+# sqlite3.Connection es un tipo en C y no admite atributos arbitrarios.
+_local = threading.local()
 
 
 def _conn():
-    """Conexión con la extensión vectorial cargada."""
-    global _extension_cargada
+    """Conexión del hilo con la extensión vectorial ya cargada."""
     conn = traffic_db.get_connection()
-    if not getattr(conn, "_vec_ok", False):
+    if not getattr(_local, "vec_ok", False):
         import sqlite_vec
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
-        conn._vec_ok = True
+        _local.vec_ok = True
     return conn
 
 
@@ -237,6 +239,7 @@ def indexar(ruta: str, nombre: str, project_id: Optional[int] = None,
 
 
 def listar_documentos(project_id: Optional[int] = None) -> List[Dict]:
+    init_schema()
     conn = _conn()
     if project_id is None:
         filas = conn.execute(
@@ -388,6 +391,7 @@ def responder(pregunta: str, n: int = 6, project_id: Optional[int] = None) -> Di
          {"role": "user",
           "content": f"{encabezado}FUENTES:\n\n{contexto}\n\nPREGUNTA: {pregunta}"}],
         max_tokens=700, temperature=0.1,
+        timeout_s=nvidia_client._load_config().get("rag_timeout_s", 120),
     )
     return {
         "respuesta": respuesta,
