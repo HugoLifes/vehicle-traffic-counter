@@ -266,6 +266,35 @@ export function useCopyCalibration(projectId: number) {
   });
 }
 
+export function useRagDocs(projectId?: number) {
+  return useQuery({
+    queryKey: ['rag-docs', projectId ?? 0],
+    queryFn: () => api.listRagDocs(projectId),
+  });
+}
+
+export function useUploadRagDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (form: FormData) => api.uploadRagDoc(form),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rag-docs'] }),
+  });
+}
+
+export function useDeleteRagDoc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: number) => api.deleteRagDoc(docId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rag-docs'] }),
+  });
+}
+
+export function useAskRag(projectId?: number) {
+  return useMutation({
+    mutationFn: (pregunta: string) => api.askRag(pregunta, projectId),
+  });
+}
+
 export function useZones(projectId: number | null) {
   return useQuery({
     queryKey: keys.zones(projectId ?? 0),

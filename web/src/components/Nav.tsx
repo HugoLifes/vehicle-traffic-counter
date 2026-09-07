@@ -18,6 +18,9 @@ const GLOBAL = [
   // de ninguna: va al nivel global.
   { to: '/comparar', label: 'Comparar', end: false },
   { to: '/en-vivo', label: 'Cámara en vivo', end: false },
+  // La normativa aplica a todas las intersecciones, no a una: va aquí y
+  // no dentro de un proyecto.
+  { to: '/documentos', label: 'Documentos', end: false },
 ];
 
 function ThemeToggle() {

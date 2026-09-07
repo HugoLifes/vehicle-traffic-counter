@@ -1356,3 +1356,80 @@
 .coord-manual { margin-top: var(--space-3); }
 .coord-campos { display: flex; gap: var(--space-3); flex-wrap: wrap; }
 .coord-campos .field { flex: 1 1 160px; }
+
+
+/* --- RAG: documentos y consultas --------------------------------------
+   Dos columnas como calibrar: la conversación manda y el panel de
+   documentos la acompaña, porque se consulta mucho más de lo que se
+   sube. */
+.rag-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: var(--space-5);
+  align-items: start;
+}
+@media (max-width: 940px) {
+  .rag-layout { grid-template-columns: minmax(0, 1fr); }
+}
+.rag-main { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+
+.rag-input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.rag-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.rag-acciones {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.rag-ejemplos { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.rag-chip {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-soft);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.rag-chip:hover { border-style: solid; color: var(--text); }
+.rag-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* La respuesta se lee de corrido, así que conserva los saltos que el
+   modelo puso y va a una medida cómoda. */
+.rag-respuesta { white-space: pre-wrap; max-width: 68ch; line-height: 1.65; }
+.rag-subtitulo { font-size: 0.95rem; margin: var(--space-4) 0 var(--space-2); }
+
+.rag-fuentes { padding-left: 1.2rem; margin: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.rag-fuentes li::marker { color: var(--accent); font-variant-numeric: tabular-nums; }
+.rag-fuente-cab { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.rag-pagina {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.rag-extracto {
+  margin: var(--space-1) 0 0;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+  border-left: 2px solid var(--border);
+  padding-left: var(--space-3);
+  max-width: 70ch;
+}
+
+.rag-file { width: 100%; font: inherit; font-size: 0.85rem; color: var(--text-soft); }
+.rag-doc { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.rag-doc strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rag-panel .sc-info { margin-bottom: var(--space-3); }

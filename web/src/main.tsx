@@ -21,6 +21,7 @@ import Subir from './pages/Subir';
 import Calibrar from './pages/Calibrar';
 import Reporte from './pages/Reporte';
 import EnVivo from './pages/EnVivo';
+import Documentos from './pages/Documentos';
 import { RedirigirALaIntersección } from './pages/redirects';
 import { registrarNavegador } from './lib/navegar';
 import { useVigilante } from './lib/useVigilante';
@@ -80,6 +81,7 @@ function App() {
         </Route>
 
         <Route path="/en-vivo" element={<EnVivo />} />
+        <Route path="/documentos" element={<Documentos />} />
         <Route path="/comparar" element={<Comparar />} />
 
         {/* Rutas anteriores: había enlaces repartidos con ?project=, y

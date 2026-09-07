@@ -20,6 +20,8 @@ import type {
   VideoSegment,
   Zone,
   FrameDetection,
+  RagDocumento,
+  RagRespuesta,
 } from './types';
 import type { EventoProyecto, FichaCamara, FuenteVideo } from './types';
 
@@ -142,6 +144,25 @@ export const renameZone = (zoneId: number, name: string) =>
 
 export const deleteZone = (zoneId: number) =>
   request<void>(`/api/zones/${zoneId}`, { method: 'DELETE' });
+
+/* --- RAG: documentos y preguntas --------------------------------------- */
+
+export const listRagDocs = (projectId?: number) =>
+  request<RagDocumento[]>(
+    projectId ? `/api/rag/documentos?project_id=${projectId}` : '/api/rag/documentos',
+  );
+
+export const uploadRagDoc = (form: FormData) =>
+  request<{ doc_id: number; nombre: string; fragmentos: number }>('/api/rag/documentos', {
+    method: 'POST',
+    body: form,
+  });
+
+export const deleteRagDoc = (docId: number) =>
+  request<void>(`/api/rag/documentos/${docId}`, { method: 'DELETE' });
+
+export const askRag = (pregunta: string, projectId?: number) =>
+  request<RagRespuesta>('/api/rag/preguntar', json({ pregunta, project_id: projectId ?? null }));
 
 /* --- Videos ------------------------------------------------------------ */
 

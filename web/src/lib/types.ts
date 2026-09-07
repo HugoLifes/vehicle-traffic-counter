@@ -70,6 +70,34 @@ export interface FrameDetection {
   zona_id: number | null;
 }
 
+/** Documento indexado en el RAG. Sin project_id = aplica a todas las
+    intersecciones (normativa general); con él, es de esa intersección. */
+export interface RagDocumento {
+  id: number;
+  project_id: number | null;
+  name: string;
+  kind: string;
+  size_bytes: number;
+  chunks: number;
+  created_at: string;
+}
+
+export interface RagFuente {
+  n: number;
+  documento: string;
+  pagina: number | null;
+  extracto: string;
+  doc_id: number;
+  /** De qué motor de búsqueda vino: sirve para ver si la híbrida aporta. */
+  en_vectorial: boolean;
+  en_lexica: boolean;
+}
+
+export interface RagRespuesta {
+  respuesta: string;
+  fuentes: RagFuente[];
+}
+
 export interface Zone {
   id: number;
   project_id: number;
