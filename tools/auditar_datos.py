@@ -204,6 +204,18 @@ def main():
     else:
         print("  todas las filas apuntan a archivos existentes")
 
+    # Un documento indexado ANTES de que rag_documents guardara la ruta
+    # tiene stored_path nulo: su archivo existe y está en uso, pero no hay
+    # fila que lo reclame. Borrarlo destruiría el original de un documento
+    # vivo, así que mientras quede alguno sin ruta no se ofrece limpiar.
+    sin_ruta = 0
+    try:
+        sin_ruta = conn.execute(
+            "SELECT COUNT(*) FROM rag_documents WHERE stored_path IS NULL"
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        pass
+
     sueltos = []
     for carpeta in CARPETAS:
         if not os.path.isdir(carpeta):
@@ -217,7 +229,12 @@ def main():
         print(f"  {len(sueltos)} archivos sin fila que los reclame ({peso:.1f} MB):")
         for r in sueltos[:5]:
             print(f"    {os.path.relpath(r)}")
-        if args.arreglar:
+        if sin_ruta:
+            problemas += 1
+            print(f"  NO se van a borrar: hay {sin_ruta} documento(s) indexados sin ruta")
+            print("  guardada, y alguno de esos archivos puede ser el suyo. Corre")
+            print("  tools/reparar_rutas_rag.py para emparejarlos primero.")
+        elif args.arreglar:
             for r in sueltos:
                 try:
                     os.remove(r)
