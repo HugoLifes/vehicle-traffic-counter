@@ -22,6 +22,8 @@ import type {
   FrameDetection,
   RagDocumento,
   RagRespuesta,
+  RagConversacion,
+  RagMensaje,
 } from './types';
 import type { EventoProyecto, FichaCamara, FuenteVideo } from './types';
 
@@ -163,6 +165,23 @@ export const deleteRagDoc = (docId: number) =>
 
 export const askRag = (pregunta: string, projectId?: number) =>
   request<RagRespuesta>('/api/rag/preguntar', json({ pregunta, project_id: projectId ?? null }));
+
+export const listRagChats = (projectId?: number) =>
+  request<RagConversacion[]>(
+    projectId ? `/api/rag/conversaciones?project_id=${projectId}` : '/api/rag/conversaciones',
+  );
+
+export const createRagChat = (projectId?: number) =>
+  request<{ id: number }>('/api/rag/conversaciones', json({ project_id: projectId ?? null }));
+
+export const readRagChat = (id: number) =>
+  request<{ mensajes: RagMensaje[] }>(`/api/rag/conversaciones/${id}`);
+
+export const deleteRagChat = (id: number) =>
+  request<void>(`/api/rag/conversaciones/${id}`, { method: 'DELETE' });
+
+export const sendRagMessage = (conversacionId: number, pregunta: string) =>
+  request<RagRespuesta>('/api/rag/chat', json({ conversacion_id: conversacionId, pregunta }));
 
 /* --- Videos ------------------------------------------------------------ */
 

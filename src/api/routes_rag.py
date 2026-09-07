@@ -114,3 +114,73 @@ def preguntar(p: Pregunta):
         return rag.responder(p.pregunta.strip(), n=p.n, project_id=p.project_id)
     except nvidia_client.NvidiaClientError as e:
         raise HTTPException(503, str(e))
+
+
+# --- Conversaciones ----------------------------------------------------
+
+class NuevaConversacion(BaseModel):
+    project_id: Optional[int] = None
+    titulo: Optional[str] = None
+
+
+class MensajeChat(BaseModel):
+    conversacion_id: int
+    pregunta: str
+    n: int = 6
+
+
+@router.get("/conversaciones")
+def listar_conversaciones(project_id: Optional[int] = None):
+    """Las de una intersección, o las generales si no se pasa project_id.
+
+    No se mezclan a propósito: preguntar dentro de un proyecto no debe
+    mostrar el hilo de otro, aunque el documento de fondo sea el mismo."""
+    return rag.listar_conversaciones(project_id=project_id)
+
+
+@router.post("/conversaciones")
+def crear_conversacion(c: NuevaConversacion):
+    cid = rag.crear_conversacion(c.project_id, c.titulo or "Consulta")
+    return {"id": cid}
+
+
+@router.get("/conversaciones/{conversacion_id}")
+def leer_conversacion(conversacion_id: int):
+    return {"mensajes": rag.mensajes(conversacion_id)}
+
+
+@router.delete("/conversaciones/{conversacion_id}")
+def borrar_conversacion(conversacion_id: int):
+    rag.borrar_conversacion(conversacion_id)
+    return {"deleted": conversacion_id}
+
+
+@router.post("/chat")
+def chat(m: MensajeChat):
+    """
+    Un turno de conversación: guarda la pregunta, responde con el hilo
+    previo en cuenta, y guarda la respuesta con sus fuentes.
+
+    El título de la conversación se toma de la primera pregunta, porque
+    una lista de hilos llamados todos "Consulta" no sirve para volver a
+    ninguno.
+    """
+    _exigir_key()
+    pregunta = m.pregunta.strip()
+    if not pregunta:
+        raise HTTPException(400, "La pregunta viene vacía.")
+
+    conv = rag.obtener_conversacion(m.conversacion_id)
+    if conv is None:
+        raise HTTPException(404, "Esa conversación no existe.")
+    previos = rag.mensajes(m.conversacion_id)
+
+    try:
+        salida = rag.responder(pregunta, n=m.n, project_id=conv["project_id"],
+                               conversacion_id=m.conversacion_id)
+    except nvidia_client.NvidiaClientError as e:
+        raise HTTPException(503, str(e))
+
+    if not previos:
+        rag.titular(m.conversacion_id, pregunta)
+    return salida

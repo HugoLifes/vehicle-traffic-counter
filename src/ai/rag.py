@@ -28,6 +28,7 @@ respuesta, el modelo tiene instrucción de decirlo. Un informe de aforo
 sustenta decisiones de obra: una cita inventada es peor que un "no lo sé".
 """
 
+import json
 import logging
 import re
 import struct
@@ -109,6 +110,32 @@ def init_schema():
         CREATE VIRTUAL TABLE IF NOT EXISTS rag_vectors
         USING vec0(embedding float[{DIMENSION}])
     """)
+    # Conversaciones. Se guardan en el servidor y no en el navegador porque
+    # una consulta sobre normativa es trabajo del proyecto: el que la hizo
+    # tiene que poder volver a ella, y otro del equipo verla desde su
+    # propia máquina.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS rag_conversaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER REFERENCES projects(id),
+            titulo TEXT NOT NULL DEFAULT 'Consulta',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS rag_mensajes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversacion_id INTEGER NOT NULL REFERENCES rag_conversaciones(id),
+            rol TEXT NOT NULL,
+            texto TEXT NOT NULL,
+            fuentes_json TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rag_msg_conv ON rag_mensajes(conversacion_id)"
+    )
     conn.commit()
 
 
@@ -341,6 +368,86 @@ def buscar(pregunta: str, n: int = 6, project_id: Optional[int] = None) -> List[
     return salida
 
 
+# --- Conversaciones ----------------------------------------------------
+
+def crear_conversacion(project_id: Optional[int], titulo: str) -> int:
+    init_schema()
+    conn = _conn()
+    cur = conn.execute(
+        "INSERT INTO rag_conversaciones (project_id, titulo) VALUES (?,?)",
+        (project_id, titulo[:80] or "Consulta"))
+    conn.commit()
+    return cur.lastrowid
+
+
+def listar_conversaciones(project_id: Optional[int] = None) -> List[Dict]:
+    init_schema()
+    conn = _conn()
+    # Una conversación pertenece a una intersección o a ninguna, y no se
+    # mezclan: preguntar dentro de un proyecto no debe mostrar el hilo de
+    # otro, aunque el documento de fondo sea el mismo.
+    if project_id is None:
+        filas = conn.execute(
+            """SELECT c.*, (SELECT COUNT(*) FROM rag_mensajes m
+                            WHERE m.conversacion_id = c.id) AS mensajes
+               FROM rag_conversaciones c WHERE c.project_id IS NULL
+               ORDER BY c.updated_at DESC""").fetchall()
+    else:
+        filas = conn.execute(
+            """SELECT c.*, (SELECT COUNT(*) FROM rag_mensajes m
+                            WHERE m.conversacion_id = c.id) AS mensajes
+               FROM rag_conversaciones c WHERE c.project_id = ?
+               ORDER BY c.updated_at DESC""", (project_id,)).fetchall()
+    return [dict(f) for f in filas]
+
+
+def obtener_conversacion(conversacion_id: int) -> Optional[Dict]:
+    init_schema()
+    fila = _conn().execute(
+        "SELECT * FROM rag_conversaciones WHERE id = ?", (conversacion_id,)).fetchone()
+    return dict(fila) if fila else None
+
+
+def titular(conversacion_id: int, titulo: str):
+    """El título sale de la primera pregunta: una lista de hilos llamados
+    todos 'Consulta' no sirve para volver a ninguno."""
+    conn = _conn()
+    conn.execute("UPDATE rag_conversaciones SET titulo = ? WHERE id = ?",
+                 (titulo[:80], conversacion_id))
+    conn.commit()
+
+
+def mensajes(conversacion_id: int) -> List[Dict]:
+    init_schema()
+    conn = _conn()
+    salida = []
+    for f in conn.execute(
+            "SELECT * FROM rag_mensajes WHERE conversacion_id = ? ORDER BY id",
+            (conversacion_id,)):
+        m = dict(f)
+        m["fuentes"] = json.loads(m.pop("fuentes_json") or "[]")
+        salida.append(m)
+    return salida
+
+
+def borrar_conversacion(conversacion_id: int):
+    conn = _conn()
+    conn.execute("DELETE FROM rag_mensajes WHERE conversacion_id = ?", (conversacion_id,))
+    conn.execute("DELETE FROM rag_conversaciones WHERE id = ?", (conversacion_id,))
+    conn.commit()
+
+
+def _guardar(conversacion_id: int, rol: str, texto: str, fuentes=None):
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO rag_mensajes (conversacion_id, rol, texto, fuentes_json)
+           VALUES (?,?,?,?)""",
+        (conversacion_id, rol, texto, json.dumps(fuentes or [], ensure_ascii=False)))
+    conn.execute("UPDATE rag_conversaciones SET updated_at = datetime('now') WHERE id = ?",
+                 (conversacion_id,))
+    conn.commit()
+
+
 # --- Respuesta ---------------------------------------------------------
 
 INSTRUCCIONES = """Eres un asistente técnico de una empresa de estudios de tránsito en México.
@@ -356,16 +463,39 @@ Reglas:
 - Responde en español, directo y sin rodeos."""
 
 
-def responder(pregunta: str, n: int = 6, project_id: Optional[int] = None) -> Dict:
-    """Busca, arma el contexto y responde citando las fuentes."""
-    fuentes = buscar(pregunta, n=n, project_id=project_id)
+def responder(pregunta: str, n: int = 6, project_id: Optional[int] = None,
+              conversacion_id: Optional[int] = None) -> Dict:
+    """
+    Busca, arma el contexto y responde citando las fuentes.
+
+    Con conversacion_id la respuesta tiene en cuenta el hilo previo, y eso
+    cambia dos cosas:
+
+    1. La BÚSQUEDA. "¿y el de NMS?" no recupera nada por sí sola: le falta
+       el sujeto. Se le antepone la última pregunta del usuario para que el
+       embedding tenga de qué agarrarse.
+    2. La REDACCIÓN. El modelo ve los turnos anteriores, así que responde
+       sobre lo ya dicho en vez de repetirlo.
+    """
+    historial = mensajes(conversacion_id) if conversacion_id else []
+
+    # Solo se completa la consulta cuando la pregunta es corta: una
+    # pregunta larga ya se sostiene sola, y arrastrarle la anterior la
+    # desviaría hacia el tema viejo.
+    consulta = pregunta
+    if historial and len(pregunta.split()) <= 8:
+        previas = [m["texto"] for m in historial if m["rol"] == "user"]
+        if previas:
+            consulta = f"{previas[-1]} {pregunta}"
+
+    fuentes = buscar(consulta, n=n, project_id=project_id)
     if not fuentes:
-        return {
-            "respuesta": "No hay documentos indexados todavía, o ninguno guarda "
-                         "relación con la pregunta. Sube documentos al RAG y vuelve a "
-                         "intentarlo.",
-            "fuentes": [],
-        }
+        aviso = ("No hay documentos indexados todavía, o ninguno guarda relación "
+                 "con la pregunta. Sube documentos y vuelve a intentarlo.")
+        if conversacion_id:
+            _guardar(conversacion_id, "user", pregunta)
+            _guardar(conversacion_id, "assistant", aviso)
+        return {"respuesta": aviso, "fuentes": [], "conversacion_id": conversacion_id}
 
     contexto = "\n\n".join(
         f"[{i}] {f['documento']}"
@@ -386,19 +516,34 @@ def responder(pregunta: str, n: int = 6, project_id: Optional[int] = None) -> Di
                 encabezado += f" ({proyecto['address']})"
             encabezado += "\n\n"
 
+    conversacion = [{"role": "system", "content": INSTRUCCIONES}]
+    # Solo los últimos turnos: el contexto de las fuentes ya es grande y
+    # arrastrar un hilo largo desplaza justo lo que hay que citar.
+    for m in historial[-6:]:
+        conversacion.append({"role": m["rol"], "content": m["texto"]})
+    conversacion.append({
+        "role": "user",
+        "content": f"{encabezado}FUENTES:\n\n{contexto}\n\nPREGUNTA: {pregunta}",
+    })
+
     respuesta = nvidia_client.chat(
-        [{"role": "system", "content": INSTRUCCIONES},
-         {"role": "user",
-          "content": f"{encabezado}FUENTES:\n\n{contexto}\n\nPREGUNTA: {pregunta}"}],
+        conversacion,
         max_tokens=700, temperature=0.1,
         timeout_s=nvidia_client._load_config().get("rag_timeout_s", 120),
     )
+
+    salida_fuentes = [
+        {"n": i, "documento": f["documento"], "pagina": f["pagina"],
+         "extracto": f["texto"][:300], "doc_id": f["doc_id"],
+         "en_vectorial": f["en_vectorial"], "en_lexica": f["en_lexica"]}
+        for i, f in enumerate(fuentes, 1)
+    ]
+    if conversacion_id:
+        _guardar(conversacion_id, "user", pregunta)
+        _guardar(conversacion_id, "assistant", respuesta, salida_fuentes)
+
     return {
         "respuesta": respuesta,
-        "fuentes": [
-            {"n": i, "documento": f["documento"], "pagina": f["pagina"],
-             "extracto": f["texto"][:300], "doc_id": f["doc_id"],
-             "en_vectorial": f["en_vectorial"], "en_lexica": f["en_lexica"]}
-            for i, f in enumerate(fuentes, 1)
-        ],
+        "conversacion_id": conversacion_id,
+        "fuentes": salida_fuentes,
     }

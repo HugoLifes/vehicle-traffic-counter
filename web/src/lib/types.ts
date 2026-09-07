@@ -93,6 +93,22 @@ export interface RagFuente {
   en_lexica: boolean;
 }
 
+export interface RagConversacion {
+  id: number;
+  project_id: number | null;
+  titulo: string;
+  mensajes: number;
+  updated_at: string;
+}
+
+export interface RagMensaje {
+  id: number;
+  rol: 'user' | 'assistant';
+  texto: string;
+  fuentes: RagFuente[];
+  created_at: string;
+}
+
 export interface RagRespuesta {
   respuesta: string;
   fuentes: RagFuente[];

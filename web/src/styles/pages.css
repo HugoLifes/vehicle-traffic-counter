@@ -1433,3 +1433,106 @@
 .rag-doc { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .rag-doc strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rag-panel .sc-info { margin-bottom: var(--space-3); }
+
+/* --- Chat del RAG ------------------------------------------------------
+   El hilo ocupa una altura fija y hace scroll dentro de sí mismo: si
+   creciera con los mensajes, la caja de escribir se iría alejando del
+   fondo de la pantalla a cada respuesta. */
+.rag-lateral { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+
+.chat-card { display: flex; flex-direction: column; gap: var(--space-3); }
+.chat-hilo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: min(58vh, 560px);
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}
+
+.chat-msg { display: flex; flex-direction: column; gap: var(--space-2); max-width: 100%; }
+.chat-user { align-items: flex-end; }
+.chat-assistant { align-items: flex-start; }
+
+.chat-burbuja {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-2);
+  white-space: pre-wrap;
+  line-height: 1.6;
+  max-width: 90%;
+}
+.chat-user .chat-burbuja {
+  background: var(--accent-soft, var(--surface-2));
+  border: 1px solid var(--border);
+}
+.chat-assistant .chat-burbuja {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  max-width: 68ch;
+}
+.chat-pensando { color: var(--text-faint); font-style: italic; }
+
+/* Las fuentes empiezan plegadas: la respuesta es lo que se lee, y las
+   citas se abren cuando alguien quiere verificar. */
+.chat-fuentes { max-width: 68ch; }
+.chat-fuentes-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.chat-fuentes-btn:hover { color: var(--text); }
+.chat-fuentes-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-fuentes .rag-fuentes { margin-top: var(--space-3); }
+
+.chat-entrada { display: flex; gap: var(--space-3); align-items: flex-end; }
+.chat-entrada textarea {
+  flex: 1;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+  min-height: 2.8rem;
+}
+.chat-entrada textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chat-entrada textarea:disabled { opacity: 0.6; }
+
+.chat-cab { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.chat-cab h2 { margin: 0; }
+
+.chat-item { display: flex; align-items: center; gap: var(--space-2); }
+.chat-item-btn {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: var(--space-2);
+  border-radius: var(--radius-1);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-item-btn:hover { background: var(--surface-2); }
+.chat-item-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* El activo se marca con una barra lateral además del fondo: el color
+   solo no basta para distinguirlo. */
+.chat-item.is-activo .chat-item-btn {
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.chat-item-titulo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}

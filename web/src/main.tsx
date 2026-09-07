@@ -22,6 +22,7 @@ import Calibrar from './pages/Calibrar';
 import Reporte from './pages/Reporte';
 import EnVivo from './pages/EnVivo';
 import Documentos from './pages/Documentos';
+import ProyectoDocumentos from './pages/ProyectoDocumentos';
 import { RedirigirALaIntersección } from './pages/redirects';
 import { registrarNavegador } from './lib/navegar';
 import { useVigilante } from './lib/useVigilante';
@@ -78,6 +79,7 @@ function App() {
           <Route path="reporte" element={<Reporte />} />
           <Route path="camara" element={<ProyectoCamara />} />
           <Route path="registro" element={<ProyectoRegistro />} />
+          <Route path="documentos" element={<ProyectoDocumentos />} />
         </Route>
 
         <Route path="/en-vivo" element={<EnVivo />} />

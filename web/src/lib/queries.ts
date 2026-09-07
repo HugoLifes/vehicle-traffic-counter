@@ -295,6 +295,49 @@ export function useAskRag(projectId?: number) {
   });
 }
 
+export function useRagChats(projectId?: number) {
+  return useQuery({
+    queryKey: ['rag-chats', projectId ?? 0],
+    queryFn: () => api.listRagChats(projectId),
+  });
+}
+
+export function useRagChat(id: number | null) {
+  return useQuery({
+    queryKey: ['rag-chat', id ?? 0],
+    queryFn: () => api.readRagChat(id as number),
+    enabled: id !== null,
+  });
+}
+
+export function useCreateRagChat(projectId?: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.createRagChat(projectId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rag-chats'] }),
+  });
+}
+
+export function useDeleteRagChat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteRagChat(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rag-chats'] }),
+  });
+}
+
+export function useSendRagMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, pregunta }: { id: number; pregunta: string }) =>
+      api.sendRagMessage(id, pregunta),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['rag-chat', v.id] });
+      qc.invalidateQueries({ queryKey: ['rag-chats'] });
+    },
+  });
+}
+
 export function useZones(projectId: number | null) {
   return useQuery({
     queryKey: keys.zones(projectId ?? 0),

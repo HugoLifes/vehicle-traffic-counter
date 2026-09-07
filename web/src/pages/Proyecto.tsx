@@ -44,6 +44,9 @@ const HERRAMIENTAS = [
   { to: 'reporte', label: 'Reporte', end: false, paso: true },
   { to: 'camara', label: 'Cámara', end: false, paso: false },
   { to: 'registro', label: 'Registro', end: false, paso: false },
+  // Documentos de ESTA intersección: proyecto ejecutivo, requisitos del
+  // cliente, oficios. La normativa general vive en el menú de arriba.
+  { to: 'documentos', label: 'Documentos', end: false, paso: false },
 ];
 
 /*
