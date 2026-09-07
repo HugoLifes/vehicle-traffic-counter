@@ -28,6 +28,13 @@ def main():
     ap.add_argument("--aplicar", action="store_true")
     args = ap.parse_args()
 
+    # La columna stored_path la crea init_schema con _ensure_column, y esta
+    # herramienta puede correr antes de que la aplicación haya tocado el
+    # RAG. Sin esto falla con "no such column".
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from src.ai import rag
+    rag.init_schema()
+
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     faltan = conn.execute(

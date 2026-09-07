@@ -208,13 +208,17 @@ def main():
     # tiene stored_path nulo: su archivo existe y está en uso, pero no hay
     # fila que lo reclame. Borrarlo destruiría el original de un documento
     # vivo, así que mientras quede alguno sin ruta no se ofrece limpiar.
-    sin_ruta = 0
-    try:
+    # Si la columna todavía no existe, TODOS los documentos están sin ruta.
+    # Antes esto se atrapaba con un except que devolvía cero, y esa es
+    # exactamente la traducción equivocada: un desconocido convertido en un
+    # "todo bien" que habilitaba el borrado de archivos vivos.
+    columnas = {r[1] for r in conn.execute("PRAGMA table_info(rag_documents)")}
+    if "stored_path" not in columnas:
+        sin_ruta = conn.execute("SELECT COUNT(*) FROM rag_documents").fetchone()[0]
+    else:
         sin_ruta = conn.execute(
             "SELECT COUNT(*) FROM rag_documents WHERE stored_path IS NULL"
         ).fetchone()[0]
-    except sqlite3.OperationalError:
-        pass
 
     sueltos = []
     for carpeta in CARPETAS:
