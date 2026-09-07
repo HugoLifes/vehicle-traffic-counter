@@ -75,6 +75,11 @@ output/
 data/*.db
 data/*.db-*
 data/uploads/
+# Informes generados y documentos que sube el usuario al RAG: son salida
+# del sistema, no fuente. Se regeneran solos y no tienen por que viajar.
+data/*.xlsx
+data/*.csv
+data/rag_docs/
 data/_pid.txt
 *.mp4
 *.avi
