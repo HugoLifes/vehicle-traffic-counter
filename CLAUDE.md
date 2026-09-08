@@ -196,18 +196,45 @@ Resultado contra los conteos de la calibración anterior (07:00–09:59):
 
 | | nuestro | real | razón |
 |---|---|---|---|
-| Calzada oriente (fondo) | 579 | 1 996 | **0.29×** |
-| Calzada poniente (cercana) | 2 638 | 1 916 | 1.38× |
+| Calzada oriente (**cercana**) | 579 | 1 996 | **0.29×** |
+| Calzada poniente (**del fondo**) | 2 638 | 1 916 | 1.38× |
 | Ambos sentidos | 3 217 | 3 912 | 0.82× |
 
 **Correlación del perfil de 15 min: r = +0.90** en el total, y **+0.98**
-entre la calzada cercana y el sentido pte-ote. Eso dice que el detector sí
+entre la calzada del fondo y el sentido pte-ote. Eso dice que el detector sí
 está viendo el tránsito real — el problema es de escala y de reparto, no
 ceguera.
 
-El reparto es el hallazgo: **51/49 % real contra 18/82 % nuestro.** La
-calzada del fondo, la de 14 px, aporta menos de un tercio de lo que debería.
-Confirma con datos externos lo que ya decía la tabla de píxeles.
+El reparto: **51/49 % real contra 18/82 % nuestro.**
+
+**Cuidado con los nombres de las zonas, que engañan.** "Calzada oriente" es
+la **cercana** y "Calzada poniente" la **del fondo** — al revés de lo que
+sugiere el orden en pantalla. Se comprueba con `crossings.bbox_height`, no
+con el nombre.
+
+### Por qué la calzada cercana solo da 0.29×
+
+No es el detector. Es **dónde está puesta la línea**, y se demuestra con la
+fuga de la calibración anterior:
+
+| línea | zona atribuida | cruces | alto medio | confianza |
+|---|---|---|---|---|
+| `Carril 1` | Calzada oriente | 361 | 20.8 px | 0.64 |
+| `Carril 2` | Calzada oriente (fuga) | 221 | **73.5 px** | **0.79** |
+| `Carril 2` | Calzada poniente | 2 638 | 18.0 px | 0.65 |
+
+La calzada oriente mide **34 px de alto en x=210**, donde está `Carril 1`, y
+**71 px en x=519**, donde está `Carril 2`. Es la misma calzada: se acerca a
+la cámara hacia la derecha del cuadro. `Carril 1` está contando la calzada
+cercana **en su extremo lejano**, con vehículos de 20.8 px; los 221 cruces
+que se le fugaron a `Carril 2` sobre esa misma calzada son de 73.5 px a 0.79
+de confianza — **las mejores detecciones de todo el conjunto**.
+
+**Antes de reprocesar, mover `Carril 1` hacia la derecha del cuadro**, a la
+zona donde su calzada mide 70 px. Es un cambio de calibración, no de modelo,
+y ataca directamente el 0.29×. El filtro de zona por línea descartaría esos
+221 cruces excelentes — correctamente, porque vienen de la línea equivocada;
+lo que hay que arreglar es la línea.
 
 El emparejamiento calzada↔sentido lo hace la herramienta **por correlación,
 no por el nombre**: "Calzada poniente" es ambiguo (¿la del lado poniente o
@@ -221,10 +248,11 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
    cruces de la línea `Carril 2` quedaron atribuidos a la calzada del
    oriente, que es justo lo que el filtro impide. La interfaz ya lo marca
    como "calibración anterior".
-2. **Decidir qué se entrega de la calzada del fondo.** Con 0.29× no se
-   puede vender como aforo. Las salidas honestas son declararla estimada
-   con su factor de corrección medido, o entregar solo la calzada cercana y
-   documentar por qué — que es lo que el usuario propuso.
+2. **Decidir qué se entrega de la calzada del fondo.** Es la de 15 px y
+   nunca va a ser un aforo defendible. Las salidas honestas son declararla
+   estimada con su factor de corrección medido, o entregar solo la calzada
+   cercana y documentar por qué. Ojo: la cercana es `Calzada oriente`, y
+   hoy es la que peor cuenta — pero por la línea, no por la calzada.
 3. **El reporte por calzada.** `crossings.zone_id` ya guarda el dato; la
    pantalla todavía agrupa por línea.
 4. **Marcar las horas nocturnas** (20:00–05:00) como no medibles en el
