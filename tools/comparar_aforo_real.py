@@ -6,25 +6,34 @@ Esta es la unica herramienta que da una cifra de exactitud *absoluta*. Todo
 lo demas que se ha medido en el proyecto es relativo ("cuenta un 43 % mas
 que antes"), y un informe de aforo tiene que declarar una exactitud.
 
-La referencia son los reportes del contador de ejes de la estacion
-"Miguel de la madrid" del 19-ago-2026, uno por sentido, en
-referencias/aforo_real/.
+En referencias/aforo_real/ hay DOS mediciones de campo del mismo tramo y el
+mismo dia (19-ago-2026), y no coinciden entre si:
 
-AVISO sobre la referencia, que cambia como se lee el resultado: cada archivo
-declara "Number of Lanes : 1", con un contador distinto por sentido (serie
-19079 y 140084). El tubo mide UN carril; la camara ve la calzada completa.
-Donde la calzada tenga mas de un carril, lo nuestro debe salir *por encima*
-del tubo sin que eso sea un error. Por eso se reporta la razon y no un
-"porcentaje de acierto" a secas.
+- `conteo_manual_24h.xlsx` — aforo contado por una persona, 24 h, por
+  cuartos de hora, por sentido y por clase. **Es la referencia.**
+- `miguel_de_la_madrid_*.xls` — contador de ejes, uno por sentido.
+
+Contrastados entre si, el tubo perdio el 31 % del transito en el sentido
+pte-ote (1 916 contra 2 777 contados a mano) mientras acertaba en ote-pte
+(0.95x). Por eso `--fuente auto` toma el conteo manual cuando existe: una
+persona contando es la referencia, y el tubo es un instrumento que aqui
+fallo en un sentido.
+
+Esto importa porque durante un tiempo se dio por bueno el tubo y se
+concluyo que nuestro sistema sobrecontaba la calzada del fondo en un 36 %.
+Contra el conteo manual esa misma calzada sale en 0.94x: no sobrecontaba,
+el tubo subcontaba.
 
 Uso:
-    python tools/comparar_aforo_real.py --proyecto 11
-    python tools/comparar_aforo_real.py --proyecto 11 --salida data/comparacion.csv
+    python tools/comparar_aforo_real.py --proyecto 2
+    python tools/comparar_aforo_real.py --proyecto 2 --fuente tubo
+    python tools/comparar_aforo_real.py --proyecto 2 --salida data/comparacion.csv
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sqlite3
 import statistics
 import sys
@@ -88,17 +97,92 @@ def leer_contador(ruta: Path) -> tuple[str, str, dict[int, float]]:
     return sentido, fecha, por_minuto
 
 
-def cargar_referencia(carpeta: Path) -> dict[str, dict[int, float]]:
-    archivos = sorted(carpeta.glob("*.xls"))
-    if not archivos:
-        sys.exit(f"No hay reportes .xls en {carpeta}")
+def leer_conteo_manual(ruta: Path) -> dict[str, dict[int, float]]:
+    """Aforo contado por una persona: {sentido: {minuto: vehiculos}}.
+
+    Un archivo trae los DOS sentidos, una hoja cada uno, y cada hoja se
+    parte en dos bloques lado a lado: la mitad AM a la izquierda y la PM a
+    la derecha, con cinco clases (A, B, C, T-S, T-S-R) por bloque. La
+    columna de la hora se localiza por su encabezado 'Hr/Mov' en vez de
+    fijarla, porque no cae en la misma letra en las dos hojas.
+    """
+    import openpyxl  # solo aqui: el resto de la herramienta no lo necesita
+
+    libro = openpyxl.load_workbook(str(ruta), data_only=True)
     real: dict[str, dict[int, float]] = {}
-    for ruta in archivos:
+
+    for hoja in libro.worksheets:
+        columnas_hora, sentido = [], None
+        for fila in hoja.iter_rows(min_row=1, max_row=6):
+            for celda in fila:
+                txt = str(celda.value or "").strip()
+                if txt.lower().startswith("hr/mov"):
+                    columnas_hora.append(celda.column)
+                elif re.fullmatch(r"(OTE|PTE)-(OTE|PTE)", txt, re.I):
+                    sentido = txt.lower()
+        if not columnas_hora or not sentido:
+            continue
+
+        por_minuto: dict[int, float] = {}
+        for fila in range(1, hoja.max_row + 1):
+            for col in columnas_hora:
+                minuto = _minuto_de_rango(hoja.cell(fila, col).value)
+                if minuto is None or minuto in por_minuto:
+                    continue
+                total = 0.0
+                for i in range(1, 6):  # las cinco clases a la derecha
+                    v = hoja.cell(fila, col + i).value
+                    if isinstance(v, (int, float)):
+                        total += v
+                por_minuto[minuto] = total
+        if por_minuto:
+            real[sentido] = por_minuto
+    return real
+
+
+def _minuto_de_rango(etiqueta) -> int | None:
+    """'7:15 AM - 7:30 AM' -> 435, el minuto del dia en que empieza."""
+    m = re.match(r"\s*(\d{1,2}):(\d{2})\s*(AM|PM)", str(etiqueta or ""), re.I)
+    if not m:
+        return None
+    h, mi, ap = int(m.group(1)), int(m.group(2)), m.group(3).upper()
+    if ap == "PM" and h != 12:
+        h += 12
+    if ap == "AM" and h == 12:
+        h = 0
+    return h * 60 + mi
+
+
+def cargar_referencia(carpeta: Path, fuente: str = "auto") -> dict[str, dict[int, float]]:
+    """El conteo manual manda sobre el contador de ejes cuando ambos existen.
+
+    Contrastados entre si sobre este mismo tramo y dia, el tubo perdio el
+    31 % del transito en un sentido (1 916 contra 2 777 contados a mano)
+    mientras acertaba en el otro (0.95x). Una persona contando es la
+    referencia; el tubo es un instrumento que puede fallar y aqui fallo.
+    """
+    manuales = sorted(carpeta.glob("*.xlsx"))
+    tubos = sorted(carpeta.glob("*.xls"))
+
+    if fuente in ("auto", "manual") and manuales:
+        real: dict[str, dict[int, float]] = {}
+        for ruta in manuales:
+            for sentido, datos in leer_conteo_manual(ruta).items():
+                real[sentido] = datos
+                print(f"  {ruta.name} [conteo manual]: sentido {sentido}, "
+                      f"{len(datos)}/96 cuartos de hora, {int(sum(datos.values()))} vehiculos")
+        if real:
+            return real
+    if fuente == "manual":
+        sys.exit(f"No hay conteo manual (.xlsx) en {carpeta}")
+
+    if not tubos:
+        sys.exit(f"No hay reportes de referencia en {carpeta}")
+    real = {}
+    for ruta in tubos:
         sentido, fecha, datos = leer_contador(ruta)
-        print(
-            f"  {ruta.name}: sentido {sentido}, {fecha}, "
-            f"{len(datos)}/96 cuartos de hora, {int(sum(datos.values()))} vehiculos"
-        )
+        print(f"  {ruta.name} [contador de ejes]: sentido {sentido}, {fecha}, "
+              f"{len(datos)}/96 cuartos de hora, {int(sum(datos.values()))} vehiculos")
         real[sentido] = datos
     return real
 
@@ -233,12 +317,14 @@ def main() -> None:
     )
     p.add_argument("--proyecto", type=int, required=True)
     p.add_argument("--referencias", type=Path, default=REFERENCIAS)
+    p.add_argument("--fuente", choices=("auto", "manual", "tubo"), default="auto",
+                   help="referencia a usar; auto prefiere el conteo manual")
     p.add_argument("--bd", type=Path, default=BD)
     p.add_argument("--salida", type=Path, help="CSV con el detalle por cuarto de hora")
     a = p.parse_args()
 
     print("Aforo real de referencia:")
-    real = cargar_referencia(a.referencias)
+    real = cargar_referencia(a.referencias, a.fuente)
     nuestro, cubiertos = cargar_nuestro(a.bd, a.proyecto)
     if not nuestro:
         sys.exit(diagnosticar_sin_cruces(a.bd, a.proyecto))
