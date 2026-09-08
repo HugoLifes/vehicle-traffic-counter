@@ -55,3 +55,4 @@ black==23.11.0
 flake8==6.1.0
 openpyxl==3.1.5      # informe de aforo en el formato de la empresa
 xlrd==2.0.2          # leer los .xls del contador de ejes; openpyxl solo abre .xlsx
+reportlab==5.0.1     # reporte de avance en PDF (tools/reporte_avance_pdf.py)
