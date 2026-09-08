@@ -278,12 +278,14 @@ def main() -> None:
 
     sr = [sum(d.get(b, 0) for d in real.values()) for b in bins]
     sn = [sum(d.get(b, 0) for d in nuestro.values()) for b in bins]
-    print(
-        f"\nCorrelacion del perfil temporal (ambos sentidos): "
-        f"r = {statistics.correlation(sr, sn):+.2f}"
-    )
-    print("  r alto con razon lejos de 1 = el detector si ve el transito real,")
-    print("  pero la escala esta mal. r bajo = no lo esta viendo.")
+    r_total = _correlacion(sr, sn)
+    if r_total is None:
+        print("\nCorrelacion del perfil temporal: no se puede calcular todavia.")
+        print(f"  Hacen falta al menos 3 cuartos de hora contados; hay {len(bins)}.")
+    else:
+        print(f"\nCorrelacion del perfil temporal (ambos sentidos): r = {r_total:+.2f}")
+        print("  r alto con razon lejos de 1 = el detector si ve el transito real,")
+        print("  pero la escala esta mal. r bajo = no lo esta viendo.")
 
     if a.salida:
         a.salida.parent.mkdir(parents=True, exist_ok=True)
