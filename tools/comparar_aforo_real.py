@@ -140,10 +140,18 @@ def cargar_nuestro(bd: Path, proyecto: int) -> tuple[dict[str, dict[int, int]], 
     video realmente cubre: sin eso se compara contra horas no grabadas."""
     con = _conectar_ro(bd)
 
+    # Solo los videos YA CONTADOS. Con la cola a medias, incluir los que
+    # faltan hace creer que el video cubre tres horas cuando solo se han
+    # contado veinte minutos, y entonces se comparan nuestros veinte
+    # minutos contra tres horas de tubo: el resultado sale por los suelos
+    # sin que nada este mal. Se acepta tambien un video sin cruces si ya
+    # esta 'done', porque un tramo vacio de madrugada es un dato valido.
     cubiertos: set[int] = set()
     for r in con.execute(
-        "select video_start_time t, total_frames f, fps from video_jobs "
-        "where project_id=? and video_start_time is not null",
+        "select v.video_start_time t, v.total_frames f, v.fps from video_jobs v "
+        "where v.project_id=? and v.video_start_time is not null "
+        "  and (v.status = 'done' "
+        "       or exists (select 1 from crossings x where x.job_id = v.id))",
         (proyecto,),
     ):
         h, m, _ = map(int, r["t"][11:].split(":"))
