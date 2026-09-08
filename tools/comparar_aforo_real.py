@@ -103,11 +103,42 @@ def cargar_referencia(carpeta: Path) -> dict[str, dict[int, float]]:
     return real
 
 
+def diagnosticar_sin_cruces(bd: Path, proyecto: int) -> str:
+    """Un proyecto sin cruces casi siempre es un proyecto que todavia no ha
+    contado, no un error. Se dice cual es el caso y que sigue, en vez de
+    dejar al usuario mirando un "no tiene cruces"."""
+    con = _conectar_ro(bd)
+    estados = dict(
+        con.execute(
+            "select status, count(*) from video_jobs where project_id=? group by status",
+            (proyecto,),
+        ).fetchall()
+    )
+    con.close()
+    if not estados:
+        return f"El proyecto {proyecto} no tiene videos."
+    resumen = ", ".join(f"{n} {e}" for e, n in sorted(estados.items()))
+    if estados.get("awaiting_calibration"):
+        return (
+            f"El proyecto {proyecto} todavia no ha contado nada ({resumen}).\n"
+            "Revisa el encuadre en la plataforma y presiona 'Empezar conteo'.\n"
+            "Vuelve a correr esto cuando los videos esten en 'listo'."
+        )
+    if estados.get("queued") or estados.get("processing"):
+        return f"El proyecto {proyecto} sigue contando ({resumen}). Espera a que termine."
+    return f"El proyecto {proyecto} no tiene cruces ({resumen})."
+
+
+def _conectar_ro(bd: Path) -> sqlite3.Connection:
+    con = sqlite3.connect(f"file:{bd}?mode=ro", uri=True)
+    con.row_factory = sqlite3.Row
+    return con
+
+
 def cargar_nuestro(bd: Path, proyecto: int) -> tuple[dict[str, dict[int, int]], set[int]]:
     """Cruces del proyecto por calzada y cuarto de hora, y los minutos que el
     video realmente cubre: sin eso se compara contra horas no grabadas."""
-    con = sqlite3.connect(f"file:{bd}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
+    con = _conectar_ro(bd)
 
     cubiertos: set[int] = set()
     for r in con.execute(
@@ -170,7 +201,7 @@ def main() -> None:
     real = cargar_referencia(a.referencias)
     nuestro, cubiertos = cargar_nuestro(a.bd, a.proyecto)
     if not nuestro:
-        sys.exit(f"El proyecto {a.proyecto} no tiene cruces.")
+        sys.exit(diagnosticar_sin_cruces(a.bd, a.proyecto))
 
     # Solo los cuartos de hora cubiertos ENTEROS por el video: uno a medias
     # compara 15 minutos de tubo contra 2 de camara y ensucia el resultado.
