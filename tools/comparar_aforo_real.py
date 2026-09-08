@@ -182,6 +182,18 @@ def _correlacion(a, b):
         return None
 
 
+def _apenas_varia(serie, umbral: float = 0.12) -> bool:
+    """Una serie casi constante no se puede correlacionar con nada de forma
+    util: cualquier r que salga lo decide el ruido. El umbral es sobre el
+    coeficiente de variacion (desviacion / media)."""
+    if len(serie) < 2:
+        return True
+    media = statistics.fmean(serie)
+    if media == 0:
+        return True
+    return statistics.pstdev(serie) / media < umbral
+
+
 def emparejar(real, nuestro, bins):
     """Ata cada calzada nuestra al sentido real con el que su perfil temporal
     correlaciona mas.
@@ -282,6 +294,17 @@ def main() -> None:
     if r_total is None:
         print("\nCorrelacion del perfil temporal: no se puede calcular todavia.")
         print(f"  Hacen falta al menos 3 cuartos de hora contados; hay {len(bins)}.")
+    elif _apenas_varia(sr):
+        # Sumar los dos sentidos puede aplanar el perfil: uno sube mientras
+        # el otro baja y el total queda casi constante. Correlacionar contra
+        # una serie plana da un numero que parece informativo y no lo es —
+        # se midio un r = -0.55 sobre cuatro intervalos donde el total real
+        # iba 373, 373, 400, 394, mientras cada sentido por separado
+        # correlacionaba a +0.97 y +0.87.
+        print(f"\nCorrelacion del perfil temporal (ambos sentidos): r = {r_total:+.2f}")
+        print("  NO INTERPRETABLE: el total real apenas varia entre intervalos")
+        print(f"  ({min(sr):.0f} a {max(sr):.0f}), asi que este r es ruido. Mira arriba")
+        print("  la correlacion de cada sentido por separado, que si dice algo.")
     else:
         print(f"\nCorrelacion del perfil temporal (ambos sentidos): r = {r_total:+.2f}")
         print("  r alto con razon lejos de 1 = el detector si ve el transito real,")
