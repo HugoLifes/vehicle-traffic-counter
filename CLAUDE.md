@@ -163,6 +163,7 @@ se podía contestar de otro modo:
 | `diagnostico_fallos.py` | Dónde falla el detector, cruzando movimiento contra detección |
 | `verificar_conteo.py` | Clip con cada cruce numerado, para contar a mano |
 | `comparar_aforo_real.py` | Contrastar contra el aforo real de campo (conteo manual o tubo) |
+| `validar_clasificacion.py` | Validar la clasificación vehicular contra el conteo manual |
 | `reporte_avance_pdf.py` | Reporte de avance en PDF para presentar a la empresa |
 | `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
 
@@ -254,6 +255,53 @@ la **cercana** y "Calzada poniente" la **del fondo** — al revés de lo que
 sugiere el orden en pantalla. Se comprueba con `crossings.bbox_height`
 (40.9 px contra 17.7 px), no con el nombre.
 
+### La clase `truck` de COCO no es un camión
+
+Comparada en crudo, nuestra composición sale **66 % livianos / 34 %
+pesados** contra **87 / 13 %** del conteo manual. Parece un desastre y no lo
+es: son dos taxonomías distintas. La clase `truck` de COCO mete en el mismo
+saco una pickup y un tractocamión, y en la clasificación SCT que usa la
+empresa (A, B, C, T-S, T-S-R) la pickup es **A**, un automóvil.
+
+La separación se hace por **alto en píxeles**, y aquí funciona por una razón
+concreta del montaje: todos los vehículos se cuentan al cruzar una línea
+fija, o sea a la misma distancia de la cámara. A distancia constante el alto
+en píxeles es proporcional al alto real. En la calzada cercana la clase
+`truck` sale **bimodal** — mediana 40 px pero p75 en 66 — que son las dos
+poblaciones mezcladas.
+
+El umbral se expresa como **múltiplo del alto mediano del automóvil de esa
+calzada**, para que valga donde la escala es otra. Calibrado contra el
+conteo manual da **1.55–1.61×** (53 px en la cercana, 24 px en la del
+fondo).
+
+```bash
+python tools/validar_clasificacion.py --proyecto 2 --holdout
+```
+
+Validación con holdout temporal — se calibra con 07:00–08:30 y se mide con
+08:30–10:00, que es la única cifra honesta para la calzada donde se calibra:
+
+| | livianos | pesados |
+|---|---|---|
+| Calzada oriente (cercana) | **0.98×** | **1.09×** |
+| Calzada poniente (fondo) | 1.03× | **0.63×** |
+| Ambos sentidos | 1.01× | 0.82× |
+
+**Los livianos quedan validados** (0.98–1.03× en las dos calzadas, y el
+barrido de sensibilidad los deja entre 0.96 y 1.01 para cualquier múltiplo
+entre 1.3 y 2.0: son robustos porque los pesados son pocos).
+
+**Los pesados solo sirven en la calzada cercana.** En la del fondo, a 15–17
+px de alto, un camión y un automóvil miden lo mismo y ningún umbral los
+separa: el barrido va de 0.77× a 0.43× sin nunca acertar.
+
+**No se intenta separar autobús de camión.** A este tamaño los `bus` de la
+calzada cercana miden 65–90 px y los `truck` grandes también; YOLO no los
+distingue de forma fiable. Separar C de T-S necesitaría el **ancho** de la
+caja (un tractocamión es mucho más largo), y `crossings` hoy solo guarda
+`bbox_height`.
+
 ### Cómo se pasó de 0.29× a 1.04×: era la línea, no el detector
 
 Con la calibración anterior la calzada cercana daba **0.29×** (579 contra
@@ -302,10 +350,9 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
 
 ### Lo que falta, por orden de importancia
 
-1. **Validar la clasificación de vehículos.** Es lo más cercano a
-   entregable que queda. El conteo manual trae su desglose por clase y en
-   la ventana del video da **87 % automóviles** (A), 4 % B, 5 % C, 4 % T-S.
-   Nuestro reporte dice "73.8 % automóviles" y nunca se ha comprobado.
+1. **Llevar la corrección de clase al reporte.** La validación ya está
+   hecha (ver abajo) y funciona; falta que el Excel entregable use la
+   taxonomía SCT en vez de las clases de COCO.
 2. **Extender a las 24 horas.** El conteo manual cubre el día completo, así
    que hay contra qué contrastar cada hora. Un día entero sale en unas 15 h
    de proceso en el Jetson.
