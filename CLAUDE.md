@@ -168,12 +168,22 @@ se podía contestar de otro modo:
 
 ## Estado actual
 
-**Proyecto 11 — "Cd. Juárez — Aforo matutino"**: 18 videos de 07:00 a
-09:59, 3 122 cruces. Dos líneas (`Carril 1` → Calzada oriente, `Carril 2` →
-Calzada poniente) y dos zonas que cubren el ancho completo del cuadro.
+El aforo **ya está contado en el Jetson y contrastado contra medición de
+campo**. Es el proyecto **2 del Jetson**, "Cd. Juárez — Aforo matutino":
+18 videos de 07:00 a 09:59, **4 671 cruces**, dos líneas (`Carril 1` →
+Calzada oriente, `Carril 2` → Calzada poniente) atadas a sus zonas.
 
-Verificado sobre 5 minutos: **0 vehículos contados en más de una línea**,
-100 % de pureza de sentido en cada calzada.
+El proyecto 11 de la base de desarrollo es el **mismo aforo con la
+calibración vieja** (3 220 cruces). Se conserva solo como referencia
+histórica; **las cifras buenas son las del Jetson.**
+
+Trasladar un proyecto calibrado entre máquinas:
+
+```bash
+python tools/mover_proyecto.py exportar --proyecto 11 --salida data/p11.json
+# copiar el JSON y los videos de data/uploads al destino
+python tools/mover_proyecto.py importar --archivo data/p11.json
+```
 
 ### Ya hay aforo real de contraste
 
@@ -192,49 +202,72 @@ la calzada tenga más de un carril, lo nuestro *debe* salir por encima del
 tubo sin que eso sea error. Por eso la herramienta reporta una razón y no un
 "porcentaje de acierto".
 
-Resultado contra los conteos de la calibración anterior (07:00–09:59):
+**Resultado tras reprocesar en el Jetson con la línea corregida**
+(proyecto **2** del Jetson, 07:00–09:59, 18 videos, 0 errores, 4 671 cruces):
 
-| | nuestro | real | razón |
-|---|---|---|---|
-| Calzada oriente (**cercana**) | 579 | 1 996 | **0.29×** |
-| Calzada poniente (**del fondo**) | 2 638 | 1 916 | 1.38× |
-| Ambos sentidos | 3 217 | 3 912 | 0.82× |
+| | nuestro | real | razón | r |
+|---|---|---|---|---|
+| Calzada oriente (**cercana**) | 2 072 | 1 996 | **1.04×** | **+0.99** |
+| Calzada poniente (**del fondo**) | 2 597 | 1 916 | 1.36× | +0.98 |
+| Ambos sentidos | 4 669 | 3 912 | 1.19× | +0.97 |
 
-**Correlación del perfil de 15 min: r = +0.90** en el total, y **+0.98**
-entre la calzada del fondo y el sentido pte-ote. Eso dice que el detector sí
-está viendo el tránsito real — el problema es de escala y de reparto, no
-ceguera.
+La calzada cercana cuadra **cuarto de hora por cuarto de hora**, no solo en
+el total — nuestro/real: 163/159, 180/163, 195/188, 217/208, 223/206,
+178/172, 140/137, 151/145, 138/136, 133/136, 156/152, 198/194. La razón por
+intervalo se mueve entre 0.98 y 1.10.
 
-El reparto: **51/49 % real contra 18/82 % nuestro.**
+Reparto: **51/49 % real contra 44/56 % nuestro.**
+
+Integridad sobre los 4 671 cruces: **0** vehículos contados en dos líneas,
+**0** recuentos del mismo rastro, **0** fugas de zona. Tiempo: 2 h 03 min
+para 3 h de video.
 
 **Cuidado con los nombres de las zonas, que engañan.** "Calzada oriente" es
 la **cercana** y "Calzada poniente" la **del fondo** — al revés de lo que
-sugiere el orden en pantalla. Se comprueba con `crossings.bbox_height`, no
-con el nombre.
+sugiere el orden en pantalla. Se comprueba con `crossings.bbox_height`
+(40.9 px contra 17.7 px), no con el nombre.
 
-### Por qué la calzada cercana solo da 0.29×
+### Cómo se pasó de 0.29× a 1.04×: era la línea, no el detector
 
-No es el detector. Es **dónde está puesta la línea**, y se demuestra con la
-fuga de la calibración anterior:
+Con la calibración anterior la calzada cercana daba **0.29×** (579 contra
+1 996). No era ceguera del detector: `Carril 1` estaba en **x=210**, donde
+esa calzada mide 34 px de alto, mientras que en **x=519** mide 71 px. Es la
+misma calzada, que se acerca a la cámara hacia la derecha del cuadro — se
+estaba contando **en su extremo lejano**.
 
-| línea | zona atribuida | cruces | alto medio | confianza |
-|---|---|---|---|---|
-| `Carril 1` | Calzada oriente | 361 | 20.8 px | 0.64 |
-| `Carril 2` | Calzada oriente (fuga) | 221 | **73.5 px** | **0.79** |
-| `Carril 2` | Calzada poniente | 2 638 | 18.0 px | 0.65 |
+Lo delató la fuga de la calibración vieja: los 221 cruces que `Carril 2`
+atribuyó a la calzada oriente medían **73.5 px a 0.79 de confianza**, las
+mejores detecciones del conjunto, contra los 20.8 px y 0.64 de los 361 que
+sí contaba `Carril 1`.
 
-La calzada oriente mide **34 px de alto en x=210**, donde está `Carril 1`, y
-**71 px en x=519**, donde está `Carril 2`. Es la misma calzada: se acerca a
-la cámara hacia la derecha del cuadro. `Carril 1` está contando la calzada
-cercana **en su extremo lejano**, con vehículos de 20.8 px; los 221 cruces
-que se le fugaron a `Carril 2` sobre esa misma calzada son de 73.5 px a 0.79
-de confianza — **las mejores detecciones de todo el conjunto**.
+Se movió `Carril 1` a `x=520`, `y` de 192 a 260. Resultado por línea:
 
-**Antes de reprocesar, mover `Carril 1` hacia la derecha del cuadro**, a la
-zona donde su calzada mide 70 px. Es un cambio de calibración, no de modelo,
-y ataca directamente el 0.29×. El filtro de zona por línea descartaría esos
-221 cruces excelentes — correctamente, porque vienen de la línea equivocada;
-lo que hay que arreglar es la línea.
+| línea | | antes | después |
+|---|---|---|---|
+| `Carril 1` | cruces | 361 | **2 074** |
+| | alto medio | 20.8 px | **40.9 px** |
+| | confianza | 0.64 | **0.86** |
+
+**Lección general: antes de tocar el modelo, comprobar dónde está la línea
+respecto a la perspectiva.** Una calzada horizontal no mide lo mismo en los
+dos extremos del cuadro, y la línea debe ir donde el vehículo es grande.
+
+### Las líneas deben solaparse, no separarse
+
+Medido sobre este video: **el 32.6 % de las cajas invaden las dos calzadas
+a la vez.** No causa doble conteo porque lo que se prueba es el **punto de
+apoyo** (centro del borde inferior), que cae en una sola zona, y porque
+cada línea solo recibe los rastros de su zona atada
+(`video_job_processor.py`).
+
+Consecuencia contraintuitiva: **alargar una línea hasta invadir la calzada
+vecina no duplica nada, y dejarla corta sí pierde vehículos.** `Carril 2`
+terminaba en `y=190.3` y dejaba sin cubrir 5 px — el **33 %** del alto de su
+calzada — sin dar ningún aviso. Se alargó a `y=198`.
+
+**Al calibrar, comprobar que cada línea cruza el alto COMPLETO de su
+calzada en el punto donde la corta.** Es un fallo que no produce error, solo
+un conteo más bajo.
 
 El emparejamiento calzada↔sentido lo hace la herramienta **por correlación,
 no por el nombre**: "Calzada poniente" es ambiguo (¿la del lado poniente o
@@ -242,17 +275,16 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
 
 ### Lo que falta, por orden de importancia
 
-1. **Reprocesar** los 18 videos **en el Jetson** y volver a comparar: los
-   conteos de la tabla de arriba son anteriores a los arreglos del contador
-   y al filtro de zona por línea. En la base todavía se ve la fuga: 221
-   cruces de la línea `Carril 2` quedaron atribuidos a la calzada del
-   oriente, que es justo lo que el filtro impide. La interfaz ya lo marca
-   como "calibración anterior".
-2. **Decidir qué se entrega de la calzada del fondo.** Es la de 15 px y
-   nunca va a ser un aforo defendible. Las salidas honestas son declararla
-   estimada con su factor de corrección medido, o entregar solo la calzada
-   cercana y documentar por qué. Ojo: la cercana es `Calzada oriente`, y
-   hoy es la que peor cuenta — pero por la línea, no por la calzada.
+1. **Explicar el 1.36× de la calzada del fondo.** Es lo único abierto en
+   la exactitud. La razón es *estable* entre intervalos (1.50, 1.49, 1.37,
+   1.42 en la primera hora), y eso apunta a causa estructural —el tubo mide
+   un carril y la cámara ve la calzada entera— más que a conteo errático.
+   Hay que distinguirlo de rastros que se parten a 17.7 px y se cuentan
+   como vehículos distintos. Sin resolverlo no se puede declarar una
+   exactitud para ese sentido.
+2. **Decidir qué se entrega de la calzada del fondo.** Con 1.36× y sin
+   saber cuántos carriles mide el tubo, no se puede vender como aforo
+   exacto. La calzada cercana sí: **1.04× con r = +0.99**.
 3. **El reporte por calzada.** `crossings.zone_id` ya guarda el dato; la
    pantalla todavía agrupa por línea.
 4. **Marcar las horas nocturnas** (20:00–05:00) como no medibles en el
