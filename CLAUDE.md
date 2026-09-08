@@ -162,7 +162,9 @@ se podía contestar de otro modo:
 | `trayectorias.py` | Medir por dónde y hacia dónde circulan los vehículos |
 | `diagnostico_fallos.py` | Dónde falla el detector, cruzando movimiento contra detección |
 | `verificar_conteo.py` | Clip con cada cruce numerado, para contar a mano |
-| `comparar_aforo_real.py` | Contrastar contra el aforo medido con contador de ejes |
+| `comparar_aforo_real.py` | Contrastar contra el aforo real de campo (conteo manual o tubo) |
+| `reporte_avance_pdf.py` | Reporte de avance en PDF para presentar a la empresa |
+| `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
 
 ---
 
@@ -195,28 +197,53 @@ contador de ejes: `referencias/aforo_real/`, un archivo por sentido del
 python tools/comparar_aforo_real.py --proyecto 11
 ```
 
-**Advertencia que cambia toda la lectura:** cada archivo declara
-`Number of Lanes : 1`, con un contador distinto por sentido (serie 19079 y
-140084). **El tubo mide un carril; la cámara ve la calzada completa.** Donde
-la calzada tenga más de un carril, lo nuestro *debe* salir por encima del
-tubo sin que eso sea error. Por eso la herramienta reporta una razón y no un
-"porcentaje de acierto".
+**Hay DOS mediciones de campo del mismo tramo y el mismo día, y no
+coinciden entre sí:**
+
+| | archivo | qué es |
+|---|---|---|
+| **Referencia** | `conteo_manual_24h.xlsx` | Aforo contado por una persona, 24 h, por cuartos de hora, por sentido y por clase |
+| Secundaria | `miguel_de_la_madrid_*.xls` | Contador de ejes, uno por sentido |
+
+Contrastados entre sí en la ventana del video:
+
+| sentido | tubo | manual | razón |
+|---|---|---|---|
+| ote-pte | 1 996 | 2 100 | 0.95× |
+| pte-ote | 1 916 | 2 777 | **0.69×** |
+
+**El tubo perdió el 31 % del tránsito en un sentido** mientras acertaba en
+el otro. Un tubo se afloja, se descentra o se queda sin batería, y no avisa.
+
+Esto costó una conclusión equivocada: mientras se usó el tubo como
+referencia se creyó que el sistema **sobrecontaba** la calzada del fondo en
+un 36 %, y se llegó a documentar como causa probable que los rastros se
+partían a 17.7 px. Contra el conteo manual esa misma calzada sale en
+**0.94×**: no sobrecontaba, el tubo subcontaba.
+
+**Lección: antes de explicar por qué nuestro número difiere de una
+referencia, comprobar la referencia.** `--fuente auto` toma el conteo
+manual cuando existe; `--fuente tubo` fuerza el otro.
 
 **Resultado tras reprocesar en el Jetson con la línea corregida**
 (proyecto **2** del Jetson, 07:00–09:59, 18 videos, 0 errores, 4 671 cruces):
 
-| | nuestro | real | razón | r |
+Contra el **conteo manual**, que es la referencia:
+
+| | nuestro | manual | razón | r |
 |---|---|---|---|---|
-| Calzada oriente (**cercana**) | 2 072 | 1 996 | **1.04×** | **+0.99** |
-| Calzada poniente (**del fondo**) | 2 597 | 1 916 | 1.36× | +0.98 |
-| Ambos sentidos | 4 669 | 3 912 | 1.19× | +0.97 |
+| Calzada oriente (**cercana**) | 2 072 | 2 100 | **0.99×** | **+1.00** |
+| Calzada poniente (**del fondo**) | 2 597 | 2 777 | 0.94× | +0.99 |
+| Ambos sentidos | 4 669 | 4 877 | **0.96×** | +0.99 |
 
 La calzada cercana cuadra **cuarto de hora por cuarto de hora**, no solo en
-el total — nuestro/real: 163/159, 180/163, 195/188, 217/208, 223/206,
-178/172, 140/137, 151/145, 138/136, 133/136, 156/152, 198/194. La razón por
-intervalo se mueve entre 0.98 y 1.10.
+el total — nuestro/manual: 163/164, 180/184, 195/197, 217/223, 223/227,
+178/184, 140/142, 151/152, 138/138, 133/135, 156/151, 198/203. La razón por
+intervalo se mueve entre **0.97 y 1.03**; la de la calzada del fondo, entre
+0.88 y 1.17 con mediana 0.93.
 
-Reparto: **51/49 % real contra 44/56 % nuestro.**
+Reparto: **43/57 % manual contra 44/56 % nuestro.** No es solo que el total
+se parezca: el sistema reparte el tránsito como está repartido.
 
 Integridad sobre los 4 671 cruces: **0** vehículos contados en dos líneas,
 **0** recuentos del mismo rastro, **0** fugas de zona. Tiempo: 2 h 03 min
@@ -275,16 +302,13 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
 
 ### Lo que falta, por orden de importancia
 
-1. **Explicar el 1.36× de la calzada del fondo.** Es lo único abierto en
-   la exactitud. La razón es *estable* entre intervalos (1.50, 1.49, 1.37,
-   1.42 en la primera hora), y eso apunta a causa estructural —el tubo mide
-   un carril y la cámara ve la calzada entera— más que a conteo errático.
-   Hay que distinguirlo de rastros que se parten a 17.7 px y se cuentan
-   como vehículos distintos. Sin resolverlo no se puede declarar una
-   exactitud para ese sentido.
-2. **Decidir qué se entrega de la calzada del fondo.** Con 1.36× y sin
-   saber cuántos carriles mide el tubo, no se puede vender como aforo
-   exacto. La calzada cercana sí: **1.04× con r = +0.99**.
+1. **Validar la clasificación de vehículos.** Es lo más cercano a
+   entregable que queda. El conteo manual trae su desglose por clase y en
+   la ventana del video da **87 % automóviles** (A), 4 % B, 5 % C, 4 % T-S.
+   Nuestro reporte dice "73.8 % automóviles" y nunca se ha comprobado.
+2. **Extender a las 24 horas.** El conteo manual cubre el día completo, así
+   que hay contra qué contrastar cada hora. Un día entero sale en unas 15 h
+   de proceso en el Jetson.
 3. **El reporte por calzada.** `crossings.zone_id` ya guarda el dato; la
    pantalla todavía agrupa por línea.
 4. **Marcar las horas nocturnas** (20:00–05:00) como no medibles en el
