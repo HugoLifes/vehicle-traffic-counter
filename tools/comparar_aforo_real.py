@@ -171,6 +171,17 @@ def cargar_nuestro(bd: Path, proyecto: int) -> tuple[dict[str, dict[int, int]], 
     return {k: dict(v) for k, v in nuestro.items()}, cubiertos
 
 
+def _correlacion(a, b):
+    """None cuando no se puede calcular: con pocos intervalos, o cuando una
+    de las dos series es constante, la correlacion no esta definida."""
+    if len(a) < 3:
+        return None
+    try:
+        return statistics.correlation(a, b)
+    except statistics.StatisticsError:
+        return None
+
+
 def emparejar(real, nuestro, bins):
     """Ata cada calzada nuestra al sentido real con el que su perfil temporal
     correlaciona mas.
@@ -178,20 +189,29 @@ def emparejar(real, nuestro, bins):
     Se hace por los datos y no por el nombre porque "Calzada poniente" es
     ambiguo: puede ser la calzada del lado poniente o la que lleva al
     poniente, y equivocarse invierte la comparacion entera.
+
+    El emparejamiento es UNO A UNO. Antes cada calzada elegia su mejor
+    sentido por separado, y con pocos intervalos —cuando la correlacion no
+    se puede calcular y todas empatan— las dos calzadas se quedaban con el
+    mismo sentido: el informe mostraba el mismo "real" dos veces y los
+    porcentajes no sumaban 100.
     """
-    pares = {}
+    puntajes = []
     for zona, datos in nuestro.items():
         v = [datos.get(b, 0) for b in bins]
-        mejor, mejor_r = None, -2.0
         for sentido, d in real.items():
-            r = [d.get(b, 0) for b in bins]
-            try:
-                c = statistics.correlation(r, v)
-            except statistics.StatisticsError:
-                c = 0.0
-            if c > mejor_r:
-                mejor, mejor_r = sentido, c
-        pares[zona] = (mejor, mejor_r)
+            c = _correlacion([d.get(b, 0) for b in bins], v)
+            puntajes.append((c if c is not None else -2.0, c, zona, sentido))
+
+    pares, zonas_por_atar, sentidos_libres = {}, set(nuestro), set(real)
+    for _, c, zona, sentido in sorted(puntajes, key=lambda p: -p[0]):
+        if zona in zonas_por_atar and sentido in sentidos_libres:
+            pares[zona] = (sentido, c)
+            zonas_por_atar.discard(zona)
+            sentidos_libres.discard(sentido)
+    # Si sobran calzadas (mas calzadas que sentidos) quedan sin pareja.
+    for zona in zonas_por_atar:
+        pares[zona] = (None, None)
     return pares
 
 
@@ -234,7 +254,7 @@ def main() -> None:
     tn = tr = 0
     for zona, (sentido, _) in sorted(pares.items()):
         n = sum(nuestro[zona].get(b, 0) for b in bins)
-        rr = sum(real[sentido].get(b, 0) for b in bins)
+        rr = sum(real[sentido].get(b, 0) for b in bins) if sentido else 0
         tn, tr = tn + n, tr + rr
         razon = f"{n / rr:.2f}x" if rr else "-"
         print(f"{zona:<20}{n:>10}{int(rr):>10}{razon:>9}")
