@@ -247,7 +247,11 @@ def main() -> None:
     pares = emparejar(real, nuestro, bins)
     print("\nCalzada nuestra -> sentido real (emparejado por correlacion del perfil):")
     for zona, (sentido, r) in sorted(pares.items()):
-        print(f"  {zona:<20} -> {sentido:<12} r = {r:+.2f}")
+        marca = f"r = {r:+.2f}" if r is not None else "r no calculable"
+        print(f"  {zona:<20} -> {str(sentido):<12} {marca}")
+    if len(bins) < 4:
+        print(f"  AVISO: solo {len(bins)} cuartos de hora contados. Con tan pocos, el")
+        print("  emparejamiento calzada-sentido no es fiable; puede estar invertido.")
 
     print("\n=== Totales en la ventana comparable ===")
     print(f"{'calzada':<20}{'nuestro':>10}{'real':>10}{'razon':>9}")
