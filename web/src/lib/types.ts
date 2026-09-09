@@ -190,6 +190,9 @@ export interface LaneMetrics {
   in: number;
   out: number;
   composition: Record<string, number>;
+  /* null = en este carril el vehículo se ve demasiado pequeño para separar
+     liviano de pesado, así que no se entrega desglose por tipo. */
+  umbral_pesado_px: number | null;
   peak_hour: PeakHour | null;
   intervals: Interval[];
 }
@@ -198,7 +201,12 @@ export interface ProjectMetrics {
   interval_minutes: number;
   totals: { in: number; out: number; total: number };
   composition: Record<string, number>;
+  /* Porcentajes sobre los vehículos que SÍ se clasificaron, no sobre el
+     total: los no clasificados van aparte para que no salgan compitiendo
+     como si fueran un tipo de vehículo más. */
   composition_pct: Record<string, number>;
+  sin_clasificar: number;
+  sin_clasificar_pct: number;
   peak_hour: PeakHour | null;
   combined_intervals: Interval[];
   lanes: LaneMetrics[];

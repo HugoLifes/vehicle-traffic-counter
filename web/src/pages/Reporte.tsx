@@ -88,7 +88,25 @@ function Metrics({ m }: { m: ProjectMetrics }) {
         <Card className="metric-card">
           <div className="m-label">Composición dominante</div>
           <div className="m-value">{topType[1]}%</div>
-          <div className="m-sub">{VEHICLE_LABEL_PLURAL[topType[0]] ?? topType[0]}</div>
+          <div className="m-sub">
+            {VEHICLE_LABEL_PLURAL[topType[0]] ?? topType[0]}
+            {/* Sobre qué base está calculado ese porcentaje. Sin esto se
+                lee como si cubriera todo el aforo, cuando puede haber una
+                calzada entera sin desglose por tipo. */}
+            {m.sin_clasificar > 0 &&
+              ` · sobre ${formatNumber(m.totals.total - m.sin_clasificar)} de ${formatNumber(m.totals.total)} vehículos`}
+          </div>
+        </Card>
+      )}
+
+      {m.sin_clasificar > 0 && (
+        <Card className="metric-card">
+          <div className="m-label">Sin desglose por tipo</div>
+          <div className="m-value">{m.sin_clasificar_pct}%</div>
+          <div className="m-sub">
+            {formatNumber(m.sin_clasificar)} vehículos en calzadas donde se ven
+            demasiado pequeños para separar liviano de pesado
+          </div>
         </Card>
       )}
     </div>

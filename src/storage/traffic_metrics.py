@@ -22,6 +22,7 @@ que los aforos se levantan en intervalos y no como un total de una hora.
 import datetime as _dt
 from typing import Dict, List, Optional
 
+from src.engine.clasificacion import SIN_RESOLVER
 from src.storage import traffic_db
 
 # Umbral clásico: por debajo de esto el flujo se considera irregular.
@@ -110,9 +111,16 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
             "in": lane_in,
             "out": lane_out,
             "composition": lane_composition,
+            # None significa que en este carril el vehículo se ve demasiado
+            # pequeño para separar liviano de pesado. Se propaga para que la
+            # pantalla pueda decir *por qué* no hay desglose, en vez de
+            # mostrar un hueco que se confunde con "no pasó nadie".
+            "umbral_pesado_px": lane.get("umbral_pesado_px"),
             "peak_hour": _peak_hour(intervals, report["interval_minutes"]),
             "intervals": intervals,
         })
+
+    clasificados = sum(n for vt, n in composition.items() if vt != SIN_RESOLVER)
 
     # La hora pico del proyecto se calcula sobre el flujo agregado de
     # todos los carriles, no sumando los picos de cada uno: los carriles
@@ -133,10 +141,21 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
         "interval_minutes": report["interval_minutes"],
         "totals": totals,
         "composition": composition,
+        # Los porcentajes van sobre los vehículos que SÍ se pudieron
+        # clasificar, no sobre el total. Repartiéndolos sobre el total, la
+        # categoría "sin clasificar" salía primera con 55.6 % y la pantalla
+        # anunciaba eso como el tipo predominante del aforo, que no informa
+        # nada. Los no clasificados se declaran aparte, con su cuenta.
         "composition_pct": {
-            vtype: round(100 * n / totals["total"], 1)
+            vtype: round(100 * n / clasificados, 1)
             for vtype, n in composition.items()
-        } if totals["total"] else {},
+            if vtype != SIN_RESOLVER
+        } if clasificados else {},
+        "sin_clasificar": composition.get(SIN_RESOLVER, 0),
+        "sin_clasificar_pct": (
+            round(100 * composition.get(SIN_RESOLVER, 0) / totals["total"], 1)
+            if totals["total"] else 0.0
+        ),
         "peak_hour": _peak_hour(combined, report["interval_minutes"]),
         "combined_intervals": combined,
         "lanes": lane_metrics,
