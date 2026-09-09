@@ -164,6 +164,7 @@ se podía contestar de otro modo:
 | `verificar_conteo.py` | Clip con cada cruce numerado, para contar a mano |
 | `comparar_aforo_real.py` | Contrastar contra el aforo real de campo (conteo manual o tubo) |
 | `validar_clasificacion.py` | Validar la clasificación vehicular contra el conteo manual |
+| `hoja_clases.py` | Ver los vehículos recortados con lo que el sistema dice de cada uno |
 | `reporte_avance_pdf.py` | Reporte de avance en PDF para presentar a la empresa |
 | `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
 
@@ -301,6 +302,46 @@ calzada cercana miden 65–90 px y los `truck` grandes también; YOLO no los
 distingue de forma fiable. Separar C de T-S necesitaría el **ancho** de la
 caja (un tractocamión es mucho más largo), y `crossings` hoy solo guarda
 `bbox_height`.
+
+#### Verificado mirando los vehículos, no solo los totales
+
+Validar por agregados tiene un hueco: una troca contada como pesada y un
+camión contado como liviano **se cancelan** y el total cuadra igual. La
+comprobación de verdad es mirar los recortes uno por uno:
+
+```bash
+python tools/hoja_clases.py --proyecto 2 --zona "Calzada oriente" \
+    --salida data/clases.png
+```
+
+Sobre 54 vehículos recortados **en la línea** de la calzada cercana, los 54
+caen del lado correcto. Los casos frontera, que son los que importan,
+también: camioneta de 46 px y van de pasajeros de 50 px del lado liviano;
+camión con pipa de 53 px y autobús de 58 px del lado pesado.
+
+**Cuidado al usar esa herramienta: hay que restringir a la línea.** La
+primera versión tomaba detecciones de toda la zona y mezclaba distancias —
+el mismo vehículo mide 19 px al fondo y 33 px en la línea— así que el alto
+dejaba de decir nada del tamaño real, que es la premisa entera de la regla.
+Con la hoja mal hecha parecía que la clasificación fallaba.
+
+#### El módulo, y por qué se niega a clasificar
+
+`src/engine/clasificacion.py` traduce las clases de COCO a la taxonomía de
+la empresa. Lo importante es lo que **no** hace:
+
+| calzada | umbral | resultado |
+|---|---|---|
+| Oriente (cercana) | 52.1 px | A 0.98×, PESADO 1.01× |
+| Poniente (fondo) | ninguno | **todo SIN_RESOLVER** |
+
+Sin umbral no se clasifica **nada**, ni siquiera lo que COCO llama `car`.
+Es deliberado: donde el vehículo mide 15 px la etiqueta de COCO tampoco es
+de fiar (confianza media 0.66). Clasificar solo los `car` dejaba escapar una
+cifra parcial que se lee como total — daba "A = 1 800" en la calzada del
+fondo cuando el conteo manual dice 2 420.
+
+**Es preferible no dar el dato que darlo mal.**
 
 ### Cómo se pasó de 0.29× a 1.04×: era la línea, no el detector
 
