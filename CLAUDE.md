@@ -415,9 +415,12 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
 
 ### Lo que falta, por orden de importancia
 
-1. **Marcar las horas nocturnas** (20:00–05:00) como no medibles en el
-   reporte, en vez de omitirlas. Es el mismo principio que ya aplica la
-   clasificación: declarar lo que no se puede medir.
+1. **Encontrar la frontera exacta del horario medible.** Está medido que
+   a las 07:00 funciona (0.94×) y que a las 05:00 y 21:00 no (0.03×), pero
+   no dónde está el corte. Faltan las horas de transición: 06:00, y de
+   19:00 a 20:00. Son 12 videos, unas 90 min de proceso, y dan la frase
+   que el informe necesita: *"se mide de X a Y"*, con número.
+2. **Marcar el horario no medible en el reporte**, en vez de omitirlo.
 2. **Extender a las 24 horas.** El conteo manual cubre el día completo, así
    que hay contra qué contrastar cada hora. Un día entero sale en unas 15 h
    de proceso en el Jetson.
@@ -438,6 +441,54 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
 Sin empezar: IA visual e IA validadora con las APIs gratuitas de NVIDIA. El
 cliente NVIDIA (`src/ai/nvidia_client.py`) ya está construido y verificado,
 y el RAG ya está en marcha sobre él.
+
+### La noche no se mide, y no es por falta de luz
+
+Medido contra el conteo manual, mismo día y misma calibración:
+
+| hora | luz | nuestro | manual | razón | confianza |
+|---|---|---|---|---|---|
+| 05:00 | **noche** | 58 | 2 038 | **0.03×** | 0.49 |
+| 07:00 | día | 1 945 | 2 075 | 0.94× | 0.73 |
+| 08:00 | día | 1 363 | 1 420 | 0.96× | 0.76 |
+| 09:00 | día | 1 363 | 1 382 | 0.99× | 0.74 |
+| 21:00 | **noche** | 23 | 879 | **0.03×** | 0.50 |
+
+**Día 0.96×, noche 0.03×.** No es un bache: el sistema no funciona de noche.
+
+**La causa NO es oscuridad — es sobreexposición.** Medido sobre la franja
+de la vía:
+
+| | brillo medio | contraste |
+|---|---|---|
+| Día 07:00 | 84 | 36 |
+| Madrugada 05:00 | **177** | 70 |
+| Noche 21:00 | **168** | 70 |
+
+De noche la imagen es **el doble de brillante** que de día. La cámara abre
+la exposición al máximo, los faros y el pavimento iluminado se queman a
+blanco puro, y con el obturador abierto tanto tiempo **todo lo que se mueve
+se convierte en una raya**. Un vehículo nocturno en este material no es un
+objeto: es una estela de luz.
+
+```bash
+# Reproduce la comparación: recorta la franja de la vía en un instante
+# con movimiento, de día y de noche, ampliada 4x
+python tools/inspeccionar.py --job N --zoom-carriles
+```
+
+**Consecuencia práctica: lo primero que hay que probar es el ajuste de
+obturador de la cámara**, no otro modelo ni más resolución. Forzar
+obturador rápido en modo nocturno, aceptando más ruido a cambio de congelar
+el movimiento. Es gratis y se verifica grabando diez minutos.
+
+Ojo con el impacto en el entregable: **las 05:00 son la hora pico del día
+entero** (2 038 vehículos contra los 2 075 de las 07:00), y hoy es
+justamente una de las que no se pueden medir.
+
+Detalle curioso y contraintuitivo: de noche la calzada **del fondo** cuenta
+mejor que la cercana (0.048× contra 0.010×). Lo cercano se quema y se
+barre más, porque cruza más rápido en píxeles.
 
 ---
 
