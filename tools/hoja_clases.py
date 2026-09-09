@@ -57,6 +57,7 @@ def main() -> None:
     p.add_argument("--dispositivo", default="cpu", choices=("cpu", "auto", "cuda"))
     p.add_argument("--margen", type=float, default=45,
                    help="pixeles a cada lado de la linea de conteo")
+    p.add_argument("--hora", help="solo videos de esta hora, p.ej. 12")
     a = p.parse_args()
 
     cfg = yaml.safe_load(open(RAIZ / "configs" / "platform.yaml", encoding="utf-8"))
@@ -91,7 +92,8 @@ def main() -> None:
 
     trabajos = [dict(r) for r in con.execute(
         "select id, stored_path, fps from video_jobs where project_id=? "
-        "order by video_start_time", (a.proyecto,))]
+        "  and (? is null or substr(video_start_time,12,2) = ?) "
+        "order by video_start_time", (a.proyecto, a.hora, a.hora))]
     con.close()
     if not trabajos:
         sys.exit("El proyecto no tiene videos.")

@@ -172,10 +172,16 @@ se podía contestar de otro modo:
 
 ## Estado actual
 
-El aforo **ya está contado en el Jetson y contrastado contra medición de
-campo**. Es el proyecto **2 del Jetson**, "Cd. Juárez — Aforo matutino":
-18 videos de 07:00 a 09:59, **4 671 cruces**, dos líneas (`Carril 1` →
-Calzada oriente, `Carril 2` → Calzada poniente) atadas a sus zonas.
+El **día completo** está contado en el Jetson y contrastado contra el
+aforo manual. Proyecto **2 del Jetson**, "Cd. Juárez — Aforo matutino":
+**135 videos, 24 horas, 22 508 cruces, 0 errores**, dos líneas
+(`Carril 1` → Calzada oriente, `Carril 2` → Calzada poniente) atadas a sus
+zonas.
+
+**Horario medible: 07:00 a 19:59.** Trece horas seguidas, 0.90× contra el
+conteo manual. El corte de la tarde es brusco — 19:00 da 0.91× y 20:00 cae
+a 0.04× — y el de la mañana tiene una hora de transición, las 06:00, en
+0.59×.
 
 El proyecto 11 de la base de desarrollo es el **mismo aforo con la
 calibración vieja** (3 220 cruces). Se conserva solo como referencia
@@ -415,32 +421,30 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
 
 ### Lo que falta, por orden de importancia
 
-1. **Encontrar la frontera exacta del horario medible.** Está medido que
-   a las 07:00 funciona (0.94×) y que a las 05:00 y 21:00 no (0.03×), pero
-   no dónde está el corte. Faltan las horas de transición: 06:00, y de
-   19:00 a 20:00. Son 12 videos, unas 90 min de proceso, y dan la frase
-   que el informe necesita: *"se mide de X a Y"*, con número.
-2. **Marcar el horario no medible en el reporte**, en vez de omitirlo.
-2. **Extender a las 24 horas.** El conteo manual cubre el día completo, así
-   que hay contra qué contrastar cada hora. Un día entero sale en unas 15 h
-   de proceso en el Jetson.
+1. **Probar el obturador rápido de la cámara.** Es la única acción que
+   podría recuperar las 11 horas no medibles, incluida la hora pico del día
+   (05:00, con 2 038 vehículos). Es gratis y se verifica grabando diez
+   minutos de noche.
+2. **Reducir la oclusión en hora pico.** El 0.80× de las 15:00 es el peor
+   dato del horario medible y la causa está identificada (r = −0.83 contra
+   el volumen). Se ataca con el ángulo de cámara, no con software.
 3. **El reporte por calzada.** `crossings.zone_id` ya guarda el dato; la
    pantalla todavía agrupa por línea.
-4. **Marcar las horas nocturnas** (20:00–05:00) como no medibles en el
-   reporte, en vez de omitirlas.
-5. **Velocidad con dos líneas** (lo pide la PT-914) — además de dato
-   vendible, sirve de control: una velocidad imposible delata un rastro mal
+4. **Velocidad con dos líneas** (lo pide la PT-914). Además de dato
+   vendible sirve de control: una velocidad imposible delata un rastro mal
    armado. El contador de ejes trae su propia tabla de velocidad por
-   intervalo, así que aquí también hay contra qué contrastar.
-6. **Validar la clasificación de vehículos.** El reporte dice "73.8 %
-   automóviles" y eso nunca se ha comprobado. Ahora sí hay referencia: el
-   contador reparte ote-pte en 5 % `Cars` + 57 % `2A-4T` (camionetas) +
-   20 % `2A-SU`. Ojo al comparar: la clase `car` de YOLO cubre a la vez
-   `Cars` y `2A-4T`, así que lo comparable es la suma, ~62 %.
+   intervalo para contrastar.
+5. **Separar autobús de camión.** Hoy se entrega liviano contra pesado.
+   Distinguir C de T-S exige guardar también el **ancho** de la caja — un
+   tractocamión es mucho más largo — y reprocesar.
 
 Sin empezar: IA visual e IA validadora con las APIs gratuitas de NVIDIA. El
 cliente NVIDIA (`src/ai/nvidia_client.py`) ya está construido y verificado,
-y el RAG ya está en marcha sobre él.
+y el RAG ya está en marcha sobre él. La idea que vale la pena es usar la IA
+visual como **auditor** de cuadros con baja confianza, no como contador: no
+puede seguir un vehículo entre cuadros, así que no puede contar cruces.
+Antes de integrarla hay que **validar al validador** contra cuadros
+contados a mano.
 
 ### La exactitud baja cuando la vía se llena
 
@@ -467,17 +471,37 @@ del volumen al que aplica.
 
 ### La noche no se mide, y no es por falta de luz
 
-Medido contra el conteo manual, mismo día y misma calibración:
+Las 24 horas contra el conteo manual, misma calibración
+(faltan 00 y 01 porque el metraje está incompleto ahí):
 
-| hora | luz | nuestro | manual | razón | confianza |
+| hora | nuestro | manual | razón | conf | |
 |---|---|---|---|---|---|
-| 05:00 | **noche** | 58 | 2 038 | **0.03×** | 0.49 |
-| 07:00 | día | 1 945 | 2 075 | 0.94× | 0.73 |
-| 08:00 | día | 1 363 | 1 420 | 0.96× | 0.76 |
-| 09:00 | día | 1 363 | 1 382 | 0.99× | 0.74 |
-| 21:00 | **noche** | 23 | 879 | **0.03×** | 0.50 |
+| 02:00 | 5 | 104 | 0.05× | 0.58 | no medible |
+| 03:00 | 4 | 81 | 0.05× | 0.44 | no medible |
+| 04:00 | 20 | 314 | 0.06× | 0.47 | no medible |
+| 05:00 | 58 | 2 038 | 0.03× | 0.49 | no medible |
+| 06:00 | 1 204 | 2 043 | 0.59× | 0.71 | transición |
+| 07:00 | 1 945 | 2 075 | 0.94× | 0.73 | **medible** |
+| 08:00 | 1 363 | 1 420 | 0.96× | 0.76 | **medible** |
+| 09:00 | 1 363 | 1 382 | 0.99× | 0.74 | **medible** |
+| 10:00 | 1 231 | 1 242 | 0.99× | 0.74 | **medible** |
+| 11:00 | 1 675 | 1 833 | 0.91× | 0.69 | **medible** |
+| 12:00 | 1 666 | 1 802 | 0.92× | 0.75 | **medible** |
+| 13:00 | 1 372 | 1 568 | 0.88× | 0.72 | **medible** |
+| 14:00 | 1 625 | 1 716 | 0.95× | 0.73 | **medible** |
+| 15:00 | 1 810 | 2 259 | 0.80× | 0.69 | **medible** |
+| 16:00 | 1 820 | 2 144 | 0.85× | 0.69 | **medible** |
+| 17:00 | 1 988 | 2 360 | 0.84× | 0.67 | **medible** |
+| 18:00 | 1 906 | 2 164 | 0.88× | 0.70 | **medible** |
+| 19:00 | 1 332 | 1 466 | 0.91× | 0.71 | **medible** |
+| 20:00 | 52 | 1 222 | 0.04× | 0.57 | no medible |
+| 21:00 | 23 | 879 | 0.03× | 0.50 | no medible |
+| 22:00 | 24 | 744 | 0.03× | 0.48 | no medible |
+| 23:00 | 16 | 998 | 0.02× | 0.45 | no medible |
 
-**Día 0.96×, noche 0.03×.** No es un bache: el sistema no funciona de noche.
+**Horario medible 07:00–19:59: 0.90× sobre 21 096 vehículos.** Fuera de él,
+0.03×. **La transición es de una hora, no gradual**: entre 19:00 (0.91×) y
+20:00 (0.04×) no hay término medio.
 
 **La causa NO es oscuridad — es sobreexposición.** Medido sobre la franja
 de la vía:
