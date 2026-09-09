@@ -343,6 +343,30 @@ fondo cuando el conteo manual dice 2 420.
 
 **Es preferible no dar el dato que darlo mal.**
 
+#### La traducción se hace en un solo sitio
+
+En `traffic_db.get_interval_counts`, que es por donde pasa todo lo que ve
+el usuario — pantallas, gráficas y los dos CSV. Antes la interfaz traducía
+`truck` como "Camión" y el reporte declaraba **1 501 camiones donde el
+aforo manual contó 417**.
+
+El umbral se calcula **por carril**, no por proyecto: cada carril cuenta
+sobre una línea fija, o sea a distancia fija de la cámara, que es
+exactamente la condición que hace comparable el alto en píxeles.
+
+Resultado en la plataforma, contra el conteo manual:
+
+| | plataforma | manual |
+|---|---|---|
+| Livianos | **87.5 %** | 87.4 % |
+| Pesados | **12.5 %** | 12.6 % |
+
+Los porcentajes van sobre los vehículos que **sí** se clasificaron. Los no
+clasificados se declaran aparte con su cuenta (2 597, el 55.6 %) y su
+motivo. Repartirlos sobre el total hacía que "sin clasificar" saliera
+primera con 55.6 % y la pantalla la anunciara como el tipo predominante del
+aforo.
+
 ### Cómo se pasó de 0.29× a 1.04×: era la línea, no el detector
 
 Con la calibración anterior la calzada cercana daba **0.29×** (579 contra
@@ -391,9 +415,9 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
 
 ### Lo que falta, por orden de importancia
 
-1. **Llevar la corrección de clase al reporte.** La validación ya está
-   hecha (ver abajo) y funciona; falta que el Excel entregable use la
-   taxonomía SCT en vez de las clases de COCO.
+1. **Marcar las horas nocturnas** (20:00–05:00) como no medibles en el
+   reporte, en vez de omitirlas. Es el mismo principio que ya aplica la
+   clasificación: declarar lo que no se puede medir.
 2. **Extender a las 24 horas.** El conteo manual cubre el día completo, así
    que hay contra qué contrastar cada hora. Un día entero sale en unas 15 h
    de proceso en el Jetson.
