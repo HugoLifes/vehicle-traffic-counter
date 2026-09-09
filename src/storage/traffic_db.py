@@ -795,14 +795,34 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
 
     # 3. Traer todos los cruces del rango y clasificarlos en su cajón
     rows = conn.execute(
-        f"""SELECT lane_id, direction, vehicle_type, timestamp FROM crossings
+        f"""SELECT lane_id, direction, vehicle_type, bbox_height, timestamp FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
     ).fetchall()
 
+    # Las clases de COCO no salen de aquí hacia el usuario. `truck` mezcla
+    # la pickup con el tractocamión, y la interfaz lo traducía a "Camión":
+    # el reporte declaraba 1 501 camiones donde el aforo manual contó 417.
+    # Se traduce a la taxonomía de la empresa, y donde el vehículo se ve
+    # demasiado pequeño para separarlos no se clasifica nada.
+    #
+    # El umbral se saca por CARRIL y no por proyecto: cada carril cuenta
+    # sobre una línea fija, o sea a una distancia fija de la cámara, que es
+    # justo la condición que hace comparable el alto en píxeles.
+    from src.engine.clasificacion import clasificar, umbral_de_calzada
+
+    umbrales = {
+        lane["id"]: umbral_de_calzada(
+            r["bbox_height"] for r in rows
+            if r["lane_id"] == lane["id"] and r["vehicle_type"] == "car"
+        )
+        for lane in lanes
+    }
+
     result_lanes = []
     for lane in lanes:
+        umbral = umbrales[lane["id"]]
         interval_map = {b: {"in": 0, "out": 0, "total": 0, "by_vehicle_type": {}} for b in buckets}
         for row in rows:
             if row["lane_id"] != lane["id"]:
@@ -815,12 +835,16 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
             bucket = interval_map[buckets[idx]]
             bucket[row["direction"]] += 1
             bucket["total"] += 1
-            vt = bucket["by_vehicle_type"].setdefault(row["vehicle_type"], {"in": 0, "out": 0})
+            clase = clasificar(row["vehicle_type"], row["bbox_height"], umbral)
+            vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
 
         result_lanes.append({
             "lane_id": lane["id"],
             "lane_name": lane["name"],
+            # Para que quien lea el reporte sepa si el desglose por tipo de
+            # este carril es una medición o un "no se puede".
+            "umbral_pesado_px": round(umbral, 1) if umbral else None,
             "intervals": [
                 {
                     "start": b.strftime("%Y-%m-%d %H:%M:%S"),

@@ -9,19 +9,40 @@
 
 import type { EngineStatus, JobStatus } from './types';
 
+/* Las categorías son las de la SCT, no las del detector.
+   `truck` de COCO mezcla la pickup con el tractocamión, y traducirlo a
+   "Camión" hacía que el reporte declarara 1 501 camiones donde el aforo
+   manual contó 417. Ahora el backend entrega A / PESADO / SIN_RESOLVER,
+   verificado vehículo por vehículo contra el conteo manual.
+
+   Las clases de COCO siguen aquí porque la cámara en vivo todavía las
+   emite sin pasar por la traducción. */
 export const VEHICLE_LABEL: Record<string, string> = {
+  A: 'Liviano (A)',
+  PESADO: 'Pesado',
+  SIN_RESOLVER: 'Sin clasificar',
   car: 'Automóvil',
-  truck: 'Camión',
+  truck: 'Camión o camioneta',
   bus: 'Autobús',
   motorcycle: 'Motocicleta',
 };
 
 export const VEHICLE_LABEL_PLURAL: Record<string, string> = {
+  A: 'livianos',
+  PESADO: 'pesados',
+  SIN_RESOLVER: 'sin clasificar',
   car: 'automóviles',
-  truck: 'camiones',
+  truck: 'camiones o camionetas',
   bus: 'autobuses',
   motorcycle: 'motocicletas',
 };
+
+/* Por qué un carril puede no traer desglose por tipo. Se muestra en vez
+   de la gráfica de composición, para que "sin datos" no se confunda con
+   "no pasaron vehículos". */
+export const SIN_CLASIFICAR_MOTIVO =
+  'En esta calzada el vehículo se ve demasiado pequeño para separar liviano ' +
+  'de pesado de forma defendible, así que no se entrega el desglose por tipo.';
 
 export const vehicleLabel = (type: string) => VEHICLE_LABEL[type] ?? type;
 

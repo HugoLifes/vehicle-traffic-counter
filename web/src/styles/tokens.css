@@ -82,6 +82,11 @@
 
   /* Categorías de vehículo (gráficas). Varían en tono Y luminosidad para
      seguir siendo distinguibles con daltonismo y en escala de grises. */
+  /* Categorias SCT: es lo que ve el usuario. Las de COCO siguen abajo
+     porque la camara en vivo aun las emite. */
+  --veh-A: #1d54b3;
+  --veh-PESADO: #9a5a12;
+  --veh-SIN_RESOLVER: #6b7280;
   --veh-car: #1d54b3;
   --veh-truck: #9a5a12;
   --veh-bus: #6b34a1;
@@ -171,6 +176,9 @@
     --critical-soft: rgba(247, 112, 125, 0.16);
     --critical-ink: #0a0e14;
 
+    --veh-A: #7aa9f0;
+    --veh-PESADO: #e0913c;
+    --veh-SIN_RESOLVER: #9aa3b2;
     --veh-car: #7aa9f0;
     --veh-truck: #e0913c;
     --veh-bus: #b98ae8;
@@ -219,6 +227,9 @@
   --critical-soft: rgba(247, 112, 125, 0.16);
   --critical-ink: #0a0e14;
 
+  --veh-A: #7aa9f0;
+  --veh-PESADO: #e0913c;
+  --veh-SIN_RESOLVER: #9aa3b2;
   --veh-car: #7aa9f0;
   --veh-truck: #e0913c;
   --veh-bus: #b98ae8;
