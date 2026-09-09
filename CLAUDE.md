@@ -442,6 +442,29 @@ Sin empezar: IA visual e IA validadora con las APIs gratuitas de NVIDIA. El
 cliente NVIDIA (`src/ai/nvidia_client.py`) ya está construido y verificado,
 y el RAG ya está en marcha sobre él.
 
+### La exactitud baja cuando la vía se llena
+
+Medido sobre el día completo, hora por hora contra el conteo manual:
+
+| tránsito real | razón media |
+|---|---|
+| menos de 1 600 veh/h | **0.95×** |
+| 2 000 o más veh/h | **0.86×** |
+
+**Correlación entre volumen y razón: r = −0.83.** No es ruido: cuanto más
+tránsito hay, menor proporción capturamos.
+
+La causa más probable es **oclusión**. Con la vía llena los vehículos se
+tapan entre sí desde el ángulo de esta cámara, y el que va detrás no llega
+a verse. Es un límite del punto de vista, no del modelo — y es justo lo que
+mejora subiendo la cámara, haciéndola más perpendicular a la vía, o
+poniendo una segunda.
+
+**Consecuencia para el informe: la exactitud NO se puede declarar como un
+número único.** Decir "0.96×" a secas es cierto para la mañana y optimista
+para la hora pico de la tarde. Hay que declararla por tramo, o acompañarla
+del volumen al que aplica.
+
 ### La noche no se mide, y no es por falta de luz
 
 Medido contra el conteo manual, mismo día y misma calibración:
