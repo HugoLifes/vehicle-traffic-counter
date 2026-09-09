@@ -1,6 +1,6 @@
 """
-Traduce las clases de COCO a la clasificacion que usa la empresa, y se
-NIEGA a hacerlo donde la imagen no da para tanto.
+Traduce las clases de COCO a la clasificacion que usa la empresa, y dice
+con cuanta confianza puede hacerlo en cada calzada.
 
 El problema: YOLO sale con las clases de COCO, donde `truck` mete en el
 mismo saco una pickup y un tractocamion. En la clasificacion SCT
@@ -14,27 +14,35 @@ misma distancia de la camara, y a distancia constante el alto en pixeles es
 proporcional al alto real. Fuera de la linea la premisa no se sostiene: el
 mismo vehiculo mide 19 px al fondo de la zona y 33 px en la linea.
 
-Verificado MIRANDO 54 vehiculos recortados en la linea de la calzada
-cercana, uno por uno contra la taxonomia SCT: los 54 caen del lado
-correcto. Los casos frontera son los que importan y tambien salen bien —
-camioneta de 46 px y van de pasajeros de 50 px del lado liviano; camion con
-pipa de 53 px y autobus de 58 px del lado pesado.
+TRES NIVELES, NO DOS
+--------------------
 
-Y en agregado, con holdout temporal (se calibra con 07:00-08:30 y se mide
-con 08:30-10:00) contra el aforo contado a mano:
+La primera version era todo o nada: o clasificaba, o devolvia
+SIN_RESOLVER para la calzada entera. Se midio que eso tiraba informacion
+buena. En la calzada del fondo, con el automovil a 15 px, la PROPORCION
+sale bien aunque el conteo absoluto vaya corto:
 
-    calzada cercana    livianos 0.98x   pesados 1.09x
-    calzada del fondo  livianos 1.03x   pesados 0.63x
+    calzada cercana (32 px)   87.5 / 12.5 %   contra 87.4 / 12.6 %   0.1 puntos
+    calzada del fondo (15 px) 89.2 / 10.8 %   contra 87.4 / 12.6 %   1.8 puntos
 
-Por eso `clasificar_calzada` devuelve SIN_RESOLVER en la calzada del fondo:
-a 15-17 px de alto un camion y un automovil miden lo mismo, y el barrido de
-umbrales va de 0.77x a 0.43x sin acertar nunca. Es preferible no dar el
-dato que darlo mal.
+1.8 puntos es utilizable si se declara como estimacion. Negarse a darlo era
+quedarse corto a proposito.
+
+Por eso ahora se devuelve un NIVEL junto con la clasificacion:
+
+    MEDIDO       el automovil se ve con holgura; conteo y proporcion valen
+    ESTIMADO     se ve pequeño; la proporcion vale, el conteo absoluto no
+    NO_RESOLUBLE no se ve; no se da ningun desglose
+
+**Los umbrales son fisicos, sobre la imagen.** Eso importa para el futuro:
+si llega una camara mejor o se acerca el encuadre, el vehiculo ocupa mas
+pixeles y la calzada SUBE de nivel sola. El sistema no decide "esta no la
+veo bien y paso"; mide lo que tiene y declara hasta donde llega.
 """
 from __future__ import annotations
 
 import statistics
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Tuple
 
 # Clases de COCO que nunca son vehiculo pesado, midan lo que midan.
 LIVIANAS_COCO = ("car", "motorcycle", "bicycle")
@@ -44,6 +52,11 @@ LIVIANO = "A"           # automoviles, camionetas, pickups, vans ligeras
 PESADO = "PESADO"       # autobuses, camiones unitarios y articulados
 SIN_RESOLVER = "SIN_RESOLVER"
 
+# Calidad del desglose de una calzada.
+MEDIDO = "medido"
+ESTIMADO = "estimado"
+NO_RESOLUBLE = "no_resoluble"
+
 # Multiplo del alto mediano del automovil por encima del cual un `truck` de
 # COCO es de verdad un vehiculo pesado. Calibrado contra el conteo manual:
 # 1.55 con la primera mitad de la mañana, 1.61 con la ventana completa. Se
@@ -52,41 +65,58 @@ SIN_RESOLVER = "SIN_RESOLVER"
 # exacta no es critica; lo que importa es que exista el corte.
 MULTIPLO = 1.58
 
-# Alto mediano minimo del automovil para que la regla signifique algo.
-#
-# Medido en los dos extremos: a 32 px de mediana la regla acierta (pesados
-# 1.09x sobre datos no usados para calibrar); a 15 px falla (0.63x). Entre
-# medias NO esta medido, asi que el corte se pone alto a proposito: mas
-# vale devolver SIN_RESOLVER que publicar un desglose que no aguanta que lo
-# revisen.
-MINIMO_RESOLUBLE = 25.0
+# Alto mediano del automovil a partir del cual el desglose es MEDIDO.
+# A 32 px la proporcion sale a 0.1 puntos del conteo manual.
+ALTO_MEDIDO = 25.0
+
+# Por debajo de esto no se da ningun desglose. A 15 px la proporcion todavia
+# sale a 1.8 puntos; no hay medicion por debajo, asi que el corte se pone
+# conservador y por debajo se calla.
+ALTO_MINIMO = 12.0
+
+# Confianza media minima. Sirve para descartar la noche, donde la camara
+# sobreexpone y el vehiculo sale como una estela: ahi la etiqueta de COCO no
+# significa nada. Medido: de dia 0.67-0.76, de noche 0.44-0.57.
+CONFIANZA_MINIMA = 0.65
 
 
-def umbral_de_calzada(alturas_de_autos: Iterable[float]) -> Optional[float]:
-    """Alto a partir del cual un `truck` cuenta como pesado en esa calzada.
+def nivel_de_calzada(alturas_de_autos: Iterable[float],
+                     confianzas: Optional[Iterable[float]] = None
+                     ) -> Tuple[str, Optional[float]]:
+    """Devuelve (nivel, umbral_pesado_px) de una calzada.
 
-    None cuando no hay automoviles suficientes para fijar la escala: sin
-    escala el umbral seria un numero inventado.
+    El umbral es None cuando el nivel es NO_RESOLUBLE.
     """
     alturas = [h for h in alturas_de_autos if h and h > 0]
     if len(alturas) < 30:
-        return None
+        # Sin automoviles suficientes no hay escala, y sin escala el umbral
+        # seria un numero inventado.
+        return NO_RESOLUBLE, None
+
+    if confianzas is not None:
+        cs = [c for c in confianzas if c is not None]
+        if cs and statistics.fmean(cs) < CONFIANZA_MINIMA:
+            return NO_RESOLUBLE, None
+
     mediana = statistics.median(alturas)
-    if mediana < MINIMO_RESOLUBLE:
-        return None
-    return MULTIPLO * mediana
+    if mediana < ALTO_MINIMO:
+        return NO_RESOLUBLE, None
+    return (MEDIDO if mediana >= ALTO_MEDIDO else ESTIMADO), MULTIPLO * mediana
+
+
+def umbral_de_calzada(alturas_de_autos: Iterable[float]) -> Optional[float]:
+    """Compatibilidad: solo el umbral, sin el nivel."""
+    return nivel_de_calzada(alturas_de_autos)[1]
 
 
 def clasificar(tipo_coco: str, alto: Optional[float],
                umbral: Optional[float]) -> str:
     """Clase SCT de un cruce. SIN_RESOLVER si la calzada no da para separar.
 
-    Sin umbral no se clasifica NADA, ni siquiera lo que COCO llama `car`.
-    Es deliberado: donde el vehiculo mide 15 px la etiqueta de COCO tampoco
-    es de fiar —la confianza media cae a 0.66— asi que un `car` de esa
-    calzada puede ser un camion mal visto. Clasificar solo los `car` dejaria
-    escapar una cifra parcial que se lee como total: en la calzada del fondo
-    daba "A = 1 800" cuando el conteo manual dice 2 420.
+    Sin umbral no se clasifica NADA, ni siquiera lo que COCO llama `car`:
+    donde la calzada no resuelve, la etiqueta de COCO tampoco es de fiar, y
+    clasificar solo los `car` dejaria escapar una cifra parcial que se lee
+    como total.
     """
     if umbral is None:
         return SIN_RESOLVER
@@ -102,12 +132,12 @@ def clasificar(tipo_coco: str, alto: Optional[float],
 def clasificar_calzada(cruces: list[dict]) -> tuple[dict[str, int], Optional[float]]:
     """Reparte los cruces de UNA calzada y devuelve (conteos, umbral usado).
 
-    Cada cruce necesita `vehicle_type` y `bbox_height`. Se calcula el
-    umbral con los propios automoviles de esa calzada, que es lo que hace
-    que la regla valga tambien donde la escala es otra.
+    Cada cruce necesita `vehicle_type` y `bbox_height`; `confidence` es
+    opcional y sirve para descartar la noche.
     """
-    umbral = umbral_de_calzada(
-        c.get("bbox_height") for c in cruces if c.get("vehicle_type") == "car"
+    nivel, umbral = nivel_de_calzada(
+        (c.get("bbox_height") for c in cruces if c.get("vehicle_type") == "car"),
+        (c.get("confidence") for c in cruces),
     )
     conteos: dict[str, int] = {LIVIANO: 0, PESADO: 0, SIN_RESOLVER: 0}
     for c in cruces:
@@ -115,12 +145,17 @@ def clasificar_calzada(cruces: list[dict]) -> tuple[dict[str, int], Optional[flo
     return conteos, umbral
 
 
-def exactitud_declarable(umbral: Optional[float]) -> str:
-    """Que se puede escribir en un informe sobre esta clasificacion."""
-    if umbral is None:
-        return ("Sin desglose por tipo: el vehiculo se ve demasiado pequeno en "
-                "esta calzada para separar liviano de pesado de forma "
-                "defendible.")
-    return ("Desglose liviano/pesado contrastado contra aforo manual: "
-            "livianos 0.98x, pesados 1.09x sobre datos no usados para "
-            "calibrar. No se separa autobus de camion.")
+def exactitud_declarable(nivel: str) -> str:
+    """Que se puede escribir en un informe sobre este desglose."""
+    if nivel == MEDIDO:
+        return ("Desglose liviano/pesado MEDIDO. Contrastado contra aforo "
+                "manual: composicion a 0.1 puntos, livianos 0.98x y pesados "
+                "1.09x sobre datos no usados para calibrar.")
+    if nivel == ESTIMADO:
+        return ("Desglose liviano/pesado ESTIMADO. La proporcion sale a 1.8 "
+                "puntos del aforo manual, pero el conteo absoluto de esta "
+                "calzada va corto (0.84x): usar los porcentajes, no las "
+                "cifras. No se separa autobus de camion.")
+    return ("Sin desglose por tipo: el vehiculo se ve demasiado pequeno en "
+            "esta calzada, o las condiciones de luz no permiten "
+            "identificarlo.")

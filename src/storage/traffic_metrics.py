@@ -116,6 +116,11 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
             # pantalla pueda decir *por qué* no hay desglose, en vez de
             # mostrar un hueco que se confunde con "no pasó nadie".
             "umbral_pesado_px": lane.get("umbral_pesado_px"),
+            # "medido" | "estimado" | "no_resoluble". Distinguir los dos
+            # primeros importa: en una calzada "estimado" la PROPORCION vale
+            # (1.8 puntos del aforo manual) pero el conteo absoluto va corto
+            # (0.84x), asi que se usan los porcentajes y no las cifras.
+            "nivel_clasificacion": lane.get("nivel_clasificacion"),
             "peak_hour": _peak_hour(intervals, report["interval_minutes"]),
             "intervals": intervals,
         })

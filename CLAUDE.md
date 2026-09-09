@@ -331,23 +331,62 @@ el mismo vehículo mide 19 px al fondo y 33 px en la línea— así que el alto
 dejaba de decir nada del tamaño real, que es la premisa entera de la regla.
 Con la hoja mal hecha parecía que la clasificación fallaba.
 
-#### El módulo, y por qué se niega a clasificar
+#### Tres niveles, y por qué NO son dos
 
 `src/engine/clasificacion.py` traduce las clases de COCO a la taxonomía de
-la empresa. Lo importante es lo que **no** hace:
+la empresa y declara **con cuánta confianza puede hacerlo**:
 
-| calzada | umbral | resultado |
+| nivel | condición | qué vale |
 |---|---|---|
-| Oriente (cercana) | 52.1 px | A 0.98×, PESADO 1.01× |
-| Poniente (fondo) | ninguno | **todo SIN_RESOLVER** |
+| `medido` | automóvil ≥ 25 px | conteo y proporción |
+| `estimado` | automóvil ≥ 12 px | **solo la proporción** |
+| `no_resoluble` | menos, o de noche | nada |
 
-Sin umbral no se clasifica **nada**, ni siquiera lo que COCO llama `car`.
-Es deliberado: donde el vehículo mide 15 px la etiqueta de COCO tampoco es
-de fiar (confianza media 0.66). Clasificar solo los `car` dejaba escapar una
-cifra parcial que se lee como total — daba "A = 1 800" en la calzada del
-fondo cuando el conteo manual dice 2 420.
+La primera versión era todo o nada, y **eso tiraba información buena**. En
+la calzada del fondo, con el automóvil a 15 px, el conteo absoluto va corto
+(0.84×) pero la proporción sale bien:
 
-**Es preferible no dar el dato que darlo mal.**
+| | livianos / pesados |
+|---|---|
+| Calzada cercana (33 px) | 87.5 / 12.5 % contra 87.4 / 12.6 % → **0.1 puntos** |
+| Calzada del fondo (15 px) | 89.2 / 10.8 % contra 87.4 / 12.6 % → **1.8 puntos** |
+
+Negarse a dar 1.8 puntos era quedarse corto a propósito.
+
+**Los umbrales son físicos, sobre la imagen.** Si llega una cámara mejor o
+se acerca el encuadre, el vehículo ocupa más píxeles y la calzada **sube de
+nivel sola**. El sistema no decide "esta no la veo bien y paso": mide lo que
+tiene y declara hasta dónde llega.
+
+#### Dos preguntas distintas, y mezclarlas costó una versión
+
+1. **¿Se puede medir a esta HORA?** — lo dice la **confianza**, sobre el
+   proyecto entero. Separa día de noche.
+2. **¿Se puede clasificar en esta CALZADA?** — lo dice el **alto** del
+   vehículo. Separa la cercana de la del fondo.
+
+Usar la confianza para las dos **no funciona porque se solapan**:
+
+| | de día | de noche |
+|---|---|---|
+| Calzada cercana | 0.76–0.86 | 0.54–0.69 |
+| Calzada del fondo | **0.53–0.66** | 0.40–0.53 |
+
+El día de la calzada del fondo cae dentro de la noche de la cercana. Con un
+umbral único de confianza, la calzada del fondo se callaba a todas horas
+aunque de día su proporción sale a 1.8 puntos. **El sistema se volvía
+perezoso donde sí podía.**
+
+Y calcular el nivel sobre las 24 h juntas tenía el mismo efecto: los pocos
+cruces nocturnos, con confianza 0.45, hundían la media de un carril que de
+día clasifica bien. **El nivel va por carril Y por hora.**
+
+Resultado del arreglo, sobre el día completo:
+
+| | antes | después |
+|---|---|---|
+| Vehículos clasificados | 55 % | **99.1 %** |
+| Diferencia con el aforo manual | — | **0.5 puntos** |
 
 #### La traducción se hace en un solo sitio
 

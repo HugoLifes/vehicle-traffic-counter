@@ -795,7 +795,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
 
     # 3. Traer todos los cruces del rango y clasificarlos en su cajón
     rows = conn.execute(
-        f"""SELECT lane_id, direction, vehicle_type, bbox_height, timestamp FROM crossings
+        f"""SELECT lane_id, direction, vehicle_type, bbox_height, confidence, timestamp FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
@@ -810,19 +810,66 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
     # El umbral se saca por CARRIL y no por proyecto: cada carril cuenta
     # sobre una línea fija, o sea a una distancia fija de la cámara, que es
     # justo la condición que hace comparable el alto en píxeles.
-    from src.engine.clasificacion import clasificar, umbral_de_calzada
+    from src.engine.clasificacion import (CONFIANZA_MINIMA, MEDIDO, ESTIMADO,
+                                          NO_RESOLUBLE, clasificar,
+                                          nivel_de_calzada)
 
-    umbrales = {
-        lane["id"]: umbral_de_calzada(
-            r["bbox_height"] for r in rows
-            if r["lane_id"] == lane["id"] and r["vehicle_type"] == "car"
-        )
+    # Dos preguntas distintas, y mezclarlas fue un error que costo una
+    # version:
+    #
+    #   1. ¿Se puede medir a esta HORA?  -> lo dice la confianza, sobre el
+    #      proyecto entero. Separa dia de noche.
+    #   2. ¿Se puede clasificar en esta CALZADA? -> lo dice el ALTO del
+    #      vehiculo. Separa la calzada cercana de la del fondo.
+    #
+    # Usar la confianza para las dos no funciona porque se solapan: la
+    # calzada del fondo DE DIA da 0.53-0.66 y la cercana DE NOCHE da
+    # 0.54-0.69. Con un umbral unico, la calzada del fondo se callaba a
+    # todas horas aunque de dia su proporcion sale a 1.8 puntos del aforo
+    # manual. El sistema se volvia perezoso donde si podia.
+    def _hora(fila):
+        return fila["timestamp"][11:13]
+
+    por_hora_todos = {}
+    for fila in rows:
+        por_hora_todos.setdefault(_hora(fila), []).append(fila)
+    horas_medibles = {
+        h for h, fs in por_hora_todos.items()
+        if [f["confidence"] for f in fs if f["confidence"] is not None]
+        and sum(f["confidence"] for f in fs if f["confidence"] is not None)
+        / max(1, len([f for f in fs if f["confidence"] is not None])) >= CONFIANZA_MINIMA
+    }
+
+    # El nivel de cada calzada sale del alto, sin confianza: esa ya decidio
+    # que horas cuentan.
+    niveles = {}
+    for lane in lanes:
+        propios = [f for f in rows if f["lane_id"] == lane["id"]]
+        for h in {_hora(f) for f in propios}:
+            if h not in horas_medibles:
+                niveles[(lane["id"], h)] = (NO_RESOLUBLE, None)
+                continue
+            niveles[(lane["id"], h)] = nivel_de_calzada(
+                f["bbox_height"] for f in propios
+                if _hora(f) == h and f["vehicle_type"] == "car"
+            )
+
+    # Lo que se reporta del carril es de lo que ES CAPAZ en sus mejores
+    # horas: un carril que clasifica de dia no deja de poder porque de noche
+    # no. Y como el umbral es fisico —pixeles de alto— una camara mejor
+    # sube el nivel sola, sin tocar codigo.
+    orden = {MEDIDO: 2, ESTIMADO: 1, NO_RESOLUBLE: 0}
+    mejor = {
+        lane["id"]: max(
+            [v for (lid, _), v in niveles.items() if lid == lane["id"]],
+            key=lambda x: orden.get(x[0], 0), default=(NO_RESOLUBLE, None))
         for lane in lanes
     }
+    umbrales = {k: v[1] for k, v in mejor.items()}
 
     result_lanes = []
     for lane in lanes:
-        umbral = umbrales[lane["id"]]
+        umbral = umbrales[lane["id"]]  # solo para informar; se clasifica por hora
         interval_map = {b: {"in": 0, "out": 0, "total": 0, "by_vehicle_type": {}} for b in buckets}
         for row in rows:
             if row["lane_id"] != lane["id"]:
@@ -835,7 +882,10 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
             bucket = interval_map[buckets[idx]]
             bucket[row["direction"]] += 1
             bucket["total"] += 1
-            clase = clasificar(row["vehicle_type"], row["bbox_height"], umbral)
+            # Cada cruce se clasifica con el umbral de SU hora.
+            u_hora = niveles.get((lane["id"], row["timestamp"][11:13]),
+                                 (NO_RESOLUBLE, None))[1]
+            clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora)
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
 
@@ -845,6 +895,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
             # Para que quien lea el reporte sepa si el desglose por tipo de
             # este carril es una medición o un "no se puede".
             "umbral_pesado_px": round(umbral, 1) if umbral else None,
+            "nivel_clasificacion": mejor[lane["id"]][0],
             "intervals": [
                 {
                     "start": b.strftime("%Y-%m-%d %H:%M:%S"),
