@@ -66,6 +66,50 @@ def _celda(ws, fila, col, valor, fuente=_NORMAL, relleno=None,
     return c
 
 
+# Confianza media por debajo de la cual una hora NO se puede medir y su
+# celda va vacia en vez de con un numero.
+#
+# Medido sobre las 24 h del 19-ago-2026 contra el aforo contado a mano:
+#
+#   00:00-05:00  confianza 0.40-0.49   ->  0.03x del transito real
+#   06:00        confianza 0.71        ->  0.59x
+#   07:00-10:00  confianza 0.73-0.76   ->  0.94x-0.99x
+#   21:00        confianza 0.50        ->  0.03x
+#
+# El corte cae limpio en el hueco entre 0.58 y 0.71. De noche la camara
+# sobreexpone y barre el movimiento: el vehiculo sale como una estela y el
+# detector, cuando acierta, lo hace con poca confianza.
+#
+# Se usa la confianza y NO el conteo: una hora de madrugada con poco
+# transito real tendria pocos cruces pero ALTA confianza. Filtrar por
+# conteo escondería las horas genuinamente tranquilas.
+CONFIANZA_MINIMA = 0.65
+
+
+def _horas_no_medibles(conn, project_id: int) -> set:
+    """{(dia_semana, hora)} donde la camara no vio lo suficiente.
+
+    Imprimir el numero de esas horas seria lo peor que puede hacer este
+    informe: el sistema conto 8 vehiculos entre las 05:00 y las 06:00
+    donde el aforo manual conto 2 038, y en la hoja se leia como una
+    medicion.
+    """
+    fuera = set()
+    for f in conn.execute("""
+        SELECT c.timestamp AS ts, AVG(c.confidence) AS cf, COUNT(*) AS n
+        FROM crossings c JOIN lane_configs l ON l.id = c.lane_id
+        WHERE l.project_id = ?
+        GROUP BY substr(c.timestamp, 1, 13)
+    """, (project_id,)):
+        try:
+            t = datetime.strptime(f["ts"], "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError):
+            continue
+        if f["cf"] is not None and f["cf"] < CONFIANZA_MINIMA:
+            fuera.add((t.weekday(), t.hour))
+    return fuera
+
+
 def _datos(project_id: int) -> Dict:
     """
     Saca de la base todo lo que el informe necesita, en una sola pasada.
@@ -111,6 +155,7 @@ def _datos(project_id: int) -> Dict:
 
     return {
         "proyecto": proyecto,
+        "no_medibles": _horas_no_medibles(conn, project_id),
         "sentidos": sorted(por_hora.keys()),
         "por_hora": por_hora,
         "por_cuarto": por_cuarto,
@@ -180,6 +225,8 @@ def _bloque_totales(ws, col0: int, titulo_dir: str, d: Dict, horas: Dict,
             # Hueco, no cero: un cero afirma que no pasó nadie, y ahí lo que
             # ocurre es que no se midió.
             v = horas.get(i, {}).get(hora) if i in dias_medidos else None
+            if (i, hora) in d["no_medibles"]:
+                v = None
             _celda(ws, fila, col0 + 1 + i, v if v is not None else "")
             if v:
                 entre_semana += v
@@ -189,6 +236,8 @@ def _bloque_totales(ws, col0: int, titulo_dir: str, d: Dict, horas: Dict,
         finde = 0
         for j, i in enumerate((5, 6)):
             v = horas.get(i, {}).get(hora) if i in dias_medidos else None
+            if (i, hora) in d["no_medibles"]:
+                v = None
             _celda(ws, fila, col0 + 7 + j, v if v is not None else "")
             if v:
                 finde += v
@@ -288,12 +337,16 @@ def _hoja_cuartos(wb: Workbook, d: Dict):
                        f"{(hora + (q + 1) // 4):02d}:{((q + 1) * 15) % 60:02d}", _NORMAL)
                 for i, f in enumerate(fechas):
                     v = d["por_cuarto"][sentido].get(f, {}).get(ini)
+                    if (f.weekday(), hora) in d["no_medibles"]:
+                        v = None
                     _celda(ws, fila, col + 1 + i, v if v is not None else "")
                 fila += 1
             # Fila de total de la hora, como en los originales.
             _celda(ws, fila, col, f"{hora:02d}:00-{hora + 1:02d}:00", _CABECERA, _GRIS)
             for i, f in enumerate(fechas):
                 v = d["por_hora"][sentido].get(f.weekday(), {}).get(hora)
+                if (f.weekday(), hora) in d["no_medibles"]:
+                    v = None
                 _celda(ws, fila, col + 1 + i, v if v is not None else "",
                        _CABECERA, _GRIS)
             fila += 1
@@ -334,17 +387,31 @@ def _hoja_metodo(wb: Workbook, d: Dict):
         ("Conteo", "Cruce de línea con atribución por calzada"),
         ("", ""),
         ("Celdas vacías", "Sin medición en ese periodo. NO significa cero "
-                          "vehículos: significa que no se grabó."),
+                          "vehículos: significa que no se grabó, o que se "
+                          "grabó en condiciones donde el sistema no puede "
+                          "medir (ver abajo)."),
+        ("Horas no medibles", f"{len(d['no_medibles'])} de las 24. Se dejan en "
+                              "blanco a propósito, en vez de publicar el "
+                              "conteo parcial que produjo el detector."),
     ]
     for i, (k, v) in enumerate(filas, start=3):
         _celda(ws, i, 1, k, _ETIQUETA, alineacion=_IZQ, borde=False)
         _celda(ws, i, 2, v, _NORMAL, alineacion=_IZQ, borde=False)
 
+    # El aviso anterior decía "por falta de detalle en el video nocturno".
+    # Está medido que es al revés: de noche la imagen es el DOBLE de
+    # brillante que de día (177 contra 84 en la franja de la vía). La cámara
+    # sobreexpone y barre el movimiento, y el vehículo sale como una estela.
     aviso = ws.cell(len(filas) + 5, 1,
-                    "Los conteos de 20:00 a 05:00 no son medición fiable con el "
-                    "material actual: el detector pierde la mayoría de los "
-                    "vehículos por falta de detalle en el video nocturno.")
+                    "Las horas nocturnas no son medición fiable con el material "
+                    "actual. Contrastado contra aforo manual del mismo día: de "
+                    "día el sistema mide 0.96x del tránsito real; de noche, "
+                    "0.03x. La causa no es falta de luz sino lo contrario — la "
+                    "cámara sobreexpone y el obturador lento convierte cada "
+                    "vehículo en una estela. Se corrige forzando obturador "
+                    "rápido en el modo nocturno de la cámara.")
     aviso.font = Font(size=9, italic=True, color="9C2F26")
+    aviso.alignment = _IZQ
     aviso.alignment = Alignment(wrap_text=True, vertical="top")
     ws.merge_cells(start_row=len(filas) + 5, start_column=1,
                    end_row=len(filas) + 6, end_column=2)
