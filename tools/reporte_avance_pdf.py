@@ -347,6 +347,39 @@ def construir(filas, salida: Path, img: Path, tubo=None) -> None:
             "cualquier cifra puede volver a revisarse contra la imagen. Con un tubo "
             "eso no es posible después del hecho.", NOTA))
 
+    S.append(Paragraph("Clasificación por tipo de vehículo", H2))
+    S.append(Paragraph(
+        "El detector entrega las clases de un catálogo genérico donde "
+        "<b>una camioneta y un tractocamión caen bajo la misma etiqueta</b>. En la "
+        "clasificación de la SCT la camioneta es <b>A, un automóvil</b>. "
+        "Comparadas en crudo, nuestra composición daría 66 % livianos contra el "
+        "87 % del conteo manual, y sería un error de lectura, no de medición.", P))
+    S.append(Paragraph(
+        "La separación se resuelve por el <b>tamaño del vehículo en la imagen</b>. "
+        "Funciona porque todos se cuentan al cruzar la misma línea, o sea a la "
+        "misma distancia de la cámara. Verificado de dos maneras "
+        "independientes:", P))
+    S.append(tabla([
+        ["Comprobación", "Resultado"],
+        ["54 vehículos recortados y revisados uno por uno",
+         "54 de 54 correctos"],
+        ["Livianos contra el conteo manual (datos no usados para calibrar)",
+         "0.98×"],
+        ["Pesados contra el conteo manual (ídem)", "1.09×"],
+    ], [11.0 * cm, 5.0 * cm], [("ALIGN", (1, 0), (1, -1), "CENTER")]))
+    S.append(Spacer(1, 4))
+    S.append(Paragraph(
+        "La segunda comprobación por sí sola no bastaba: un error en un sentido y "
+        "otro en el contrario se cancelan y el total cuadra igual. Por eso se "
+        "revisaron los vehículos de uno en uno, incluidos los casos frontera "
+        "—camioneta de 46 px y van de pasajeros de 50 px del lado liviano; camión "
+        "con pipa de 53 px y autobús de 58 px del lado pesado.", NOTA))
+    S.append(Paragraph(
+        "<b>Dos límites declarados por adelantado.</b> No se separa autobús de "
+        "camión: a este tamaño se ven igual. Y en la calzada del fondo <b>no se "
+        "entrega desglose por tipo en absoluto</b> — ahí el vehículo mide 17 "
+        "píxeles y el sistema prefiere no dar el dato antes que darlo mal.", P))
+
     S.append(Paragraph("Dónde están los límites", H2))
     S.append(Paragraph(
         "La diferencia entre los dos sentidos tiene una causa medida: <b>el "
@@ -369,7 +402,8 @@ def construir(filas, salida: Path, img: Path, tubo=None) -> None:
             ["Factor de hora pico", "Listo"],
             ["Reporte en el formato de la empresa (Excel)", "Listo"],
             ["Video anotado como respaldo verificable", "Listo"],
-            ["Clasificación por tipo de vehículo", "Pendiente de validar"],
+            ["Composición liviano/pesado, calzada cercana", "Listo, validado a 0.98×"],
+            ["Composición por tipo, calzada del fondo", "No se entrega: no es medible"],
             ["Velocidad por intervalo", "No implementado"],
             ["Horas nocturnas (20:00–05:00)", "No medibles con esta cámara"],
         ], [10.0 * cm, 6.0 * cm], [("ALIGN", (1, 0), (1, -1), "LEFT")]),
@@ -377,10 +411,10 @@ def construir(filas, salida: Path, img: Path, tubo=None) -> None:
 
     S.append(Paragraph("Siguientes pasos", H2))
     for i, (tit, des) in enumerate([
-        ("Validar la clasificación vehicular",
-         "El conteo manual trae su desglose por clase — 87 % automóviles en "
-         "esta franja horaria — y sirve de referencia directa para comprobar la "
-         "que produce el sistema."),
+        ("Separar autobús de camión",
+         "Hoy se entrega liviano contra pesado. Distinguir C de T-S exige medir "
+         "también el largo del vehículo, porque un tractocamión es mucho más "
+         "largo que un camión unitario; es un cambio acotado."),
         ("Extender a las 24 horas",
          "El conteo manual cubre el día completo; hoy se ha procesado la punta de "
          "la mañana. Un día entero de video sale en unas 15 horas de proceso."),
