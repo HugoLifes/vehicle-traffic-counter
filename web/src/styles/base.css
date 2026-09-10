@@ -31,7 +31,11 @@ body {
   font-size: var(--text-base);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  /* `clip` y no `hidden`: `overflow-x: hidden` convierte al <body> en un
+     contenedor de scroll, y entonces la barra superior `position: sticky`
+     se ancla a él en vez de a la ventana — se quedaba clavada a media
+     página al bajar. `clip` recorta igual sin crear el scrollport. */
+  overflow-x: clip;
 }
 
 /*

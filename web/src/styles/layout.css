@@ -1,43 +1,146 @@
 /* ======================================================================
-   Navegación y guía — el armazón que rodea a todas las páginas.
+   Navegación, cabecera de página y guía — el armazón que rodea a todas
+   las páginas.
    ====================================================================== */
 
 /*
   La navegación está en dos niveles a propósito, porque la app tiene dos
   modos que NO son del mismo rango:
 
-    Global →  Proyectos  |  Cámara en vivo
-    Local  →  (dentro de un proyecto)  1 Subir · 2 Calibrar · 3 Reporte
+    Global →  Proyectos | Comparar | Cámara en vivo | Documentos
+    Local  →  (dentro de una intersección) Resumen · Subir · Calibrar…
 
-  El espacio que separa la navegación del contenido lo pone este
-  contenedor, no la barra: así queda igual haya o no barra de pasos.
+  La barra global es la única chrome que se queda quieta: va pegada
+  arriba y su fondo cruza la pantalla entera, mientras el contenido
+  sigue dentro de los márgenes del `.wrap`. En el reporte, que mide tres
+  pantallas de alto, eso es lo que evita tener que volver arriba para
+  cambiar de sección.
 */
-.nav-host { display: block; margin-bottom: var(--space-5); }
+.chrome {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in oklab, var(--surface-1) 82%, transparent);
+  /* El desenfoque es lo que permite que el fondo de color de la página
+     se siga viendo detrás de la barra en vez de quedar tapado por una
+     franja opaca. Donde no está soportado, el color-mix de arriba ya
+     deja la barra legible por sí solo. */
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.chrome-inner {
+  /* El margen lateral se guarda en una variable porque la fila de enlaces
+     lo necesita en negativo para sangrar hasta el borde de la pantalla. */
+  --pad-chrome: var(--space-5);
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--pad-chrome);
+}
+@media (max-width: 520px) {
+  .chrome-inner { --pad-chrome: var(--space-4); }
+}
 
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-3) var(--space-4);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2) var(--space-4);
+  min-height: 58px;
+  padding: var(--space-2) 0;
 }
 
+/* La marca identifica el producto y no cambia de pantalla a pantalla:
+   es el único punto fijo de la interfaz. */
 .brand {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   text-decoration: none;
-  color: inherit;
+  color: var(--text-primary);
   border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  margin-inline-start: calc(var(--space-2) * -1);
 }
-.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .brand svg { display: block; color: var(--accent); flex: 0 0 auto; }
-.brand h1 { font-size: var(--text-lg); font-weight: 700; margin: 0; letter-spacing: 0.01em; }
-.brand .tagline { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+.brand-name {
+  font-size: var(--text-base);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
 
 .topbar-right { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+
+/*
+  En pantalla angosta los cuatro enlaces no caben en la misma fila que la
+  marca: se envolvían en tres renglones y la barra —que está pegada
+  arriba— se comía 330 px de una pantalla de 812. Ahora son dos filas
+  fijas, y los enlaces se desplazan en horizontal sangrando hasta el borde
+  de la pantalla, así el siguiente asoma y se ve que hay más.
+*/
+@media (max-width: 720px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "marca  tema"
+      "enlaces enlaces";
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 0;
+    padding: var(--space-2) 0 0;
+  }
+  .brand { grid-area: marca; }
+  /* El contenedor desaparece como caja para que sus dos hijos entren
+     directos en la rejilla de la barra. */
+  .topbar-right { display: contents; }
+  .theme-toggle { grid-area: tema; }
+  .nav-links {
+    grid-area: enlaces;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    margin-inline: calc(var(--pad-chrome) * -1);
+    padding: 0 var(--pad-chrome) var(--space-2);
+    scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
+  .nav-links a { flex: 0 0 auto; }
+}
+
+/* --- Cabecera de la página -------------------------------------------
+   Dice DÓNDE estás. Antes vivía en la barra, junto al logotipo, y el
+   nombre de la intersección salía dos veces en la misma pantalla.
+
+   El título va a --text-xl y el subtítulo a --text-sm: 1.9× de
+   diferencia, suficiente para que se lean como dos niveles y no como
+   dos líneas del mismo bloque. */
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.page-head-txt { min-width: 0; }
+.page-title {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.page-sub {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin: var(--space-1) 0 0;
+  max-width: 70ch;
+}
+.page-head-acciones { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 
 /* --- Nivel 1: los dos modos de la app --------------------------------- */
 
@@ -57,77 +160,6 @@
    tipografía, para que se distinga sin percibir el tono. */
 .nav-links a.active { color: var(--accent); background: var(--accent-soft); font-weight: 800; }
 .nav-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-/* --- Nivel 2: pasos dentro de un proyecto ----------------------------- */
-
-.nav-local {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  flex-wrap: wrap;
-  padding-top: var(--space-3);
-  border-bottom: 1px solid var(--border);
-}
-
-/* Orientación: qué intersección se está trabajando en este momento. */
-.nav-project {
-  display: flex;
-  align-items: center;
-  gap: var(--space-05);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--text-primary);
-  min-width: 0;
-}
-.nav-project svg { color: var(--accent); flex: 0 0 auto; }
-.nav-project .np-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 30ch;
-}
-
-.nav-steps { display: flex; gap: var(--space-1); flex-wrap: wrap; }
-.nav-step {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-decoration: none;
-  padding: 9px 12px 10px;
-  border-bottom: 2px solid transparent;
-  transition: color var(--dur-fast) var(--ease-out),
-              border-color var(--dur-fast) var(--ease-out);
-}
-.nav-step:hover { color: var(--text-primary); }
-/* Tres señales para el paso activo: color, peso y barra inferior. */
-.nav-step.active { color: var(--accent); font-weight: 800; border-bottom-color: var(--accent); }
-.nav-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
-.nav-step[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
-
-.nav-step .step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 19px;
-  height: 19px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-.nav-step.active .step-num { background: var(--accent); color: var(--accent-ink); }
-
-@media (max-width: 640px) {
-  .nav-local { gap: var(--space-2); }
-  .nav-step { padding: 9px 8px 10px; }
-  .nav-step .step-num { width: 17px; height: 17px; font-size: 10px; }
-}
 
 /* --- Conmutador de tema ------------------------------------------------ */
 

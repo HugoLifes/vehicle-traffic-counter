@@ -55,19 +55,25 @@ const HERRAMIENTAS = [
   proyecto entero.
 */
 function Resumen({ p }: { p: Project }) {
-  const datos = [
-    { etiqueta: 'Cruces', valor: p.crossing_count, acento: true },
-    { etiqueta: 'Videos', valor: p.video_count, acento: false },
-    { etiqueta: 'Carriles', valor: p.lane_count, acento: false },
-  ];
   return (
     <div className="proj-stats">
-      {datos.map((d) => (
-        <div className={`proj-stat${d.acento ? ' accent' : ''}`} key={d.etiqueta}>
-          <span className="ps-value">{formatNumber(d.valor)}</span>
-          <span className="ps-label">{d.etiqueta}</span>
+      {/* Los cruces mandan: van a --text-2xl y las otras dos a --text-lg,
+          2.1× de diferencia. Antes las tres iban al mismo tamaño y la
+          cabecera no decía cuál era el dato del estudio. */}
+      <div className="proj-stat is-principal">
+        <span className="ps-value">{formatNumber(p.crossing_count)}</span>
+        <span className="ps-label">Vehículos contados</span>
+      </div>
+      <div className="proj-stat-menores">
+        <div className="proj-stat">
+          <span className="ps-value">{formatNumber(p.video_count)}</span>
+          <span className="ps-label">Videos</span>
         </div>
-      ))}
+        <div className="proj-stat">
+          <span className="ps-value">{formatNumber(p.lane_count)}</span>
+          <span className="ps-label">Carriles</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -105,55 +111,67 @@ export default function Proyecto() {
   }
 
   return (
-    <Page title={project.name} subtitle="Intersección — todo su aforo en un solo lugar">
-      <div className="proj-head">
-        <div className="proj-identity">
-          <h2 className="proj-name">{project.name}</h2>
-          {project.address ? (
-            <p className="proj-address">
-              <IconPin size={13} />
-              {project.address}
-            </p>
-          ) : (
-            <p className="proj-address proj-address-missing">
-              <IconPin size={13} />
-              Sin ubicación — se puede añadir en Resumen
-            </p>
-          )}
-          <div className="proj-tags">
-            <Pill>
-              Intervalo <span className="value">{project.interval_minutes} min</span>
-            </Pill>
-            {project.awaiting_count > 0 && (
-              <Pill tone="warning">
-                {formatNumber(project.awaiting_count)} sin calibrar
-              </Pill>
+    /* `hideHeader`: la cabecera de esta pantalla lleva ubicación, etiquetas
+       y cifras. Poner encima el título genérico repetiría el nombre de la
+       intersección dos veces en 60 px. */
+    <Page
+      title={project.name}
+      subtitle="Intersección — todo su aforo en un solo lugar"
+      hideHeader
+    >
+      {/* Identidad y pestañas dentro del mismo panel: son el armazón de la
+          intersección, y separarlas en dos bloques sueltos hacía que las
+          pestañas parecieran pertenecer al contenido de abajo. */}
+      <div className="proj-shell">
+        <div className="proj-head">
+          <div className="proj-identity">
+            <h1 className="proj-name">{project.name}</h1>
+            {project.address ? (
+              <p className="proj-address">
+                <IconPin size={13} />
+                {project.address}
+              </p>
+            ) : (
+              <p className="proj-address proj-address-missing">
+                <IconPin size={13} />
+                Sin ubicación — se puede añadir en Resumen
+              </p>
             )}
+            <div className="proj-tags">
+              <Pill>
+                Intervalo <span className="value">{project.interval_minutes} min</span>
+              </Pill>
+              {project.awaiting_count > 0 && (
+                <Pill tone="warning">
+                  {formatNumber(project.awaiting_count)} sin calibrar
+                </Pill>
+              )}
+            </div>
+            {project.description && <p className="proj-notes">{project.description}</p>}
           </div>
-          {project.description && <p className="proj-notes">{project.description}</p>}
+
+          <Resumen p={project} />
         </div>
 
-        <Resumen p={project} />
+        {/*
+          Pestañas como enlaces reales, no como botones que cambian estado:
+          así cada herramienta tiene su URL, el botón atrás funciona y se
+          puede mandar a alguien directo a la que importa.
+        */}
+        <nav className="proj-tools" aria-label="Herramientas de la intersección">
+          {HERRAMIENTAS.map((h, i) => (
+            <NavLink
+              key={h.label}
+              to={h.to}
+              end={h.end}
+              className={({ isActive }) => (isActive ? 'proj-tool active' : 'proj-tool')}
+            >
+              {h.paso && <span className="pt-num">{i}</span>}
+              {h.label}
+            </NavLink>
+          ))}
+        </nav>
       </div>
-
-      {/*
-        Pestañas como enlaces reales, no como botones que cambian estado:
-        así cada herramienta tiene su URL, el botón atrás funciona y se
-        puede mandar a alguien directo a la que importa.
-      */}
-      <nav className="proj-tools" aria-label="Herramientas de la intersección">
-        {HERRAMIENTAS.map((h, i) => (
-          <NavLink
-            key={h.label}
-            to={h.to}
-            end={h.end}
-            className={({ isActive }) => (isActive ? 'proj-tool active' : 'proj-tool')}
-          >
-            {h.paso && <span className="pt-num">{i}</span>}
-            {h.label}
-          </NavLink>
-        ))}
-      </nav>
 
       <Outlet />
     </Page>

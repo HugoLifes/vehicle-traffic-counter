@@ -1,11 +1,15 @@
 /*
-  Barra superior: la marca, los dos modos de la app y el tema.
+  Barra superior: la marca, los modos de la app y el tema.
+
+  La marca dice el PRODUCTO, no la página. Antes llevaba el título de la
+  pantalla como <h1>, y dentro de una intersección eso significaba ver el
+  nombre del proyecto dos veces con 60 px de separación y dos tamaños
+  distintos. Lo que identifica dónde estás es la cabecera de la página;
+  lo que identifica la app se queda quieto arriba.
 
   Los pasos de un aforo (subir → calibrar → reporte) estuvieron aquí, en
   un segundo nivel. Ya no: son las pestañas del contenedor de la
-  intersección, porque solo tienen sentido dentro de una — y tenerlos
-  arriba obligaba a arrastrar la intersección elegida hasta la barra de
-  navegación para que el usuario supiera de cuál estaba hablando.
+  intersección, porque solo tienen sentido dentro de una.
 */
 
 import { NavLink, Link } from 'react-router-dom';
@@ -43,47 +47,30 @@ function ThemeToggle() {
   );
 }
 
-interface NavProps {
-  title: string;
-  subtitle: string;
-}
-
-/*
-  Solo el nivel global: Proyectos y Cámara en vivo, los dos modos de la
-  app. Los pasos de un aforo (subir → calibrar → reporte) ya no viven
-  aquí — son las pestañas del contenedor de la intersección, que es donde
-  tienen contexto.
-*/
-export function Nav({ title, subtitle }: NavProps) {
+export function Nav() {
   return (
-    <div className="nav-host">
-      <div className="topbar">
-        <Link className="brand" to="/">
-          <IconBrand size={30} />
-          <div>
-            <h1>{title}</h1>
-            <div className="tagline">{subtitle}</div>
-          </div>
-        </Link>
-        <div className="topbar-right">
-          <nav className="nav-links" aria-label="Navegación principal">
-            {GLOBAL.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                /* El estado activo NO depende solo del color: también
-                   cambia el peso de la tipografía. */
-                className={({ isActive }) => (isActive ? 'active' : undefined)}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-          <ThemeToggle />
-        </div>
+    <div className="topbar">
+      <Link className="brand" to="/">
+        <IconBrand size={26} />
+        <span className="brand-name">Aforo Vehicular</span>
+      </Link>
+      <div className="topbar-right">
+        <nav className="nav-links" aria-label="Navegación principal">
+          {GLOBAL.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              /* El estado activo NO depende solo del color: también
+                 cambia el peso de la tipografía. */
+              className={({ isActive }) => (isActive ? 'active' : undefined)}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <ThemeToggle />
       </div>
-
     </div>
   );
 }

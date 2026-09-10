@@ -107,6 +107,10 @@
   --text-lg: 1.15rem;
   --text-xl: 1.6rem;
   --text-2xl: 2.4rem;
+  /* Un escalón por encima del 2xl, para la única cifra que encabeza una
+     pantalla. Sin él, el resumen del reporte tenía que empatar su cifra
+     principal con las de apoyo y la jerarquía se aplanaba. */
+  --text-3xl: 3.25rem;
 
   /* Espaciado y forma */
   /* El código pedía 6px diecinueve veces: no era deriva, era un escalón
