@@ -7,28 +7,26 @@ lo hace src/reports/aforo_excel.py. Este documento responde a otra
 pregunta: **cuánta confianza merece lo que mide el sistema**, contrastado
 hora por hora contra el aforo contado a mano del mismo día.
 
-Sustituye a reporte_avance_pdf.py, que trabajaba sobre la ventana de la
-mañana en cuartos de hora. Con las 24 h medidas, el eje del informe pasa a
-ser el horario: qué horas se miden, con qué exactitud, y cuáles no.
+Toda cifra sale del JSON de `exportar_comparacion.py`. La versión anterior
+llevaba la composición vehicular escrita en el código, lo que contradecía
+la nota metodológica del propio documento.
 
-Las cifras se leen del CSV que produce el exportador, no se escriben a
-mano, para que el documento no pueda quedar desfasado de los datos sin que
-nadie lo note.
-
-Dos detalles de reportlab que costaron una versión del documento anterior:
+Dos detalles de reportlab que costaron una versión del documento:
 
 - Las celdas de Table son cadenas planas y NO interpretan entidades HTML;
   solo Paragraph lo hace. Por eso aquí todo va en caracteres literales.
-- Sin KeepTogether el flujo deja páginas con una sola tabla huérfana.
+- Sin KeepTogether el flujo deja páginas con una tabla huérfana.
 
-Uso:
-    python tools/reporte_calibracion_pdf.py --datos data/por_hora.csv \
+Uso, dentro del contenedor del Jetson:
+    python3 tools/exportar_comparacion.py --proyecto 2 \
+        --zona "Calzada oriente" --salida data/cmp.json
+    python3 tools/reporte_calibracion_pdf.py --datos data/cmp.json \
         --salida data/calibracion.pdf
 """
 from __future__ import annotations
 
 import argparse
-import csv
+import json
 import statistics
 import sys
 from datetime import date
@@ -42,71 +40,43 @@ GRIS_CLARO = "#e4e8ee"
 VERDE = "#1f7a4d"
 AZUL = "#1f4f82"
 ROJO = "#a33227"
-AMBAR = "#b06a12"
-
-# Una hora es medible cuando la confianza media del detector la respalda.
-# El corte cae limpio en el hueco medido entre 0.58 (noche) y 0.67 (día).
-CONFIANZA_MINIMA = 0.65
 
 
-def leer(ruta: Path):
-    filas = []
-    with open(ruta, encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            filas.append({
-                "hora": r["hora"],
-                "h": int(r["hora"][:2]),
-                "nuestro": int(r["nuestro"]),
-                "manual": int(r["manual"]),
-                "razon": float(r["razon"]),
-                "conf": float(r["confianza"]),
-                "manual_A": int(r["manual_A"]),
-                "manual_PES": int(r["manual_PES"]),
-            })
-    for f in filas:
-        f["medible"] = f["conf"] >= CONFIANZA_MINIMA and f["razon"] >= 0.75
-    return sorted(filas, key=lambda x: x["h"])
-
-
-def grafica(filas, destino: Path) -> Path:
+def grafica(horas, destino: Path) -> Path:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    horas = [f["hora"] for f in filas]
-    fig, (ax, ax2) = plt.subplots(
-        2, 1, figsize=(7.6, 5.0), sharex=True, gridspec_kw={"height_ratios": [2.2, 1]})
+    etiquetas = [h["hora"] for h in horas]
+    color = [VERDE if h["medible"] else ROJO for h in horas]
 
-    ax.bar(horas, [f["manual"] for f in filas], color=GRIS_CLARO,
+    fig, (ax, ax2) = plt.subplots(
+        2, 1, figsize=(7.6, 5.0), sharex=True,
+        gridspec_kw={"height_ratios": [2.2, 1]})
+
+    ax.bar(etiquetas, [h["manual"] for h in horas], color=GRIS_CLARO,
            label="Aforo contado a mano", width=0.72)
-    ax.bar(horas, [f["nuestro"] for f in filas],
-           color=[VERDE if f["medible"] else ROJO for f in filas],
+    ax.bar(etiquetas, [h["nuestro"] for h in horas], color=color,
            label="Sistema de video", width=0.42)
     ax.set_ylabel("Vehiculos por hora", fontsize=9)
     ax.legend(frameon=False, fontsize=9)
-    ax.grid(axis="y", color=GRIS_CLARO, lw=0.8)
-    ax.set_axisbelow(True)
-    for s in ("top", "right"):
-        ax.spines[s].set_visible(False)
-    ax.spines["left"].set_color(GRIS_CLARO)
-    ax.spines["bottom"].set_color(GRIS_CLARO)
 
     # La razon en su propio panel: mezclarla con los conteos en un eje
     # secundario la vuelve ilegible, y es el dato que se defiende.
     ax2.axhline(1.0, color=GRIS, lw=1, ls="--")
-    ax2.bar(horas, [f["razon"] for f in filas],
-            color=[VERDE if f["medible"] else ROJO for f in filas], width=0.62)
+    ax2.bar(etiquetas, [h["razon"] for h in horas], color=color, width=0.62)
     ax2.set_ylabel("Razon", fontsize=9)
     ax2.set_ylim(0, 1.15)
-    ax2.grid(axis="y", color=GRIS_CLARO, lw=0.8)
-    ax2.set_axisbelow(True)
-    for s in ("top", "right"):
-        ax2.spines[s].set_visible(False)
-    ax2.spines["left"].set_color(GRIS_CLARO)
-    ax2.spines["bottom"].set_color(GRIS_CLARO)
+
+    for eje in (ax, ax2):
+        eje.grid(axis="y", color=GRIS_CLARO, lw=0.8)
+        eje.set_axisbelow(True)
+        for s in ("top", "right"):
+            eje.spines[s].set_visible(False)
+        eje.spines["left"].set_color(GRIS_CLARO)
+        eje.spines["bottom"].set_color(GRIS_CLARO)
+        eje.tick_params(labelsize=8)
     plt.setp(ax2.get_xticklabels(), rotation=45, ha="right", fontsize=7.5)
-    ax.tick_params(labelsize=8)
-    ax2.tick_params(labelsize=8)
 
     fig.tight_layout()
     fig.savefig(destino, dpi=200)
@@ -114,7 +84,7 @@ def grafica(filas, destino: Path) -> Path:
     return destino
 
 
-def construir(filas, salida: Path, img: Path) -> None:
+def construir(d: dict, salida: Path, img: Path) -> None:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_JUSTIFY
     from reportlab.lib.pagesizes import letter
@@ -161,14 +131,17 @@ def construir(filas, salida: Path, img: Path) -> None:
         ] + (extra or [])))
         return t
 
-    med = [f for f in filas if f["medible"]]
-    n_med = sum(f["nuestro"] for f in med)
-    r_med = sum(f["manual"] for f in med)
-    razon_med = n_med / r_med
-    h0, h1 = min(f["h"] for f in med), max(f["h"] for f in med)
-    bajo = [f["razon"] for f in med if f["manual"] < 1600]
-    alto = [f["razon"] for f in med if f["manual"] >= 2000]
+    horas = d["horas"]
+    med = [h for h in horas if h["medible"]]
+    tot = d["totales_medibles"]
+    hm = d["horario_medible"]
+    c = d["composicion"]
+    dif_comp = abs(c["nuestro_A_pct"] - c["manual_A_pct"])
     miles = lambda n: f"{n:,}".replace(",", " ")
+    alcance = " y ".join(d["zonas"])
+
+    bajo = [h["razon"] for h in med if h["manual"] < 1600]
+    alto = [h["razon"] for h in med if h["manual"] >= 2000]
 
     doc = SimpleDocTemplate(
         str(salida), pagesize=letter,
@@ -182,8 +155,8 @@ def construir(filas, salida: Path, img: Path) -> None:
     S.append(Paragraph(
         "Calibración contra aforo manual — Blvd. Miguel de la Madrid, "
         "Ciudad Juárez<br/>"
-        f"Medición del 19 de agosto de 2026 — informe del "
-        f"{date.today():%d/%m/%Y}", SUB))
+        f"Alcance: {alcance} — medición del 19 de agosto de 2026 — "
+        f"informe del {date.today():%d/%m/%Y}", SUB))
 
     S.append(Paragraph("Resumen", H2))
     S.append(Paragraph(
@@ -194,10 +167,10 @@ def construir(filas, salida: Path, img: Path) -> None:
     S.append(Spacer(1, 4))
 
     S.append(tabla([
-        [Paragraph(f"{razon_med:.2f}×", CIFRA),
-         Paragraph(f"{h0:02d}–{h1 + 1:02d} h",
+        [Paragraph(f"{tot['razon']:.2f}×", CIFRA),
+         Paragraph(f"{hm['desde'][:2]}–{hm['hasta'][:2]} h",
                    ParagraphStyle("c2", CIFRA, textColor=colors.HexColor(AZUL))),
-         Paragraph("0.5 pts",
+         Paragraph(f"{dif_comp:.1f} pts",
                    ParagraphStyle("c3", CIFRA, textColor=colors.HexColor(TINTA)))],
         [Paragraph("Exactitud del conteo<br/>en horario medible", PIE),
          Paragraph("Horario en que el<br/>sistema mide", PIE),
@@ -214,9 +187,12 @@ def construir(filas, salida: Path, img: Path) -> None:
     S.append(Spacer(1, 12))
 
     S.append(Paragraph(
-        f"<b>De {h0:02d}:00 a {h1 + 1:02d}:00 el sistema mide {razon_med:.2f}× del "
-        f"tránsito real</b>, sobre {miles(n_med)} vehículos contrastados contra "
-        f"{miles(r_med)} contados a mano. Son {len(med)} horas seguidas.", P))
+        f"<b>De {hm['desde']} a {hm['hasta']} el sistema mide "
+        f"{tot['razon']:.2f}× del tránsito real</b>, sobre "
+        f"{miles(tot['nuestro'])} vehículos contrastados contra "
+        f"{miles(tot['manual'])} contados a mano. Son {hm['horas']} horas "
+        f"seguidas, y ninguna se aparta: la exactitud por hora se mueve entre "
+        f"{tot['razon_min']:.2f}× y {tot['razon_max']:.2f}×.", P))
     S.append(Paragraph(
         "Fuera de ese horario <b>el sistema no mide</b>, y el informe lo declara "
         "en blanco en vez de publicar un conteo parcial. La causa está "
@@ -230,7 +206,8 @@ def construir(filas, salida: Path, img: Path) -> None:
             ["Fecha", "Miércoles 19 de agosto de 2026"],
             ["Cobertura", "24 horas continuas"],
             ["Material", "135 segmentos de video de 10 min, cámara fija"],
-            ["Vehículos contados por el sistema", "22 508"],
+            ["Alcance del informe", alcance],
+            ["Vehículos medidos en horario útil", miles(tot["nuestro"])],
             ["Referencia de calibración", "Aforo contado a mano, mismo día, "
                                           "por sentido y por clase"],
             ["Errores de proceso", "Ninguno"],
@@ -248,12 +225,12 @@ def construir(filas, salida: Path, img: Path) -> None:
     S.append(PageBreak())
 
     detalle = [["Hora", "Sistema", "Aforo manual", "Razón", "Estado"]]
-    for f in filas:
-        detalle.append([f["hora"], miles(f["nuestro"]), miles(f["manual"]),
-                        f"{f['razon']:.2f}×",
-                        "Medible" if f["medible"] else "No medible"])
-    detalle.append(["Total medible", miles(n_med), miles(r_med),
-                    f"{razon_med:.2f}×", ""])
+    for h in horas:
+        detalle.append([h["hora"], miles(h["nuestro"]), miles(h["manual"]),
+                        f"{h['razon']:.2f}×",
+                        "Medible" if h["medible"] else "No medible"])
+    detalle.append(["Total medible", miles(tot["nuestro"]), miles(tot["manual"]),
+                    f"{tot['razon']:.2f}×", ""])
     S.append(KeepTogether([
         Paragraph("Detalle por hora", H2),
         tabla(detalle, [2.6 * cm, 3.0 * cm, 3.6 * cm, 2.6 * cm, 4.2 * cm], [
@@ -261,8 +238,8 @@ def construir(filas, salida: Path, img: Path) -> None:
             ("FONT", (0, -1), (-1, -1), "Helvetica-Bold", 9),
             ("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.HexColor(TINTA)),
         ] + [("TEXTCOLOR", (4, i + 1), (4, i + 1),
-              colors.HexColor(VERDE if f["medible"] else ROJO))
-             for i, f in enumerate(filas)]),
+              colors.HexColor(VERDE if h["medible"] else ROJO))
+             for i, h in enumerate(horas)]),
     ]))
 
     S.append(PageBreak())
@@ -273,39 +250,42 @@ def construir(filas, salida: Path, img: Path) -> None:
         "desglose del aforo manual en horario medible:", P))
     S.append(tabla([
         ["", "Sistema", "Aforo manual", "Diferencia"],
-        ["Livianos", "88.8 %", "88.4 %", "0.4 pts"],
-        ["Pesados", "11.2 %", "11.6 %", "0.4 pts"],
+        ["Livianos", f"{c['nuestro_A_pct']} %", f"{c['manual_A_pct']} %",
+         f"{dif_comp:.1f} pts"],
+        ["Pesados", f"{c['nuestro_PES_pct']} %", f"{c['manual_PES_pct']} %",
+         f"{dif_comp:.1f} pts"],
     ], [4.6 * cm, 3.8 * cm, 4.0 * cm, 3.6 * cm], [
         ("ALIGN", (0, 0), (0, -1), "LEFT"),
     ]))
     S.append(Spacer(1, 4))
     S.append(Paragraph(
-        "El <b>99.1 %</b> de los vehículos contados en horario medible recibe "
-        "clasificación. La verificación no se hizo solo comparando totales — un "
-        "error en un sentido y otro en el contrario se cancelan — sino "
-        "revisando <b>108 vehículos recortados del video, uno por uno</b>, en dos "
-        "franjas horarias distintas.", NOTA))
+        f"El <b>{c['clasificados_pct']} %</b> de los vehículos contados en "
+        "horario medible recibe clasificación. La verificación no se hizo solo "
+        "comparando totales — un error en un sentido y otro en el contrario se "
+        "cancelan — sino revisando <b>108 vehículos recortados del video, uno "
+        "por uno</b>, en dos franjas horarias distintas.", NOTA))
     S.append(Paragraph(
         "<b>Límite declarado:</b> no se separa autobús de camión. A la distancia "
         "de esta cámara se ven igual. El desglose que se entrega es liviano "
         "contra pesado.", P))
 
-    S.append(Paragraph("La exactitud depende del volumen", H2))
-    S.append(Paragraph(
-        "La exactitud no es una cifra única a lo largo del día. Cuando la vía se "
-        "llena, los vehículos se tapan unos a otros desde el ángulo de la cámara "
-        "y el que va detrás no llega a verse:", P))
-    S.append(tabla([
-        ["Volumen de la hora", "Exactitud medida"],
-        ["Menos de 1 600 veh/h", f"{statistics.fmean(bajo):.2f}×"],
-        ["2 000 veh/h o más", f"{statistics.fmean(alto):.2f}×"],
-    ], [8.6 * cm, 7.4 * cm], [("ALIGN", (1, 0), (1, -1), "CENTER")]))
-    S.append(Spacer(1, 4))
-    S.append(Paragraph(
-        "Es un límite del punto de vista, no del programa: ninguna configuración "
-        "recupera un vehículo que está detrás de otro. Se corrige con la altura "
-        "y el ángulo de la cámara — cuanto más perpendicular a la vía, menos se "
-        "tapan entre sí.", NOTA))
+    if bajo and alto:
+        S.append(Paragraph("La exactitud depende del volumen", H2))
+        S.append(Paragraph(
+            "La exactitud no es una cifra única a lo largo del día. Cuando la vía "
+            "se llena, los vehículos se tapan unos a otros desde el ángulo de la "
+            "cámara y el que va detrás no llega a verse:", P))
+        S.append(tabla([
+            ["Volumen de la hora", "Exactitud medida"],
+            ["Menos de 1 600 veh/h", f"{statistics.fmean(bajo):.2f}×"],
+            ["2 000 veh/h o más", f"{statistics.fmean(alto):.2f}×"],
+        ], [8.6 * cm, 7.4 * cm], [("ALIGN", (1, 0), (1, -1), "CENTER")]))
+        S.append(Spacer(1, 4))
+        S.append(Paragraph(
+            "Es un límite del punto de vista, no del programa: ninguna "
+            "configuración recupera un vehículo que está detrás de otro. Se "
+            "corrige con la altura y el ángulo de la cámara — cuanto más "
+            "perpendicular a la vía, menos se tapan entre sí.", NOTA))
 
     S.append(PageBreak())
 
@@ -343,10 +323,10 @@ def construir(filas, salida: Path, img: Path) -> None:
         Paragraph("Qué se puede entregar", H2),
         tabla([
             ["Producto", "Estado"],
-            [f"Aforo por hora y por cuartos de hora, {h0:02d}–{h1 + 1:02d} h",
-             f"Listo, {razon_med:.2f}×"],
+            [f"Aforo por hora y por cuartos de hora, {hm['desde'][:2]}–"
+             f"{hm['hasta'][:2]} h", f"Listo, {tot['razon']:.2f}×"],
             ["Aforo por sentido de circulación", "Listo"],
-            ["Composición liviano / pesado", "Listo, 0.4 pts"],
+            ["Composición liviano / pesado", f"Listo, {dif_comp:.1f} pts"],
             ["Factor de hora pico", "Listo"],
             ["Reporte en el formato de la empresa (Excel)", "Listo"],
             ["Video anotado como respaldo verificable", "Listo"],
@@ -363,6 +343,9 @@ def construir(filas, salida: Path, img: Path) -> None:
         "principio a fin, sin descartar ninguno y sin ajustar nada después de ver "
         "el resultado.", NOTA))
     S.append(Paragraph(
+        f"Este informe cubre <b>{alcance}</b>, contrastada contra el sentido "
+        f"{' y '.join(d['sentidos'])} del aforo manual.", NOTA))
+    S.append(Paragraph(
         "Las horas fuera del horario medible se dejan <b>en blanco</b> en el "
         "entregable, en vez de publicar el conteo parcial que produjo el "
         "detector. Una celda vacía significa \"no medido\"; nunca \"cero "
@@ -377,20 +360,22 @@ def construir(filas, salida: Path, img: Path) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--datos", type=Path, required=True)
+    p.add_argument("--datos", type=Path, required=True,
+                   help="JSON de tools/exportar_comparacion.py")
     p.add_argument("--salida", type=Path, default=RAIZ / "data" / "calibracion.pdf")
     a = p.parse_args()
 
     if not a.datos.exists():
-        sys.exit(f"No existe {a.datos}")
-    filas = leer(a.datos)
-    if not [f for f in filas if f["medible"]]:
+        sys.exit(f"No existe {a.datos}. Generalo con exportar_comparacion.py")
+    d = json.loads(a.datos.read_text(encoding="utf-8"))
+    if not [h for h in d["horas"] if h["medible"]]:
         sys.exit("No hay ninguna hora medible en esos datos.")
 
     a.salida.parent.mkdir(parents=True, exist_ok=True)
-    img = grafica(filas, a.salida.with_suffix(".grafica.png"))
-    construir(filas, a.salida, img)
-    print(f"{a.salida}  ({a.salida.stat().st_size // 1024} KB, {len(filas)} horas)")
+    img = grafica(d["horas"], a.salida.with_suffix(".grafica.png"))
+    construir(d, a.salida, img)
+    print(f"{a.salida}  ({a.salida.stat().st_size // 1024} KB, "
+          f"{len(d['horas'])} horas, alcance: {', '.join(d['zonas'])})")
 
 
 if __name__ == "__main__":

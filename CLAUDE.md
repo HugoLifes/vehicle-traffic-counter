@@ -165,6 +165,7 @@ se podía contestar de otro modo:
 | `comparar_aforo_real.py` | Contrastar contra el aforo real de campo (conteo manual o tubo) |
 | `validar_clasificacion.py` | Validar la clasificación vehicular contra el conteo manual |
 | `hoja_clases.py` | Ver los vehículos recortados con lo que el sistema dice de cada uno |
+| `exportar_comparacion.py` | Sacar a JSON todo lo que el reporte necesita, acotable por calzada |
 | `reporte_calibracion_pdf.py` | Reporte de calibración en PDF para presentar a la empresa |
 | `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
 
