@@ -63,10 +63,10 @@ def grafica(horas, destino: Path) -> Path:
 
     # La razon en su propio panel: mezclarla con los conteos en un eje
     # secundario la vuelve ilegible, y es el dato que se defiende.
-    ax2.axhline(1.0, color=GRIS, lw=1, ls="--")
-    ax2.bar(etiquetas, [h["razon"] for h in horas], color=color, width=0.62)
-    ax2.set_ylabel("Razon", fontsize=9)
-    ax2.set_ylim(0, 1.15)
+    ax2.axhline(100, color=GRIS, lw=1, ls="--")
+    ax2.bar(etiquetas, [100 * h["razon"] for h in horas], color=color, width=0.62)
+    ax2.set_ylabel("% del aforo real", fontsize=9)
+    ax2.set_ylim(0, 115)
 
     for eje in (ax, ax2):
         eje.grid(axis="y", color=GRIS_CLARO, lw=0.8)
@@ -167,12 +167,12 @@ def construir(d: dict, salida: Path, img: Path) -> None:
     S.append(Spacer(1, 4))
 
     S.append(tabla([
-        [Paragraph(f"{tot['razon']:.2f}×", CIFRA),
+        [Paragraph(f"{100 * tot['razon']:.0f} %", CIFRA),
          Paragraph(f"{hm['desde'][:2]}–{hm['hasta'][:2]} h",
                    ParagraphStyle("c2", CIFRA, textColor=colors.HexColor(AZUL))),
          Paragraph(f"{dif_comp:.1f} pts",
                    ParagraphStyle("c3", CIFRA, textColor=colors.HexColor(TINTA)))],
-        [Paragraph("Exactitud del conteo<br/>en horario medible", PIE),
+        [Paragraph("Del aforo real, contado<br/>en horario medible", PIE),
          Paragraph("Horario en que el<br/>sistema mide", PIE),
          Paragraph("Diferencia en la<br/>composición vehicular", PIE)],
     ], [5.3 * cm, 5.3 * cm, 5.3 * cm], [
@@ -187,12 +187,12 @@ def construir(d: dict, salida: Path, img: Path) -> None:
     S.append(Spacer(1, 12))
 
     S.append(Paragraph(
-        f"<b>De {hm['desde']} a {hm['hasta']} el sistema mide "
-        f"{tot['razon']:.2f}× del tránsito real</b>, sobre "
+        f"<b>De {hm['desde']} a {hm['hasta']} el sistema cuenta el "
+        f"{100 * tot['razon']:.0f} % de los vehículos reales</b>, sobre "
         f"{miles(tot['nuestro'])} vehículos contrastados contra "
         f"{miles(tot['manual'])} contados a mano. Son {hm['horas']} horas "
-        f"seguidas, y ninguna se aparta: la exactitud por hora se mueve entre "
-        f"{tot['razon_min']:.2f}× y {tot['razon_max']:.2f}×.", P))
+        f"seguidas, y ninguna se aparta: por hora se mueve entre el "
+        f"{100 * tot['razon_min']:.0f} % y el {100 * tot['razon_max']:.0f} %.", P))
     S.append(Paragraph(
         "Fuera de ese horario <b>el sistema no mide</b>, y el informe lo declara "
         "en blanco en vez de publicar un conteo parcial. La causa está "
@@ -224,13 +224,13 @@ def construir(d: dict, salida: Path, img: Path) -> None:
 
     S.append(PageBreak())
 
-    detalle = [["Hora", "Sistema", "Aforo manual", "Razón", "Estado"]]
+    detalle = [["Hora", "Sistema", "Aforo manual", "% del real", "Estado"]]
     for h in horas:
         detalle.append([h["hora"], miles(h["nuestro"]), miles(h["manual"]),
-                        f"{h['razon']:.2f}×",
+                        f"{100 * h['razon']:.0f} %",
                         "Medible" if h["medible"] else "No medible"])
     detalle.append(["Total medible", miles(tot["nuestro"]), miles(tot["manual"]),
-                    f"{tot['razon']:.2f}×", ""])
+                    f"{100 * tot['razon']:.0f} %", ""])
     S.append(KeepTogether([
         Paragraph("Detalle por hora", H2),
         tabla(detalle, [2.6 * cm, 3.0 * cm, 3.6 * cm, 2.6 * cm, 4.2 * cm], [
@@ -276,9 +276,9 @@ def construir(d: dict, salida: Path, img: Path) -> None:
             "se llena, los vehículos se tapan unos a otros desde el ángulo de la "
             "cámara y el que va detrás no llega a verse:", P))
         S.append(tabla([
-            ["Volumen de la hora", "Exactitud medida"],
-            ["Menos de 1 600 veh/h", f"{statistics.fmean(bajo):.2f}×"],
-            ["2 000 veh/h o más", f"{statistics.fmean(alto):.2f}×"],
+            ["Volumen de la hora", "Se cuenta"],
+            ["Menos de 1 600 veh/h", f"{100 * statistics.fmean(bajo):.0f} % del real"],
+            ["2 000 veh/h o más", f"{100 * statistics.fmean(alto):.0f} % del real"],
         ], [8.6 * cm, 7.4 * cm], [("ALIGN", (1, 0), (1, -1), "CENTER")]))
         S.append(Spacer(1, 4))
         S.append(Paragraph(
@@ -324,9 +324,10 @@ def construir(d: dict, salida: Path, img: Path) -> None:
         tabla([
             ["Producto", "Estado"],
             [f"Aforo por hora y por cuartos de hora, {hm['desde'][:2]}–"
-             f"{hm['hasta'][:2]} h", f"Listo, {tot['razon']:.2f}×"],
+             f"{hm['hasta'][:2]} h", f"Listo, {100 * tot['razon']:.0f} % del real"],
             ["Aforo por sentido de circulación", "Listo"],
-            ["Composición liviano / pesado", f"Listo, {dif_comp:.1f} pts"],
+            ["Composición liviano / pesado",
+             f"Listo, a {dif_comp:.1f} puntos del real"],
             ["Factor de hora pico", "Listo"],
             ["Reporte en el formato de la empresa (Excel)", "Listo"],
             ["Video anotado como respaldo verificable", "Listo"],
