@@ -79,3 +79,67 @@ problema con más píxeles vacíos.
 - **20:00–05:00**: no es una medición. El sistema reporta 13–28 vehículos
   por hora donde el video muestra tránsito continuo. Esos números no deben
   ir a un informe como si fueran conteos.
+
+---
+
+# Para el aforo direccional (origen-destino)
+
+Esto es distinto a lo anterior. Un aforo direccional cuenta **movimientos**,
+no cruces: cuántos vehículos entraron por el norte y salieron al este. Para
+eso el sistema tiene que seguir al vehículo **de un extremo a otro de la
+intersección**, no solo verlo cruzar una raya.
+
+Cambia lo que el video necesita.
+
+## Lo que el encuadre tiene que cumplir
+
+**Los cuatro accesos completos, dentro del cuadro.** Si un acceso queda
+fuera, sus movimientos no se pueden contar — y tampoco se puede saber que
+faltan, porque el vehículo simplemente nunca aparece.
+
+**Margen alrededor de la intersección.** El rastreador necesita ver al
+vehículo unos cuadros antes de entrar y unos después de salir para
+asignarle un identificador estable. Con el vehículo apareciendo ya dentro
+del cruce, el movimiento se pierde. Como referencia, el contador actual
+exige 3 cuadros de trayectoria antes de aceptar un cruce.
+
+**El vehículo, a 40 px de alto como mínimo, en todo el recorrido.** No solo
+en un punto: en el direccional el vehículo se sigue por toda la
+intersección, así que el requisito aplica a la zona entera. Medido en el
+material actual, 33 px da 96 % de acierto y 15 px da 84 %.
+
+**Cámara alta y lo más perpendicular posible.** Es lo que reduce la
+oclusión, y en un aforo direccional pesa más que en uno de tramo: en una
+intersección los vehículos se detienen juntos esperando el semáforo, que es
+la peor condición posible. Medido en el material actual, la exactitud cae
+de 95 % a 86 % cuando la vía se llena, solo por vehículos que se tapan.
+
+**Obturador rápido de noche.** El mismo requisito que para el aforo de
+tramo, y por la misma razón medida: la cámara sobreexpone, el obturador
+lento barre el movimiento y cada vehículo sale como una estela. Sin esto,
+de 20:00 a 05:00 no hay nada que contar.
+
+**Cámara fija.** Nada de barrido ni zoom automático. Las zonas de acceso se
+dibujan una vez sobre el cuadro; si la cámara se mueve, dejan de
+corresponder con la vía y el conteo se descalabra sin dar error.
+
+## Antes de grabar el día completo: un minuto de prueba
+
+**Esta es la recomendación que más tiempo ahorra.** Que graben **un minuto**
+con la cámara ya montada en su posición definitiva y lo manden. En ese
+minuto se puede medir, con las herramientas que ya existen:
+
+```bash
+python tools/inspeccionar.py --job N --banda      # ¿se ven los vehículos?
+python tools/trayectorias.py --job N --minutos 1  # ¿se siguen de extremo a extremo?
+```
+
+De ahí sale, antes de comprometer 24 horas de grabación:
+
+- el alto real del vehículo en píxeles, en cada acceso;
+- si el rastreador mantiene el identificador a lo largo de la intersección;
+- si los cuatro accesos caben con margen.
+
+El aforo de Miguel de la Madrid costó procesar 135 videos para descubrir que
+11 de las 24 horas no eran medibles. Un minuto de prueba lo habría dicho
+antes.
