@@ -165,6 +165,7 @@ se podía contestar de otro modo:
 | `comparar_aforo_real.py` | Contrastar contra el aforo real de campo (conteo manual o tubo) |
 | `validar_clasificacion.py` | Validar la clasificación vehicular contra el conteo manual |
 | `hoja_clases.py` | Ver los vehículos recortados con lo que el sistema dice de cada uno |
+| `probar_clasificador_visual.py` | Contrastar un modelo de visión contra recortes revisados a ojo |
 | `exportar_comparacion.py` | Sacar a JSON todo lo que el reporte necesita, acotable por calzada |
 | `reporte_calibracion_pdf.py` | Reporte de calibración en PDF para presentar a la empresa |
 | `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
@@ -309,6 +310,52 @@ calzada cercana miden 65–90 px y los `truck` grandes también; YOLO no los
 distingue de forma fiable. Separar C de T-S necesitaría el **ancho** de la
 caja (un tractocamión es mucho más largo), y `crossings` hoy solo guarda
 `bbox_height`.
+
+#### Ya se probó un modelo de visión para las clases finas, y NO sirve
+
+La idea era razonable: COCO no tiene clase "pickup", así que un modelo de
+visión podría responder en la taxonomía SCT. Está probado con
+`llama-3.2-11b-vision-instruct` sobre recortes reales de la línea de conteo.
+
+```bash
+python tools/probar_clasificador_visual.py --proyecto 2 \
+    --zona "Calzada oriente" --hora 07 --min-alto 45 --n 40
+```
+
+**A mediodía dio 36 de 36** en la taxonomía SCT, incluida la distinción
+autobús / camión / tractocamión que YOLO no puede hacer. Prometedor.
+
+**A las 07:00 dio 28 de 40.** No generalizó. Sobre 40 pesados:
+
+| lo que es | lo que dijo |
+|---|---|
+| 4 autobuses blancos | MOTO |
+| 3 autobuses blancos | AUTO |
+| 2 camiones de caja | MOTO |
+| 3 cajas de tráiler | MOTO o PICKUP |
+
+**12 de 40 vehículos pesados quedaron como livianos.** Un tráiler contado
+como pickup cambia la clase del entregable, no es un matiz.
+
+El patrón: **falla con vehículos blancos y grandes**. A las 07:00 el sol
+está bajo y de frente; esos autobuses y cajas salen lavados.
+
+Comparado contra la regla del alto, sobre la misma muestra:
+
+| | aciertos liviano/pesado |
+|---|---|
+| Modelo de visión | 28 / 40 (70 %) |
+| **Regla del alto** | **38 / 40 (95 %)** |
+
+La regla solo falla en dos casos frontera, una SUV de 53 px y una pickup de
+54 px, justo encima del umbral de 52.1. De 56 px en adelante acierta los 32.
+
+**La regla simple le gana al modelo avanzado, y le gana en hora pico.**
+
+**Lección de método: una sola condición de luz no valida nada.** El 36/36
+del mediodía llevaba a construir sobre arena; solo probarlo en otra hora lo
+descubrió. Cualquier prueba de este proyecto que se haga sobre una sola
+franja horaria hay que repetirla en otra antes de creerla.
 
 #### Verificado mirando los vehículos, no solo los totales
 
@@ -475,8 +522,11 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
    armado. El contador de ejes trae su propia tabla de velocidad por
    intervalo para contrastar.
 5. **Separar autobús de camión.** Hoy se entrega liviano contra pesado.
-   Distinguir C de T-S exige guardar también el **ancho** de la caja — un
-   tractocamión es mucho más largo — y reprocesar.
+   El modelo de visión ya se probó y no sirve con esta cámara (ver arriba).
+   Queda el **ancho** de la caja, que hay que guardar y reprocesar; medido,
+   el ancho separa bien autobús de automóvil (171–218 px contra 73–90) pero
+   **no** autobús de camión, que se solapan. Con esta cámara el techo real
+   es liviano / pesado / moto.
 
 Sin empezar: IA visual e IA validadora con las APIs gratuitas de NVIDIA. El
 cliente NVIDIA (`src/ai/nvidia_client.py`) ya está construido y verificado,
