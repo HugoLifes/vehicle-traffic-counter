@@ -94,9 +94,18 @@ export function EscenaFlujo({ lanes }: Props) {
       sol.position.set(18, 30, 20);
       escena.add(sol);
 
+      /* Las categorías de la empresa van primero porque son las que llegan
+         hoy del backend. Las de COCO se quedan porque la cámara en vivo
+         todavía las emite sin pasar por la traducción — y sin ellas esta
+         escena pintaba TODO de gris, que es lo que pasaba antes de este
+         arreglo: los datos venían como A y PESADO, no había entrada para
+         esas claves y cada vehículo caía al color de reserva. */
       const colores = {
         calzada: leerColor('--surface-2', '#e7ecf1'),
         marca: leerColor('--border-strong', '#7d8b9c'),
+        A: leerColor('--veh-A', '#1d54b3'),
+        PESADO: leerColor('--veh-PESADO', '#9a5a12'),
+        SIN_RESOLVER: leerColor('--veh-SIN_RESOLVER', '#6b7280'),
         car: leerColor('--veh-car', '#1d54b3'),
         truck: leerColor('--veh-truck', '#9a5a12'),
         bus: leerColor('--veh-bus', '#6b34a1'),
@@ -121,10 +130,13 @@ export function EscenaFlujo({ lanes }: Props) {
           return malla;
         };
 
+        // PESADO es la categoría que llega hoy; cubre autobús y camión, que
+        // el sistema no separa a esta distancia. Se dibuja con silueta de
+        // camión porque es la más reconocible de las dos.
         if (tipo === 'bus') {
           g.add(caja(1.5, 1.5, 4.6, 0.95));
           g.add(caja(1.52, 0.45, 4.0, 1.35, matOscuro)); // franja de ventanas
-        } else if (tipo === 'truck') {
+        } else if (tipo === 'truck' || tipo === 'PESADO') {
           g.add(caja(1.5, 1.2, 1.5, 0.85)); // cabina
           const cama = caja(1.6, 1.5, 3.0, 1.0, matOscuro);
           cama.position.z = 2.2;
