@@ -165,7 +165,6 @@ se podía contestar de otro modo:
 | `comparar_aforo_real.py` | Contrastar contra el aforo real de campo (conteo manual o tubo) |
 | `validar_clasificacion.py` | Validar la clasificación vehicular contra el conteo manual |
 | `hoja_clases.py` | Ver los vehículos recortados con lo que el sistema dice de cada uno |
-| `probar_clasificador_visual.py` | Contrastar un modelo de visión contra recortes revisados a ojo |
 | `exportar_comparacion.py` | Sacar a JSON todo lo que el reporte necesita, acotable por calzada |
 | `reporte_calibracion_pdf.py` | Reporte de calibración en PDF para presentar a la empresa |
 | `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
@@ -315,12 +314,10 @@ caja (un tractocamión es mucho más largo), y `crossings` hoy solo guarda
 
 La idea era razonable: COCO no tiene clase "pickup", así que un modelo de
 visión podría responder en la taxonomía SCT. Está probado con
-`llama-3.2-11b-vision-instruct` sobre recortes reales de la línea de conteo.
-
-```bash
-python tools/probar_clasificador_visual.py --proyecto 2 \
-    --zona "Calzada oriente" --hora 07 --min-alto 45 --n 40
-```
+`llama-3.2-11b-vision-instruct` (API de NVIDIA, nunca se descargó al
+Jetson) sobre recortes reales de la línea de conteo. La herramienta de la
+prueba se retiró del repo al descartarse; queda en el historial de git
+(commit 3427af7) por si hiciera falta repetirla con otra cámara.
 
 **A mediodía dio 36 de 36** en la taxonomía SCT, incluida la distinción
 autobús / camión / tractocamión que YOLO no puede hacer. Prometedor.
