@@ -179,7 +179,8 @@ def _voto(modelo, pts, roi, razon):
 
 
 def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
-                 tolerancia=1.2, tamano=(0.6, 1.6), firmas=None, color=None):
+                 tolerancia=1.2, tamano=(0.6, 1.6), firmas=None, color=None,
+                 detenido=None):
     """
     Origen-destino con accesos DIBUJADOS, usando el mismo motor que la
     plataforma (src/engine/origen_destino.py) en vez de la agrupación
@@ -224,9 +225,10 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
     lista_uniones = []
     cadenas = unir_pedazos(objetos, datos['fps'], max_hueco_s=hueco, tolerancia=tolerancia,
                            rango_tamano=tamano, uniones=lista_uniones,
-                           max_delta_color=color)
+                           max_delta_color=color, hueco_detenido_s=detenido)
     print(f"Unión de pedazos: hueco <= {hueco} s, tolerancia {tolerancia} altos, "
-          f"tamaño {tamano[0]}-{tamano[1]}, color {color if color else 'sin usar'}")
+          f"tamaño {tamano[0]}-{tamano[1]}, color {color if color else 'sin usar'}, "
+          f"detenidos {str(detenido) + ' s' if detenido else 'sin usar'}")
     matriz = defaultdict(Counter)
     por_clase = defaultdict(Counter)
     estado = Counter()
@@ -344,6 +346,9 @@ def main():
                     help='JSON de tools/firmas_color.py con el color de cada rastro')
     ap.add_argument('--color', type=float, default=None,
                     help='diferencia de color máxima (Lab) para unir dos pedazos')
+    ap.add_argument('--detenido', type=float, default=None,
+                    help='segundos de hueco permitidos a un vehículo quieto que reaparece '
+                         'en el mismo punto (fila del semáforo)')
     ap.add_argument('--sin-unir', action='store_true')
     ap.add_argument('--salida', default=None)
     args = ap.parse_args()
@@ -355,7 +360,7 @@ def main():
         modo_accesos(datos, rastros, args.accesos, args.json,
                      args.salida or args.json.replace('.json', '__accesos.png'),
                      hueco=args.hueco, tolerancia=args.tolerancia,
-                     tamano=tuple(args.tamano), color=args.color,
+                     tamano=tuple(args.tamano), color=args.color, detenido=args.detenido,
                      firmas=json.load(open(args.firmas, encoding='utf-8')) if args.firmas else None)
         return
 

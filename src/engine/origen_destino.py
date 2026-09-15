@@ -198,7 +198,8 @@ def unir_pedazos(rastros: List[Rastro], fps: float,
                  max_hueco_s: float = HUECO_MAX_S, tolerancia: float = TOLERANCIA_ALTOS,
                  rango_tamano: Tuple[float, float] = RANGO_TAMANO,
                  uniones: Optional[List] = None,
-                 max_delta_color: Optional[float] = None) -> List[List[Rastro]]:
+                 max_delta_color: Optional[float] = None,
+                 hueco_detenido_s: Optional[float] = None) -> List[List[Rastro]]:
     """
     Encadena rastros sin destino con rastros sin origen que nacen poco
     después donde el primero habría llegado.
@@ -214,6 +215,14 @@ def unir_pedazos(rastros: List[Rastro], fps: float,
     info = {r.id: recorrido(r.puntos) for r in rastros}
     sin_destino = [r for r in rastros if info[r.id][1] is None and len(r.puntos) >= 2]
     hueco = max(1, int(max_hueco_s * fps))
+    # Vehículo DETENIDO (formado en la fila del semáforo): otro lo tapa más
+    # de un segundo y reaparece en el mismo sitio cuando la fila avanza. En
+    # Blvd Ind casi todos los rastros sin destino morían dentro de los
+    # accesos, no en el centro. Se le permite un hueco más largo, pero solo
+    # si el nuevo nace casi en el mismo punto: en una fila el vehículo de
+    # atrás avanza al menos un largo de auto, así que 0.35 altos de caja
+    # separa "el mismo, reapareciendo" de "el siguiente, que tomó su lugar".
+    hueco_detenido = int(hueco_detenido_s * fps) if hueco_detenido_s else 0
 
     def velocidad(puntos):
         k = min(len(puntos) - 1, 4)
@@ -236,13 +245,26 @@ def unir_pedazos(rastros: List[Rastro], fps: float,
             fb, xb, yb, _, acc_b = b.puntos[0]
             hb = _alto_de_extremo(b.puntos, al_final=False)
             dt = fb - fa
-            if not 0 < dt <= hueco:
+            if dt <= 0:
+                continue
+            # Quieto: se mueve menos del 15 % de su alto por segundo.
+            detenido = rapidez_a * fps <= 0.15 * ha
+            largo = dt > hueco
+            if largo and not (detenido and dt <= hueco_detenido):
                 continue
             if acc_b is not None and acc_b != acc_a:
                 continue       # nace dentro de OTRO acceso: es un origen legítimo
             if not rango_tamano[0] <= hb / max(ha, 1) <= rango_tamano[1]:
                 continue
             escala = max(ha, hb, 1)
+            if largo:
+                cerca = math.hypot(xb - xa, yb - ya)
+                if cerca > 0.35 * escala:
+                    continue
+                # Sin dirección que comparar (estaba quieto); el costo va por
+                # encima de cualquier unión normal para no robarle su pareja.
+                pares.append((a.id, b.id, 1.0 + cerca / (0.35 * escala) + dt / hueco_detenido))
+                continue
             ex, ey = xa + vx * dt, ya + vy * dt
             dist = min(math.hypot(xb - ex, yb - ey), math.hypot(xb - xa, yb - ya))
             # La incertidumbre crece con el hueco: en una vuelta la
