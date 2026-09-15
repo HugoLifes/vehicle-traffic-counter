@@ -69,12 +69,18 @@ class _RastreadorUltralytics:
         with open(os.path.join(base, f'{tipo}.yaml'), encoding='utf-8') as fh:
             opciones = types.SimpleNamespace(**yaml.safe_load(fh))
         if tipo == 'bytetrack':
-            from ultralytics.trackers.byte_tracker import BYTETracker
-            self._t = BYTETracker(opciones, frame_rate=int(round(fps)))
+            from ultralytics.trackers.byte_tracker import BYTETracker as clase
         else:
-            from ultralytics.trackers.bot_sort import BOTSORT
+            from ultralytics.trackers.bot_sort import BOTSORT as clase
             opciones.with_reid = False
-            self._t = BOTSORT(opciones, frame_rate=int(round(fps)))
+        # La firma cambió entre versiones de ultralytics: antes recibía
+        # frame_rate aparte y en la 8.4 lo lee de las opciones. Se dan las
+        # dos formas para no depender de la versión del contenedor.
+        opciones.frame_rate = int(round(fps))
+        try:
+            self._t = clase(opciones, frame_rate=opciones.frame_rate)
+        except TypeError:
+            self._t = clase(opciones)
         self.umbral_bajo = getattr(opciones, 'track_low_thresh', 0.1)
 
     def update(self, dets, frame):
