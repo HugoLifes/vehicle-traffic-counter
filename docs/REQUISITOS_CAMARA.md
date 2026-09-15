@@ -123,6 +123,40 @@ de 20:00 a 05:00 no hay nada que contar.
 dibujan una vez sobre el cuadro; si la cámara se mueve, dejan de
 corresponder con la vía y el conteo se descalabra sin dar error.
 
+## Lo que enseñaron los primeros aforos direccionales (sep 2026)
+
+Cinco aforos de la empresa, dos contrastados contra su conteo manual. Cada
+punto de aquí costó un resultado malo.
+
+**En un paso a desnivel, una sola cámara no alcanza.** Blvd Independencia
+tiene el bulevar elevado: el puente tapa las calles laterales del otro
+lado. Desde una esquina, el vehículo que va a la lateral del fondo y el que
+sigue derecho por la calle que cruza desaparecen igual, bajo el puente, y
+no hay forma de separar los cuatro accesos. Resultado contra el conteo
+manual: 2 de 15 movimientos aceptables. **Ahí hacen falta dos cámaras, una
+a cada lado del puente, o una vista elevada que vea las cuatro esquinas.**
+
+**Nada entre la cámara y la vía.** En Entrada y salida Altozano un letrero
+de peatones tapa la calle del arco, y casi todos los vehículos que el
+sistema no pudo seguir se perdían justo detrás de él. Postes, letreros y
+ramas en el cuadro cuestan movimientos.
+
+**La carcasa o el visor fuera del cuadro.** En Fraccionamientos la carcasa
+tapa cerca de un tercio de la imagen. Se revisa en el minuto de prueba.
+
+**Revisar el arranque de la grabación.** Un video de Blvd Ind empieza con el
+lente tapado mientras se instalaba la cámara: ese tramo no sirve.
+
+**Fecha y hora en la imagen y en el nombre del archivo.** La plataforma saca
+la hora del nombre (`07-26-25_2a.mkv`) pero no la fecha; la fecha se toma
+del letrero de la imagen y se captura al subir. Si la cámara no la muestra,
+anotarla junto con el aforo.
+
+**Lo que sí funciona hoy.** Donde domina un movimiento y los vehículos se
+ven de cerca, como la salida del fraccionamiento Altozano, el movimiento
+principal quedó en 88 % del conteo manual y dentro del criterio de
+aceptación. Los movimientos chicos todavía se pierden.
+
 ## Antes de grabar el día completo: un minuto de prueba
 
 **Esta es la recomendación que más tiempo ahorra.** Que graben **un minuto**
@@ -130,15 +164,20 @@ con la cámara ya montada en su posición definitiva y lo manden. En ese
 minuto se puede medir, con las herramientas que ya existen:
 
 ```bash
-python tools/inspeccionar.py --job N --banda      # ¿se ven los vehículos?
-python tools/trayectorias.py --job N --minutos 1  # ¿se siguen de extremo a extremo?
+# ¿Qué tan grandes se ven los vehículos, y la imagen está nítida?
+python tools/calidad_video.py data/od/videos/PRUEBA --salida data/od/calidad
+# ¿Se siguen de extremo a extremo? Dónde nacen y mueren los rastros
+python tools/extraer_trayectorias.py --video PRUEBA.mkv --rastreador bytetrack --minutos 1
+python tools/analizar_od.py data/od/tray/PRUEBA__bytetrack.json
 ```
 
 De ahí sale, antes de comprometer 24 horas de grabación:
 
 - el alto real del vehículo en píxeles, en cada acceso;
 - si el rastreador mantiene el identificador a lo largo de la intersección;
-- si los cuatro accesos caben con margen.
+- si los cuatro accesos caben con margen;
+- si algo del cuadro (un letrero, la carcasa, un puente) tapa por dónde
+  entran o salen los vehículos.
 
 El aforo de Miguel de la Madrid costó procesar 135 videos para descubrir que
 11 de las 24 horas no eran medibles. Un minuto de prueba lo habría dicho

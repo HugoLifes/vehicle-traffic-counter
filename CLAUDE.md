@@ -727,6 +727,50 @@ cámara, sin saber qué brazo del croquis era cada uno.** Antes de afinar
 nada más hay que establecer la orientación de la cámara sobre la foto
 satelital y dibujar un acceso por brazo.
 
+**Probar accesos ya no cuesta GPU.** Se extrajeron detecciones y rastros de
+los 8 videos de Blvd Ind con la franja de producción (`extraer_trayectorias
+--guardar-detecciones --banda 338 720`) y `tools/probar_accesos_od.py`
+reproduce a producción sobre ellos: dio **exactamente los mismos 2 754
+completos** que la plataforma (2 107 incompletos contra 2 067). Cada dibujo
+de accesos se contrasta contra el Excel en minutos.
+
+**No fue la orientación.** Con la cámara vista del puente de frente y la
+calle norte-sur pasando por debajo solo caben dos orientaciones, y las dos
+fallan igual: 1 y 2 de 15 movimientos con GEH < 5. Movimientos enteros en
+cero en ambas (ningún vehículo registraba origen en los accesos de abajo).
+
+`tools/mapa_extremos_od.py` pinta, sobre los 80 minutos, dónde nacen y
+mueren los rastros ya unidos. Enseñó tres errores del dibujo:
+
+1. Una **rampa** hacia el bulevar elevado (diagonal a la esquina superior
+   derecha) quedaba dentro del acceso "Derecha": 848 rastros morían ahí sin
+   haber salido de su acceso.
+2. "Bajo puente" era demasiado alto: nacían en su parte baja y morían en la
+   alta sin salir de él.
+3. Los vehículos del lado de la cámara **aparecen a media imagen**
+   (y 560–640), por encima de los accesos de abajo: sin origen.
+
+Detalle del material: el video de 16:34 empieza con **el lente tapado**
+(ropa del instalador); tiene 511 rastros contra ~2 400 de los demás. La
+comparación empieza a las 16:45 y no lo usa.
+
+Corregir esos tres errores **empeoró** el resultado (accesos v4: 43 % de
+completos contra 51 %, 2 281 incompletos): con "Bajo puente" delgado los
+vehículos que salen de debajo del puente dejaron de registrar origen y
+aparecieron 1 089 movimientos falsos "Cerca → Abajo". Cada arreglo del
+dibujo abría otro hueco.
+
+**Conclusión: Blvd Independencia no se puede aforar direccionalmente con
+esta cámara, y no es un problema de software.** Es un paso a desnivel: el
+puente tapa las laterales del otro lado del bulevar, así que desde una
+esquina un vehículo que va a la lateral del fondo y uno que sigue por la
+calle norte-sur desaparecen igual, bajo el puente. Ningún dibujo de accesos
+separa los cuatro brazos; por eso el emparejamiento nunca tuvo sentido
+geométrico. Hacen falta dos cámaras (una a cada lado del puente) o una
+vista elevada que vea las cuatro esquinas. **No seguir afinando accesos
+sobre este material.** El proyecto 4 queda con los accesos v2, que fueron
+los menos malos.
+
 ### Cómo decide la plataforma
 
 `src/engine/origen_destino.py`. Cada brazo es una zona de tipo `acceso`;
