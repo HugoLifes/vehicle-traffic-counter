@@ -180,7 +180,7 @@ def _voto(modelo, pts, roi, razon):
 
 def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
                  tolerancia=1.2, tamano=(0.6, 1.6), firmas=None, color=None,
-                 detenido=None):
+                 detenido=None, filtro_despues=False):
     """
     Origen-destino con accesos DIBUJADOS, usando el mismo motor que la
     plataforma (src/engine/origen_destino.py) en vez de la agrupación
@@ -195,7 +195,8 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
     nacen los que no tienen origen (+ verde): donde se amontonan hay algo que
     tapa la vía — un letrero, un poste, un vehículo estacionado.
     """
-    from src.engine.origen_destino import Rastro, acceso_de_punto, recorrido, unir_pedazos
+    from src.engine.origen_destino import (Rastro, acceso_de_punto, recorrido, se_movio,
+                                           unir_pedazos)
 
     with open(ruta_accesos, encoding='utf-8') as fh:
         definidos = json.load(fh)
@@ -216,6 +217,11 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
             o.colores = [tuple(c) for c in firmas[r['id']]['ini']] + \
                         [tuple(c) for c in firmas[r['id']]['fin']]
         objetos.append(o)
+
+    if filtro_despues:
+        # Igual que el motor de producción (AforoDireccional.cerrar): los
+        # pedazos que no se movieron no entran a la unión.
+        objetos = [o for o in objetos if se_movio(o.puntos)]
 
     antes = Counter()
     for o in objetos:
@@ -243,6 +249,9 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
         if org is None and dst is None:
             estado['nunca pisó un acceso'] += 1
             continue
+        if filtro_despues and (org is None or dst is None) and not se_movio(puntos):
+            estado['quieto (estacionado)'] += 1
+            continue
         if org is not None and dst is not None:
             estado['completo'] += 1
             matriz[org][dst] += 1
@@ -262,9 +271,11 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
     print(f"Antes de unir: {dict(antes)}")
     print(f"Cadenas unidas: {unidos}")
     print(f"Vehículos que pisaron algún acceso: {vistos}")
-    for k in ('completo', 'sin destino', 'sin origen', 'nunca pisó un acceso'):
+    for k in ('completo', 'sin destino', 'sin origen', 'nunca pisó un acceso',
+              'quieto (estacionado)'):
         v = estado[k]
-        pct = f" ({100 * v / vistos:.0f} %)" if vistos and k != 'nunca pisó un acceso' else ''
+        pct = (f" ({100 * v / vistos:.0f} %)"
+               if vistos and k not in ('nunca pisó un acceso', 'quieto (estacionado)') else '')
         print(f"  {k:<22} {v}{pct}")
     print('\nMatriz origen (fila) -> destino (columna):')
     ids = [a['id'] for a in accesos]
@@ -346,6 +357,9 @@ def main():
                     help='JSON de tools/firmas_color.py con el color de cada rastro')
     ap.add_argument('--color', type=float, default=None,
                     help='diferencia de color máxima (Lab) para unir dos pedazos')
+    ap.add_argument('--filtro-despues', action='store_true',
+                    help='como producción: conservar pedazos cortos al unir y descartar '
+                         'después las cadenas incompletas que no se movieron')
     ap.add_argument('--detenido', type=float, default=None,
                     help='segundos de hueco permitidos a un vehículo quieto que reaparece '
                          'en el mismo punto (fila del semáforo)')
@@ -353,7 +367,11 @@ def main():
     ap.add_argument('--salida', default=None)
     args = ap.parse_args()
 
-    datos, rastros = cargar(args.json, args.min_cuadros, args.min_recorrido)
+    # Con --filtro-despues se imita a producción: el motor no descarta los
+    # pedazos cortos antes de unir, sino las cadenas incompletas que no se
+    # movieron (origen_destino.se_movio) después de unir.
+    datos, rastros = cargar(args.json, args.min_cuadros,
+                            0.0 if args.filtro_despues else args.min_recorrido)
     if not rastros:
         sys.exit('Sin rastros con recorrido real')
     if args.accesos:
@@ -361,6 +379,7 @@ def main():
                      args.salida or args.json.replace('.json', '__accesos.png'),
                      hueco=args.hueco, tolerancia=args.tolerancia,
                      tamano=tuple(args.tamano), color=args.color, detenido=args.detenido,
+                     filtro_despues=args.filtro_despues,
                      firmas=json.load(open(args.firmas, encoding='utf-8')) if args.firmas else None)
         return
 

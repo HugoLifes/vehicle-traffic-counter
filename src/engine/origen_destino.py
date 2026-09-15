@@ -331,6 +331,29 @@ def unir_pedazos(rastros: List[Rastro], fps: float,
     return cadenas
 
 
+def se_movio(puntos, altos: float = 2.0) -> bool:
+    """
+    ¿El vehículo se desplazó de verdad, o estuvo estacionado?
+
+    Se mide la MAYOR distancia que alcanzó desde su primer punto, no la
+    distancia entre el primero y el último. Con la segunda, una vuelta en U
+    —sale de su acceso y vuelve al mismo— parece un auto estacionado: en el
+    cruce sintético el filtro borró 19 de 21 vueltas en U. Un estacionado
+    solo tiembla unos píxeles; una vuelta en U se aleja mucho antes de
+    regresar.
+
+    Menos de `altos` altos de caja de alejamiento no es tránsito de la
+    intersección. Se mide en altos de caja y no en píxeles para que valga
+    igual cerca y lejos de la cámara.
+    """
+    if len(puntos) < 2:
+        return False
+    alto = sorted(p[3] for p in puntos)[len(puntos) // 2]
+    x0, y0 = puntos[0][1], puntos[0][2]
+    alejamiento = max(math.hypot(p[1] - x0, p[2] - y0) for p in puntos)
+    return alejamiento >= altos * max(alto, 1)
+
+
 class AforoDireccional:
     """
     Acumula los rastros de un video y al cerrarlo entrega los movimientos.
@@ -379,13 +402,25 @@ class AforoDireccional:
                 r.puntos[-1] = (cuadro, x, y, t['bbox'][3] - t['bbox'][1], acc)
 
     def cerrar(self) -> List[Dict]:
-        rastros = [r for r in self._rastros.values() if r.puntos]
+        # Los pedazos que no se movieron (estacionados, fila que nunca avanzó)
+        # se descartan ANTES de unir. Conservarlos para la unión parecía
+        # mejor y es peor: el motor les encuentra pareja a pedazos que no son
+        # suyos. Medido con los mismos rastros y accesos:
+        #   Blvd Ind          antes 57 % completos, 20 uniones
+        #                     sin descartar 56 %, 150 uniones
+        #   Entrada Altozano  antes 71 %, 50 uniones
+        #                     sin descartar 65 %, 74 uniones
+        rastros = [r for r in self._rastros.values() if r.puntos and se_movio(r.puntos)]
         movimientos = []
         for cadena in unir_pedazos(rastros, self.fps):
             puntos = [p for r in cadena for p in r.puntos]
             origen, destino = recorrido(puntos)
             if origen is None and destino is None:
                 continue      # nunca pisó un acceso: no es tránsito de la intersección
+            if (origen is None or destino is None) and not se_movio(puntos):
+                # Incompleto y sin desplazamiento: estacionado dentro de un
+                # acceso. Contarlo inflaría los incompletos del informe.
+                continue
             clases = Counter()
             confs = []
             for r in cadena:

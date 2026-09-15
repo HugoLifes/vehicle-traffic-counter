@@ -751,6 +751,31 @@ el vehículo aparece y desaparece de verdad), ByteTrack pasó de **40 % a
 mirar dónde nacen y mueren los rastros (`analizar_od.py` pinta los
 extremos) antes de dar los accesos por buenos.
 
+**Tres ideas más que se midieron y no sirvieron, o sirvieron al revés:**
+
+1. *Unión especial para vehículos detenidos en la fila* (hueco de hasta 4 s
+   si estaba quieto y reaparece a menos de 0.35 altos). Cero efecto en los
+   dos aforos. El diagnóstico lo explicó: de los rastros sin destino de
+   Blvd Ind, 82 % mueren dentro de un acceso pero solo 1 % iba quieto.
+   Queda en el código, apagada (`hueco_detenido_s=None`).
+2. *Accesos como "puertas" angostas en la orilla.* Achicar "Derecha" de
+   x ≥ 960 a x ≥ 1100 bajó Blvd Ind de 57 % a 52 %. El acceso ancho, que
+   llega a donde el vehículo de verdad aparece, es mejor.
+3. *Conservar los pedazos cortos para la unión* (el motor de producción lo
+   hacía): peor. Blvd Ind 56 % con 150 uniones contra 57 % con 20;
+   Altozano 65 % contra 71 %. Los pedazos de vehículos estacionados o en
+   fila encuentran pareja donde no deben. Ahora `AforoDireccional.cerrar`
+   descarta los pedazos que no se movieron ANTES de unir, y también las
+   cadenas incompletas que no se movieron después.
+   `analizar_od.py --filtro-despues` reproduce exactamente a producción.
+
+   **Cuidado con cómo se mide "se movió".** La primera versión usaba la
+   distancia entre el primer y el último punto, y borró **19 de 21 vueltas
+   en U** del cruce sintético: el vehículo sale de su acceso y vuelve al
+   mismo, así que esa distancia es casi cero. `se_movio` usa el mayor
+   alejamiento desde el primer punto (2 altos de caja): un estacionado solo
+   tiembla, una vuelta en U se aleja antes de regresar.
+
 **Se probó filtrar las uniones por color y NO se activa.** Idea razonable:
 las uniones malas de Blvd Ind eran de colores obviamente distintos. Firma
 Lab del centro de la caja, mediana de 5 muestras por extremo
