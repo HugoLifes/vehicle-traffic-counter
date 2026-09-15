@@ -384,7 +384,8 @@ def _hoja_metodo(wb: Workbook, d: Dict):
         ("", ""),
         ("Método", "Detección automática por visión computacional"),
         ("Modelo", "YOLOv8s, umbral de confianza 0.25 (PT-914 del IMT)"),
-        ("Conteo", "Cruce de línea con atribución por calzada"),
+        ("Conteo", "Cruce de línea con atribución por calzada" if d["sentidos"]
+                   else "Origen-destino por zonas de acceso"),
         ("", ""),
         ("Celdas vacías", "Sin medición en ese periodo. NO significa cero "
                           "vehículos: significa que no se grabó, o que se "
@@ -417,20 +418,138 @@ def _hoja_metodo(wb: Workbook, d: Dict):
                    end_row=len(filas) + 6, end_column=2)
 
 
+_CLASE_OD = {"car": "Automóvil", "motorcycle": "Motocicleta", "bus": "Autobús",
+             "truck": "Camión o camioneta"}
+
+
+def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
+    """
+    Aforo direccional: cuántos vehículos hicieron cada movimiento.
+
+    Tres bloques, de lo general a lo detallado: la matriz origen-destino del
+    estudio completo, los movimientos por cuarto de hora (de donde sale la
+    hora pico de cada vuelta) y la mezcla de vehículos por movimiento.
+
+    Los incompletos —vehículos de los que se vio el origen pero no el
+    destino, o al revés— se declaran aparte y NO se reparten: repartirlos
+    sería suponer que iban a donde van los demás, que es justo lo que el
+    aforo tiene que medir. Devuelve cuántos movimientos completos escribió.
+    """
+    od = traffic_db.get_matriz_od(project_id, 15)
+    movs = od["movimientos"]
+    if not movs and not od["incompletos"]:
+        return 0
+    nombre = {int(k): v for k, v in od["accesos"].items()}
+    accesos = sorted(nombre, key=lambda i: nombre[i])
+
+    ws = wb.create_sheet("DIRECCIONAL")
+    ws.sheet_view.showGridLines = False
+    _celda(ws, 1, 1, "AFORO DIRECCIONAL (ORIGEN - DESTINO)", _TITULO, borde=False)
+    _celda(ws, 2, 1, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 2, 2, proyecto["name"], _NORMAL, alineacion=_IZQ, borde=False)
+    _celda(ws, 3, 1, "ESTACION No.", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 3, 2, proyecto["id"], _NORMAL, alineacion=_IZQ, borde=False)
+
+    # 1. Matriz del estudio completo.
+    total_od = defaultdict(int)
+    for m in movs:
+        total_od[(m["origen_id"], m["destino_id"])] += m["total"]
+    fila = 5
+    _celda(ws, fila, 1, "MATRIZ ORIGEN - DESTINO (TODO EL ESTUDIO)", _SUBTITULO, _AZUL)
+    ws.merge_cells(start_row=fila, start_column=1, end_row=fila,
+                   end_column=len(accesos) + 2)
+    fila += 1
+    _celda(ws, fila, 1, "ORIGEN \\ DESTINO", _CABECERA, _GRIS)
+    for j, dst in enumerate(accesos):
+        _celda(ws, fila, 2 + j, nombre[dst], _CABECERA, _GRIS)
+    _celda(ws, fila, 2 + len(accesos), "TOTAL", _CABECERA, _GRIS)
+    for org in accesos:
+        fila += 1
+        _celda(ws, fila, 1, nombre[org], _CABECERA, _GRIS)
+        for j, dst in enumerate(accesos):
+            _celda(ws, fila, 2 + j, total_od.get((org, dst), 0))
+        _celda(ws, fila, 2 + len(accesos),
+               sum(total_od.get((org, d), 0) for d in accesos), _CABECERA, _GRIS)
+    fila += 1
+    _celda(ws, fila, 1, "TOTAL", _CABECERA, _GRIS)
+    for j, dst in enumerate(accesos):
+        _celda(ws, fila, 2 + j, sum(total_od.get((o, dst), 0) for o in accesos),
+               _CABECERA, _GRIS)
+    _celda(ws, fila, 2 + len(accesos), sum(total_od.values()), _CABECERA, _GRIS)
+
+    incompletos = sum(i["total"] for i in od["incompletos"])
+    fila += 1
+    nota = ws.cell(fila, 1,
+                   f"Además, {incompletos} vehículos con movimiento incompleto (se vio su "
+                   "origen o su destino, no ambos). No se reparten entre los movimientos.")
+    nota.font = Font(size=9, italic=True, color="9C2F26")
+
+    # 2. Por cuarto de hora, una columna por movimiento con tránsito.
+    movimientos = sorted((k for k, v in total_od.items() if v),
+                         key=lambda k: (nombre.get(k[0], ""), nombre.get(k[1], "")))
+    por_intervalo = defaultdict(lambda: defaultdict(int))
+    for m in movs:
+        por_intervalo[m["intervalo"]][(m["origen_id"], m["destino_id"])] += m["total"]
+    fila += 3
+    _celda(ws, fila, 1, "MOVIMIENTOS POR CUARTO DE HORA", _SUBTITULO, _AZUL)
+    ws.merge_cells(start_row=fila, start_column=1, end_row=fila,
+                   end_column=len(movimientos) + 2)
+    fila += 1
+    _celda(ws, fila, 1, "INTERVALO", _CABECERA, _GRIS)
+    for j, (o, dd) in enumerate(movimientos):
+        _celda(ws, fila, 2 + j, f"{nombre.get(o, o)} → {nombre.get(dd, dd)}", _CABECERA, _GRIS)
+        ws.column_dimensions[get_column_letter(2 + j)].width = 16
+    _celda(ws, fila, 2 + len(movimientos), "TOTAL", _CABECERA, _GRIS)
+    for intervalo in sorted(por_intervalo):
+        fila += 1
+        _celda(ws, fila, 1, intervalo, _NORMAL)
+        for j, k in enumerate(movimientos):
+            _celda(ws, fila, 2 + j, por_intervalo[intervalo].get(k, 0))
+        _celda(ws, fila, 2 + len(movimientos), sum(por_intervalo[intervalo].values()),
+               _CABECERA, _GRIS)
+
+    # 3. Mezcla de vehículos por movimiento.
+    clases = sorted({m["vehicle_type"] for m in movs})
+    por_clase = defaultdict(lambda: defaultdict(int))
+    for m in movs:
+        por_clase[(m["origen_id"], m["destino_id"])][m["vehicle_type"]] += m["total"]
+    fila += 3
+    _celda(ws, fila, 1, "VEHICULOS POR MOVIMIENTO", _SUBTITULO, _AZUL)
+    ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=len(clases) + 2)
+    fila += 1
+    _celda(ws, fila, 1, "MOVIMIENTO", _CABECERA, _GRIS)
+    for j, c in enumerate(clases):
+        _celda(ws, fila, 2 + j, _CLASE_OD.get(c, c), _CABECERA, _GRIS)
+    _celda(ws, fila, 2 + len(clases), "TOTAL", _CABECERA, _GRIS)
+    for k in movimientos:
+        fila += 1
+        _celda(ws, fila, 1, f"{nombre.get(k[0], k[0])} → {nombre.get(k[1], k[1])}", _NORMAL)
+        for j, c in enumerate(clases):
+            _celda(ws, fila, 2 + j, por_clase[k].get(c, 0))
+        _celda(ws, fila, 2 + len(clases), total_od[k], _CABECERA, _GRIS)
+
+    ws.column_dimensions["A"].width = 26
+    return sum(total_od.values())
+
+
 def generar(project_id: int, ruta: str) -> Dict:
     """Escribe el Excel y devuelve un resumen de lo que contiene."""
     d = _datos(project_id)
     wb = Workbook()
     wb.remove(wb.active)
 
-    if not d["sentidos"]:
+    # Un proyecto puede tener solo aforo por línea, solo direccional, o
+    # ambos. Las hojas de sentidos salen si hay cruces; la direccional, si
+    # hay movimientos.
+    if d["sentidos"]:
+        _hoja_totales(wb, d)
+        _hoja_cuartos(wb, d)
+    direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
+    if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:
         raise ValueError(
             "Este proyecto todavía no tiene conteos. Procesa los videos antes "
             "de generar el informe."
         )
-
-    _hoja_totales(wb, d)
-    _hoja_cuartos(wb, d)
     _hoja_metodo(wb, d)
     wb.save(ruta)
 

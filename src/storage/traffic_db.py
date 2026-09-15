@@ -13,6 +13,8 @@ import json
 import logging
 import sqlite3
 import threading
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -172,6 +174,33 @@ def init_schema():
     #
     # Nulo = cuenta todo lo que la cruce, como antes.
     _ensure_column(conn, "lane_configs", "zone_id", "INTEGER")
+
+    # Aforo direccional: un renglón por vehículo con su acceso de origen y
+    # de destino. Va en tabla aparte y no en `crossings` porque no es un
+    # cruce de línea: se decide al cerrar el video, cuando ya se pudieron
+    # unir los pedazos de rastro que partió una oclusión
+    # (src/engine/origen_destino.py). Destino u origen nulos = movimiento
+    # incompleto, que se declara aparte en vez de adivinarse.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS movimientos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id),
+            job_id INTEGER REFERENCES video_jobs(id),
+            origen_id INTEGER REFERENCES zones(id),
+            destino_id INTEGER REFERENCES zones(id),
+            vehicle_type TEXT NOT NULL,
+            bbox_height INTEGER,
+            confidence REAL,
+            pedazos INTEGER NOT NULL DEFAULT 1,
+            timestamp TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_movimientos_proyecto ON movimientos(project_id, timestamp)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_movimientos_job ON movimientos(job_id)"
+    )
 
     # Registro de lo que se le ha hecho a cada intersección. Un aforo
     # sustenta decisiones de obra, así que tiene que poder responder
@@ -338,6 +367,12 @@ def delete_project(project_id: int) -> Dict:
                (SELECT id FROM lane_configs WHERE project_id = ?)""",
             (project_id,)
         ).rowcount,
+        # Antes que videos y zonas: movimientos apunta a ambos con llave
+        # foránea, y con foreign_keys activas borrarlos primero haría fallar
+        # el borrado del proyecto entero.
+        "movimientos": conn.execute(
+            "DELETE FROM movimientos WHERE project_id = ?", (project_id,)
+        ).rowcount,
         "videos": conn.execute(
             "DELETE FROM video_jobs WHERE project_id = ?", (project_id,)
         ).rowcount,
@@ -502,6 +537,76 @@ def delete_zone(zone_id: int):
 
 
 # --- Cruces / conteos --------------------------------------------------
+
+def record_movimientos(project_id: int, job_id: Optional[int],
+                       movimientos: List[Dict]) -> int:
+    """Guarda de una vez los movimientos de un video (ver tabla movimientos)."""
+    if not movimientos:
+        return 0
+    conn = get_connection()
+    conn.executemany(
+        """INSERT INTO movimientos (project_id, job_id, origen_id, destino_id,
+                                    vehicle_type, bbox_height, confidence,
+                                    pedazos, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [(project_id, job_id, m['origen_id'], m['destino_id'], m['vehicle_type'],
+          m.get('bbox_height'), m.get('confidence'), m.get('pedazos', 1),
+          m['timestamp']) for m in movimientos]
+    )
+    conn.commit()
+    return len(movimientos)
+
+
+def delete_movimientos_for_job(job_id: int) -> int:
+    """Igual que con los cruces: reprocesar un video no debe duplicar su aforo."""
+    conn = get_connection()
+    cur = conn.execute("DELETE FROM movimientos WHERE job_id = ?", (job_id,))
+    conn.commit()
+    return cur.rowcount
+
+
+def get_matriz_od(project_id: int, interval_minutes: int = 15) -> Dict:
+    """
+    Aforo direccional agregado: por intervalo, origen, destino y clase.
+
+    Devuelve también los incompletos por separado. No se reparten entre los
+    movimientos completos: hacerlo es suponer que el vehículo que se perdió
+    iba a donde van los demás, y eso es justo lo que el aforo mide.
+    """
+    conn = get_connection()
+    accesos = {z['id']: z['name'] for z in list_zones(project_id, active_only=False)
+               if z.get('kind') == 'acceso'}
+    filas = conn.execute(
+        """SELECT origen_id, destino_id, vehicle_type, timestamp
+           FROM movimientos WHERE project_id = ? ORDER BY timestamp""",
+        (project_id,)
+    ).fetchall()
+
+    def intervalo(ts):
+        d = datetime.fromisoformat(ts)
+        m = (d.hour * 60 + d.minute) // interval_minutes * interval_minutes
+        return d.strftime('%Y-%m-%d') + f' {m // 60:02d}:{m % 60:02d}'
+
+    completos, incompletos = defaultdict(int), defaultdict(int)
+    for f in filas:
+        clave_t = intervalo(f['timestamp'])
+        if f['origen_id'] is not None and f['destino_id'] is not None:
+            completos[(clave_t, f['origen_id'], f['destino_id'], f['vehicle_type'])] += 1
+        else:
+            incompletos[(clave_t, f['origen_id'], f['destino_id'])] += 1
+    return {
+        'accesos': accesos,
+        'intervalo_minutos': interval_minutes,
+        'movimientos': [
+            {'intervalo': t, 'origen_id': o, 'destino_id': d, 'vehicle_type': c, 'total': n}
+            for (t, o, d, c), n in sorted(completos.items(), key=lambda kv: str(kv[0]))
+        ],
+        'incompletos': [
+            {'intervalo': t, 'origen_id': o, 'destino_id': d, 'total': n}
+            for (t, o, d), n in sorted(incompletos.items(), key=lambda kv: str(kv[0]))
+        ],
+    }
+
 
 def record_crossing(lane_id: int, track_id: int, direction: str,
                      vehicle_type: str, confidence: float,
@@ -698,6 +803,8 @@ def update_video_job(job_id: int, **fields):
 
 def delete_video_job(job_id: int):
     conn = get_connection()
+    # movimientos.job_id es llave foránea: sin esto el borrado falla.
+    conn.execute("DELETE FROM movimientos WHERE job_id = ?", (job_id,))
     conn.execute("DELETE FROM video_jobs WHERE id = ?", (job_id,))
     conn.commit()
 

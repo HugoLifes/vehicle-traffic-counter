@@ -121,6 +121,10 @@ export default function Calibrar() {
      una calzada (3 o más). Comparten el mismo lienzo y el mismo arreglo de
      puntos porque para el usuario es el mismo gesto: marcar sobre el video. */
   const [drawKind, setDrawKind] = useState<'linea' | 'zona'>('linea');
+  /* Qué clase de zona se está dibujando. Un acceso se dibuja con el mismo
+     gesto que una calzada, pero significa otra cosa: de dónde viene y a
+     dónde va el vehículo, no en qué calzada cruzó la línea. */
+  const [zonaKind, setZonaKind] = useState<'calzada' | 'acceso'>('calzada');
   const [points, setPoints] = useState<Point[]>([]);
   const [zoneToDelete, setZoneToDelete] = useState<Zone | null>(null);
   const [newName, setNewName] = useState('');
@@ -213,11 +217,15 @@ export default function Calibrar() {
 
   async function saveZone() {
     if (points.length < 3 || !newName.trim() || projectId === null) return;
-    await createZone.mutateAsync({ name: newName.trim(), points, kind: 'calzada' });
+    await createZone.mutateAsync({ name: newName.trim(), points, kind: zonaKind });
     setPoints([]);
     setNewName('');
     setDrawKind('linea');
-    setHint('Zona guardada. Los cruces que ocurran dentro se le atribuyen a ella.');
+    setHint(
+      zonaKind === 'acceso'
+        ? 'Acceso guardado. Con dos o más, cada vehículo queda con su origen y su destino.'
+        : 'Zona guardada. Los cruces que ocurran dentro se le atribuyen a ella.',
+    );
   }
 
   function cancelarDibujo() {
@@ -231,6 +239,11 @@ export default function Calibrar() {
   const awaiting = (jobs ?? []).filter((j) => j.status === 'awaiting_calibration');
   const otrosProyectos = (projects ?? []).filter((p) => p.id !== projectId);
   const laneCount = lanes?.length ?? 0;
+  const accesoCount = zones?.filter((z) => z.kind === 'acceso').length ?? 0;
+  /* Listo para contar: una línea (aforo por sección) o dos accesos (aforo
+     direccional; con uno solo no hay movimiento posible). Misma regla que
+     routes_projects._calibrado en el backend. */
+  const calibrado = laneCount > 0 || accesoCount >= 2;
   const sinVideos = projectId !== null && !cargandoVideos && (segments?.length ?? 0) === 0;
 
   return (
@@ -383,16 +396,18 @@ export default function Calibrar() {
               <>
                 <p className="sc-info">
                   {points.length < 3
-                    ? `Marca las esquinas de la calzada sobre el video (${points.length}/3 mínimo).`
+                    ? zonaKind === 'acceso'
+                      ? `Rodea el brazo completo del acceso, con sus carriles de entrada y de salida, hasta la orilla de la imagen (${points.length}/3 mínimo).`
+                      : `Marca las esquinas de la calzada sobre el video (${points.length}/3 mínimo).`
                     : `${points.length} puntos marcados. Ponle nombre y cierra la zona.`}
                 </p>
                 {points.length >= 3 && (
                   <div className="new-lane-form rise">
                     <TextField
-                      label="Nombre de la zona"
+                      label={zonaKind === 'acceso' ? 'Nombre del acceso' : 'Nombre de la zona'}
                       ref={nameRef}
                       value={newName}
-                      placeholder="Calzada norte"
+                      placeholder={zonaKind === 'acceso' ? 'Acceso norte' : 'Calzada norte'}
                       onChange={(e) => setNewName(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -492,7 +507,7 @@ export default function Calibrar() {
                 con estas líneas o con las de antes?". Editar la geometría
                 no cambia por sí solo ningún conteo ya guardado, y sin este
                 aviso no había forma de notarlo. */}
-            {(calibStatus?.stale ?? 0) > 0 && laneCount > 0 && (
+            {(calibStatus?.stale ?? 0) > 0 && calibrado && (
               <div className="start-counting">
                 <Notice tone="warning" title="Los conteos son de una calibración anterior">
                   {plural(
@@ -518,7 +533,7 @@ export default function Calibrar() {
 
             {(calibStatus?.stale ?? 0) === 0 &&
               (calibStatus?.awaiting ?? 0) === 0 &&
-              laneCount > 0 &&
+              calibrado &&
               (jobs?.some((j) => j.status === 'done') ?? false) && (
                 <div className="start-counting">
                   <Notice tone="good" title="Los conteos están al día">
@@ -527,11 +542,12 @@ export default function Calibrar() {
                 </div>
               )}
 
-            {awaiting.length > 0 && laneCount > 0 && (
+            {awaiting.length > 0 && calibrado && (
               <div className="start-counting">
                 <p className="sc-info">
-                  {plural(awaiting.length, 'video esperando', 'videos esperando')} y{' '}
-                  {plural(laneCount, 'carril definido', 'carriles definidos')}.
+                  {plural(awaiting.length, 'video esperando', 'videos esperando')},{' '}
+                  {plural(laneCount, 'carril definido', 'carriles definidos')} y{' '}
+                  {plural(accesoCount, 'acceso', 'accesos')}.
                 </p>
                 <Button
                   variant="primary"
@@ -551,11 +567,17 @@ export default function Calibrar() {
               carriles: son cosas distintas y confundirlas es justo el
               error que llevó a dibujar líneas paralelas a la vía. */}
           <Card className="lane-panel zone-panel">
-            <h2>Zonas de calzada</h2>
+            <h2>Zonas</h2>
             <p className="sc-info">
-              La línea dice <strong>dónde</strong> se cuenta; la zona dice{' '}
+              La línea dice <strong>dónde</strong> se cuenta; la zona de calzada dice{' '}
               <strong>cuál calzada</strong> es. En perspectiva las dos calzadas quedan una encima de
               la otra y una sola línea cruza ambas — sin zonas no hay forma de separar los sentidos.
+            </p>
+            <p className="sc-info">
+              Para el <strong>aforo direccional</strong> dibuja un <strong>acceso</strong> por cada
+              brazo de la intersección. El primer acceso que pisa un vehículo es su origen y el
+              último, su destino. Cada acceso tiene que llegar hasta la orilla de la imagen, que es
+              donde el vehículo aparece por primera vez.
             </p>
 
             <div className="lane-list">
@@ -577,6 +599,7 @@ export default function Calibrar() {
                       if (name && name !== zone.name) renameZone.mutate({ zoneId: zone.id, name });
                     }}
                   />
+                  <span className="sc-info">{zone.kind === 'acceso' ? 'acceso' : zone.kind}</span>
                   <IconButton
                     label={`Eliminar la zona ${zone.name}`}
                     tone="danger"
@@ -589,20 +612,41 @@ export default function Calibrar() {
             </div>
 
             {drawKind !== 'zona' && points.length === 0 && (
-              <Button
-                block
-                disabled={!segment || fuente === 'procesado'}
-                onClick={() => {
-                  setDrawKind('zona');
-                  setDrawMode(true);
-                  setPoints([]);
-                  setWarnings([]);
-                  setNewName(`Calzada ${(zones?.length ?? 0) + 1}`);
-                  setHint('Marca las esquinas de la calzada. Con 3 puntos ya se puede cerrar.');
-                }}
-              >
-                Nueva zona
-              </Button>
+              <>
+                <Button
+                  block
+                  disabled={!segment || fuente === 'procesado'}
+                  onClick={() => {
+                    setZonaKind('calzada');
+                    setDrawKind('zona');
+                    setDrawMode(true);
+                    setPoints([]);
+                    setWarnings([]);
+                    setNewName(`Calzada ${(zones?.length ?? 0) + 1}`);
+                    setHint('Marca las esquinas de la calzada. Con 3 puntos ya se puede cerrar.');
+                  }}
+                >
+                  Nueva zona de calzada
+                </Button>
+                <Button
+                  block
+                  disabled={!segment || fuente === 'procesado'}
+                  style={{ marginTop: 'var(--space-2)' }}
+                  onClick={() => {
+                    setZonaKind('acceso');
+                    setDrawKind('zona');
+                    setDrawMode(true);
+                    setPoints([]);
+                    setWarnings([]);
+                    setNewName(`Acceso ${accesoCount + 1}`);
+                    setHint(
+                      'Rodea el brazo del acceso con sus carriles de entrada y salida, hasta la orilla de la imagen.',
+                    );
+                  }}
+                >
+                  Nuevo acceso (direccional)
+                </Button>
+              </>
             )}
           </Card>
         </div>

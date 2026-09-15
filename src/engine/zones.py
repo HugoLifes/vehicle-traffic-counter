@@ -94,7 +94,10 @@ def filter_detections(zones: List[Dict], detections: List[Dict]) -> List[Dict]:
     de exclusión. Si no hay ninguna calzada dibujada no filtra nada: un
     proyecto sin zonas tiene que seguir comportándose como antes.
     """
-    calzadas = [z for z in zones if z.get('kind') == 'calzada']
+    # Un acceso también es vía: si el proyecto tiene calzadas y accesos, lo
+    # que circula por un acceso no se puede descartar por no estar dentro de
+    # una calzada, o el aforo direccional perdería su origen o su destino.
+    calzadas = [z for z in zones if z.get('kind') in ('calzada', 'acceso')]
     excluir = [z for z in zones if z.get('kind') == 'excluir']
     if not calzadas and not excluir:
         return detections
@@ -119,7 +122,7 @@ def band_from_zones(zones: List[Dict], frame_height: int,
     describe el área completa del vehículo, no solo la línea que cruza:
     no hace falta tanto colchón para el tráiler alto.
     """
-    ys = [p[1] for z in zones if z.get('kind') == 'calzada' for p in z['points']]
+    ys = [p[1] for z in zones if z.get('kind') in ('calzada', 'acceso') for p in z['points']]
     if not ys:
         return None
     margen = max(10, int(frame_height * margin_ratio))

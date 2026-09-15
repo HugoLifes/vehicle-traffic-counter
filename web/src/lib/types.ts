@@ -114,12 +114,39 @@ export interface RagRespuesta {
   fuentes: RagFuente[];
 }
 
+/* --- Aforo direccional (origen-destino) --------------------------------- */
+
+export interface MovimientoOD {
+  intervalo: string;
+  origen_id: number;
+  destino_id: number;
+  vehicle_type: string;
+  total: number;
+}
+
+/** Vehículo del que se vio el origen o el destino, no ambos. */
+export interface IncompletoOD {
+  intervalo: string;
+  origen_id: number | null;
+  destino_id: number | null;
+  total: number;
+}
+
+export interface AforoDireccional {
+  /** id del acceso → nombre. Las llaves llegan como texto (JSON). */
+  accesos: Record<string, string>;
+  intervalo_minutos: number;
+  movimientos: MovimientoOD[];
+  incompletos: IncompletoOD[];
+}
+
 export interface Zone {
   id: number;
   project_id: number;
   name: string;
-  /** 'calzada' cuenta y atribuye; 'excluir' descarta lo que caiga dentro. */
-  kind: 'calzada' | 'excluir';
+  /** 'calzada' cuenta y atribuye; 'excluir' descarta lo que caiga dentro;
+      'acceso' es un brazo de la intersección para el aforo direccional. */
+  kind: 'calzada' | 'excluir' | 'acceso';
   /** Tres o más vértices, en píxeles del frame. */
   points: Point[];
 }

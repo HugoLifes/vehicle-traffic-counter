@@ -14,7 +14,7 @@ import { Card, EmptyState, Notice, Pill, SelectField } from '../components/ui';
 import { IconDownload, IconPrint } from '../components/Icons';
 import { CompositionChart, IntervalChart } from '../components/charts';
 import { EscenaFlujo } from '../components/EscenaFlujo';
-import { useMetrics } from '../lib/queries';
+import { useDireccional, useMetrics } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
 import {
   errorMessage,
@@ -29,7 +29,7 @@ import {
   intervalLabel,
   plural,
 } from '../lib/format';
-import type { LaneMetrics, ProjectMetrics } from '../lib/types';
+import type { AforoDireccional, LaneMetrics, ProjectMetrics } from '../lib/types';
 
 const INTERVALS = [5, 10, 15, 30, 60];
 
@@ -242,6 +242,77 @@ function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinu
 
 /* --- Página --------------------------------------------------------------- */
 
+/* --- Aforo direccional ---------------------------------------------------- */
+
+/**
+ * Matriz origen-destino: fila = acceso por el que entró, columna = acceso
+ * por el que salió. La diagonal son las vueltas en U.
+ *
+ * Los incompletos se dicen aparte y no se reparten: repartirlos sería
+ * suponer que iban a donde van los demás, que es lo que el aforo mide.
+ */
+function Direccional({ d }: { d: AforoDireccional }) {
+  const nombre = (id: number) => d.accesos[String(id)] ?? `Acceso ${id}`;
+  const accesos = Object.keys(d.accesos)
+    .map(Number)
+    .sort((a, b) => nombre(a).localeCompare(nombre(b)));
+  const total = new Map<string, number>();
+  for (const m of d.movimientos) {
+    const k = `${m.origen_id}-${m.destino_id}`;
+    total.set(k, (total.get(k) ?? 0) + m.total);
+  }
+  const celda = (o: number, x: number) => total.get(`${o}-${x}`) ?? 0;
+  const completos = [...total.values()].reduce((a, b) => a + b, 0);
+  const incompletos = d.incompletos.reduce((a, b) => a + b.total, 0);
+  const pctCompletos = completos + incompletos > 0 ? (100 * completos) / (completos + incompletos) : 0;
+
+  return (
+    <Card className="chart-card">
+      <h3>Aforo direccional</h3>
+      <p className="chart-sub">
+        {formatNumber(completos)} vehículos con origen y destino identificados (
+        {Math.round(pctCompletos)} % de los vistos). Fila: acceso por el que entró. Columna: acceso
+        por el que salió. La diagonal son vueltas en U.
+      </p>
+      <div className="table-scroll">
+        <table className="data-table">
+          <caption className="visually-hidden">Matriz origen-destino del estudio completo.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Origen \ Destino</th>
+              {accesos.map((x) => (
+                <th scope="col" key={x}>
+                  {nombre(x)}
+                </th>
+              ))}
+              <th scope="col">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accesos.map((o) => (
+              <tr key={o}>
+                <th scope="row">{nombre(o)}</th>
+                {accesos.map((x) => (
+                  <td key={x}>{formatNumber(celda(o, x))}</td>
+                ))}
+                <td>
+                  <strong>{formatNumber(accesos.reduce((s, x) => s + celda(o, x), 0))}</strong>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {incompletos > 0 && (
+        <Notice tone="warning" title={`${formatNumber(incompletos)} movimientos incompletos`}>
+          De estos vehículos se vio el origen o el destino, no ambos: los tapó otro vehículo o
+          salieron del encuadre. No se reparten entre los movimientos de la tabla.
+        </Notice>
+      )}
+    </Card>
+  );
+}
+
 export default function Reporte() {
   const { projectId, project } = useProjectParam();
   const [minutes, setMinutes] = useState<number | null>(null);
@@ -250,6 +321,8 @@ export default function Reporte() {
   // el selector solo lo cambia para esta vista, sin tocar el proyecto.
   const effective = minutes ?? project?.interval_minutes ?? 15;
   const { data: m, isLoading, isError, error } = useMetrics(projectId, effective);
+  const { data: od } = useDireccional(projectId, effective);
+  const hayDireccional = (od?.movimientos.length ?? 0) + (od?.incompletos.length ?? 0) > 0;
 
   return (
     <>
@@ -270,7 +343,7 @@ export default function Reporte() {
         {/* La exportación es lo que se entrega al cliente, así que vive
             junto al control que define qué se exporta: cambiar el
             intervalo cambia el archivo. */}
-        {projectId !== null && m && m.lanes.length > 0 && (
+        {projectId !== null && m && (m.lanes.length > 0 || hayDireccional) && (
           <div className="report-export">
             <span className="re-label">Exportar</span>
             <div className="re-actions">
@@ -313,7 +386,9 @@ export default function Reporte() {
         <Notice title="No se pudo cargar el reporte">{errorMessage(error)}</Notice>
       )}
 
-      {m && m.lanes.length === 0 && (
+      {od && hayDireccional && <Direccional d={od} />}
+
+      {m && m.lanes.length === 0 && !hayDireccional && (
         <EmptyState
           title="Esta intersección todavía no tiene carriles"
           body="Un carril es la línea que los vehículos cruzan para ser contados. Sin al menos uno, no hay nada que reportar."

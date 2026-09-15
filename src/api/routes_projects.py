@@ -198,6 +198,19 @@ def calibration_status(project_id: int):
     }
 
 
+def _calibrado(project_id: int) -> bool:
+    """
+    Un proyecto está listo para contar si tiene al menos una línea de conteo
+    (aforo por sección) o al menos dos accesos (aforo direccional: hace
+    falta un origen y un destino distintos para que exista un movimiento).
+    """
+    if traffic_db.list_lanes(project_id=project_id):
+        return True
+    accesos = [z for z in traffic_db.list_zones(project_id=project_id)
+               if z.get("kind") == "acceso"]
+    return len(accesos) >= 2
+
+
 @router.post("/{project_id}/recount")
 def recount(project_id: int):
     """
@@ -209,8 +222,8 @@ def recount(project_id: int):
     """
     if traffic_db.get_project(project_id) is None:
         raise HTTPException(404, "Proyecto no encontrado")
-    if not traffic_db.list_lanes(project_id=project_id):
-        raise HTTPException(409, "Este proyecto no tiene carriles definidos")
+    if not _calibrado(project_id):
+        raise HTTPException(409, "Este proyecto no tiene carriles ni accesos definidos")
 
     # Se reprocesan TODOS los terminados, no solo los obsoletos: si el
     # usuario pide volver a contar, lo que quiere es que el aforo completo
@@ -407,11 +420,12 @@ def start_counting(project_id: int):
         raise HTTPException(404, "Proyecto no encontrado")
 
     lanes = traffic_db.list_lanes(project_id=project_id)
-    if not lanes:
+    if not _calibrado(project_id):
         raise HTTPException(
             409,
-            "Este proyecto todavía no tiene carriles definidos. Dibuja al menos "
-            "una línea de conteo en la pestaña Calibrar antes de empezar."
+            "Este proyecto todavía no está calibrado. Dibuja al menos una línea "
+            "de conteo, o dos accesos para el aforo direccional, en la pestaña "
+            "Calibrar antes de empezar."
         )
 
     pending = traffic_db.get_awaiting_calibration_jobs(project_id)
@@ -429,3 +443,14 @@ def start_counting(project_id: int):
         f"{len(pending)} videos, con {len(lanes)} carriles calibrados",
     )
     return {"started": len(pending), "lanes": len(lanes)}
+
+
+@router.get("/{project_id}/direccional")
+def direccional(project_id: int, interval_minutes: Optional[int] = None):
+    """Aforo direccional: movimientos por intervalo, origen, destino y clase."""
+    project = traffic_db.get_project(project_id)
+    if project is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    return traffic_db.get_matriz_od(
+        project_id, interval_minutes or project.get("interval_minutes") or 15
+    )

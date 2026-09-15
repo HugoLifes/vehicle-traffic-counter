@@ -16,7 +16,10 @@ from src.storage import traffic_db
 
 router = APIRouter(prefix="/api/zones", tags=["zones"])
 
-TIPOS = ("calzada", "excluir")
+# 'acceso': brazo de la intersección para el aforo direccional. El primer
+# acceso que pisa un vehículo es su origen y el último, su destino
+# (src/engine/origen_destino.py).
+TIPOS = ("calzada", "excluir", "acceso")
 
 
 class ZoneCreate(BaseModel):

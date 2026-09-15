@@ -25,7 +25,7 @@ import type {
   RagConversacion,
   RagMensaje,
 } from './types';
-import type { EventoProyecto, FichaCamara, FuenteVideo } from './types';
+import type { AforoDireccional, EventoProyecto, FichaCamara, FuenteVideo } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -202,6 +202,9 @@ export const uploadVideos = (form: FormData) =>
 
 export const getMetrics = (projectId: number, minutes: number) =>
   request<ProjectMetrics>(`/api/videos/metrics?project_id=${projectId}&minutes=${minutes}`);
+
+export const getDireccional = (projectId: number, minutes: number) =>
+  request<AforoDireccional>(`/api/projects/${projectId}/direccional?interval_minutes=${minutes}`);
 
 export const videoUrl = (jobId: number) => `/api/videos/${jobId}/video`;
 

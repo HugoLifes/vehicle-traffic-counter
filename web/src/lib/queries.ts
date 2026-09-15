@@ -61,6 +61,14 @@ export function useMetrics(projectId: number | null, minutes: number) {
   });
 }
 
+export function useDireccional(projectId: number | null, minutes: number) {
+  return useQuery({
+    queryKey: ['direccional', projectId ?? 0, minutes],
+    queryFn: () => api.getDireccional(projectId as number, minutes),
+    enabled: projectId !== null,
+  });
+}
+
 export function useEngineState() {
   return useQuery({
     queryKey: keys.engine,

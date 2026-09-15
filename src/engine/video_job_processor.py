@@ -27,6 +27,7 @@ from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
 from src.engine.lanes import build_lane_counters
+from src.engine.origen_destino import AforoDireccional
 from src.engine.zones import (band_from_zones, draw_zones, filter_detections,
                               load_zones, zone_for_bbox)
 from src.visualizer import Visualizer
@@ -183,6 +184,7 @@ class VideoJobProcessor:
         borrados = traffic_db.delete_crossings_for_job(job_id)
         if borrados:
             logging.info(f"Reproceso: se descartaron {borrados} cruces previos del video {job_id}")
+        traffic_db.delete_movimientos_for_job(job_id)
 
         traffic_db.mark_video_job_started(job_id)
         path = job['stored_path']
@@ -218,17 +220,21 @@ class VideoJobProcessor:
                 source_label, frame_height, frame_width,
                 project_id=job.get('project_id')
             )
-            if not lane_counters:
-                raise RuntimeError(
-                    "El proyecto no tiene carriles definidos — calibra las líneas "
-                    "de conteo antes de procesar este video."
-                )
-
             # Zonas dibujadas a mano sobre la calzada. Cuando existen mandan
             # ellas: describen el área real de la vía, así que acotan mejor
             # que un rectángulo deducido de las líneas y además permiten
             # atribuir cada cruce a su calzada.
             zonas = load_zones(job.get('project_id'))
+
+            # Aforo direccional: se activa solo si hay dos accesos o más. Un
+            # proyecto puede tener líneas, accesos o ambos.
+            direccional = AforoDireccional(zonas, fps)
+
+            if not lane_counters and not direccional.activo:
+                raise RuntimeError(
+                    "El proyecto no está calibrado — dibuja las líneas de conteo, "
+                    "o dos accesos para el aforo direccional, antes de procesar este video."
+                )
 
             # La detección se limita a la franja donde está la vía. En este
             # footage la vía ocupa una fracción chica del encuadre y el resto
@@ -238,7 +244,7 @@ class VideoJobProcessor:
             band_cfg = self.config.get('detector', {}).get('band', {})
             if band_cfg.get('enabled', True):
                 banda = band_from_zones(zonas, frame_height) if zonas else None
-                if banda is None:
+                if banda is None and lane_meta:
                     banda = VehicleDetector.band_from_lanes(
                         [m['points'] for m in lane_meta.values()],
                         frame_height,
@@ -292,6 +298,7 @@ class VideoJobProcessor:
                 detections = filter_detections(zonas, detections)
                 det_en_zona += len(detections)
                 tracks = tracker.update(detections)
+                direccional.observar(frame_count, tracks)
 
                 # Hora real de este frame dentro del video (no la hora en
                 # que se está procesando el archivo) — es lo que permite
@@ -397,6 +404,23 @@ class VideoJobProcessor:
                 traffic_db.update_video_job(
                     job_id, output_video_path=str(final_path), total_frames=frame_count
                 )
+                if direccional.activo:
+                    # Se decide al final y no en vivo: solo con todos los
+                    # rastros del video a la vista se pueden unir los que
+                    # partió una oclusión.
+                    inicio = video_start_time or datetime.now()
+                    movimientos = direccional.cerrar()
+                    for m in movimientos:
+                        m['timestamp'] = (
+                            inicio + timedelta(seconds=m['cuadro_inicio'] / fps)
+                        ).strftime("%Y-%m-%d %H:%M:%S")
+                    traffic_db.record_movimientos(job.get('project_id'), job_id, movimientos)
+                    completos = sum(1 for m in movimientos if m['completo'])
+                    logging.info(
+                        f"Aforo direccional de {job['original_name']}: {completos} movimientos "
+                        f"completos, {len(movimientos) - completos} incompletos, "
+                        f"{sum(1 for m in movimientos if m['pedazos'] > 1)} rastros unidos"
+                    )
                 traffic_db.mark_video_job_finished(job_id)
                 logging.info(f"Video procesado: {job['original_name']} ({frame_count} frames)")
 
