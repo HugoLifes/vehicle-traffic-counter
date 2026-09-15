@@ -696,6 +696,37 @@ subida con hora del nombre y fecha del OSD, accesos, "Empezar conteo") y
 terminar la cola (`data/od/comparacion.log`). Primera vez que el
 direccional corre dentro de la plataforma y no en las herramientas.
 
+**Lo primero que destapó correr en producción:** `filter_detections`
+contaba los accesos como vía y, en un proyecto que solo tiene accesos,
+borraba cada detección del centro del cruce. Primer video de Blvd Ind: 14
+completos y 89 incompletos. Corregido (solo las calzadas acotan la vía),
+el siguiente video dio 423 completos y 344 incompletos (55 %), igual que
+el análisis. **Las herramientas de análisis no pasaban por ese filtro y por
+eso no lo vieron: probar el camino de producción, no solo las piezas.**
+
+### Resultado contra el conteo manual (primera medición real)
+
+*Entrada y salida Altozano*, un solo cuarto de hora comparable (7:30):
+
+| movimiento | plataforma | manual | GEH |
+|---|---|---|---|
+| 2_3 (dominante) | 222 | 252 (88 %) | 3.9 |
+| 1_3, 3_1 | 0 | 9, 10 | > 8 |
+
+El emparejamiento automático coincidió con el croquis (Arco = 2, calle
+del canal = 3). El movimiento principal pasa; los chicos se pierden. Un
+solo cuarto de hora no valida nada.
+
+*Blvd Independencia*, 4 cuartos de hora (16:45–17:45): **no pasa.**
+Completos 2 754 contra 5 374 del manual (51 %), 2 de 15 movimientos con
+GEH < 5 (el criterio pide 85 %), 2 067 incompletos en la ventana. El
+emparejamiento no tiene sentido geométrico: tres accesos dibujados cayeron
+en el 3 y ninguno en el 4, así que todo movimiento del poniente salió en
+cero. **Los accesos se dibujaron por dónde se veía pasar tránsito en la
+cámara, sin saber qué brazo del croquis era cada uno.** Antes de afinar
+nada más hay que establecer la orientación de la cámara sobre la foto
+satelital y dibujar un acceso por brazo.
+
 ### Cómo decide la plataforma
 
 `src/engine/origen_destino.py`. Cada brazo es una zona de tipo `acceso`;
