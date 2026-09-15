@@ -132,11 +132,19 @@ class Track:
         return kf
     
     def predict(self) -> np.ndarray:
-        """Predicción del siguiente estado usando Kalman Filter"""
+        """
+        Avanza el filtro de Kalman UN cuadro y devuelve la caja predicha.
+
+        Se llama una sola vez por cuadro (VehicleTracker.update). Antes se
+        llamaba dentro del doble ciclo detección × rastro: con D vehículos
+        en pantalla el filtro avanzaba D pasos por cuadro y además sumaba D
+        a miss_streak. Medido con cajas sintéticas que el detector pierde 5
+        cuadros: con 1 vehículo en pantalla no se partía ningún rastro; con
+        8, se partían los 8. El rastro se borraba por "viejo" en 30/D
+        cuadros en vez de 30, justo cuando la vía está llena.
+        """
         self.kf.predict()
-        self.age += 1
-        self.miss_streak += 1
-        
+
         # Convertir estado predicho a bbox
         x, y, w, h = self.kf.x[:4]
         predicted_bbox = [
@@ -169,6 +177,7 @@ class Track:
         self.bbox = bbox
         self.confidence = confidence
         self.hits += 1
+        self.age += 1
         self.miss_streak = 0
         
         # Actualizar trayectoria
@@ -313,7 +322,8 @@ class VehicleTracker:
     def _associate_detections_to_tracks(
         self,
         detections: List[Dict],
-        tracks: List[Track]
+        tracks: List[Track],
+        predichos: Optional[List[np.ndarray]] = None
     ) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
         """
         Asociar detecciones con tracks usando Hungarian Algorithm
@@ -331,12 +341,14 @@ class VehicleTracker:
         
         # Construir matriz de costos (basada en IoU)
         cost_matrix = np.zeros((len(detections), len(tracks)))
-        
+        if predichos is None:
+            predichos = [track.predict() for track in tracks]
+
         for d, detection in enumerate(detections):
             for t, track in enumerate(tracks):
-                # Obtener bbox predicho del track
-                predicted_bbox = track.predict()
-                
+                # Caja predicha UNA vez por cuadro (ver Track.predict)
+                predicted_bbox = predichos[t]
+
                 # Calcular IoU
                 iou = self.calculate_iou(detection['bbox'], predicted_bbox)
                 
@@ -380,10 +392,14 @@ class VehicleTracker:
             Lista de tracks confirmados con su estado actual
         """
         self.frame_count += 1
-        
+
+        # 0. Todos los rastros avanzan un cuadro, haya o no detecciones: un
+        # vehículo tapado sigue moviéndose y su predicción tiene que seguirlo.
+        predichos = [track.predict() for track in self.tracks]
+
         # 1. Asociar detecciones con tracks existentes
         matches, unmatched_detections, unmatched_tracks = \
-            self._associate_detections_to_tracks(detections, self.tracks)
+            self._associate_detections_to_tracks(detections, self.tracks, predichos)
         
         # 2. Actualizar tracks con matches
         for detection_idx, track_idx in matches:

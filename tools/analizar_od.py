@@ -33,6 +33,8 @@ from collections import Counter, defaultdict
 import cv2
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 PUNTOS_POR_EXTREMO = 7
 COLORES = [(80, 80, 255), (80, 200, 255), (80, 255, 160), (255, 200, 80),
            (255, 110, 200), (200, 120, 255), (60, 255, 255), (255, 255, 90),
@@ -176,10 +178,138 @@ def _voto(modelo, pts, roi, razon):
     return Counter(etiquetas.tolist()).most_common(1)[0][0]
 
 
+def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida):
+    """
+    Origen-destino con accesos DIBUJADOS, usando el mismo motor que la
+    plataforma (src/engine/origen_destino.py) en vez de la agrupación
+    automática.
+
+    La agrupación falla en cuanto un acceso no está en la orilla del cuadro:
+    en la entrada de Altozano los vehículos entran y salen por un arco al
+    fondo de la imagen, y los grupos se partieron en seis. Con los accesos
+    dibujados se mide lo que va a medir producción.
+
+    Marca en la imagen dónde mueren los rastros sin destino (X roja) y dónde
+    nacen los que no tienen origen (+ verde): donde se amontonan hay algo que
+    tapa la vía — un letrero, un poste, un vehículo estacionado.
+    """
+    from src.engine.origen_destino import Rastro, acceso_de_punto, recorrido, unir_pedazos
+
+    with open(ruta_accesos, encoding='utf-8') as fh:
+        definidos = json.load(fh)
+    accesos = [{'id': i + 1, 'name': a['nombre'], 'kind': 'acceso', 'points': a['puntos']}
+               for i, a in enumerate(definidos)]
+    nombre = {a['id']: a['name'] for a in accesos}
+
+    objetos = []
+    for r in rastros:
+        o = Rastro(r['id'])
+        for p in r['p']:
+            x, y = _apoyo(p)
+            o.puntos.append((p[0], x, y, p[4] - p[2], acceso_de_punto(accesos, x, y)))
+            o.confianzas.append(p[5])
+        o.clases = Counter({r['clase']: len(r['p'])})
+        objetos.append(o)
+
+    antes = Counter()
+    for o in objetos:
+        org, dst = recorrido(o.puntos)
+        antes['completo' if org and dst else 'incompleto' if org or dst else 'sin acceso'] += 1
+
+    cadenas = unir_pedazos(objetos, datos['fps'])
+    matriz = defaultdict(Counter)
+    por_clase = defaultdict(Counter)
+    estado = Counter()
+    muertes, nacimientos, color_rastro = [], [], {}
+    for cadena in cadenas:
+        puntos = [p for c in cadena for p in c.puntos]
+        org, dst = recorrido(puntos)
+        clase = Counter()
+        for c in cadena:
+            clase.update(c.clases)
+        clase = clase.most_common(1)[0][0]
+        if org is None and dst is None:
+            estado['nunca pisó un acceso'] += 1
+            continue
+        if org is not None and dst is not None:
+            estado['completo'] += 1
+            matriz[org][dst] += 1
+            por_clase[(org, dst)][clase] += 1
+        elif dst is None:
+            estado['sin destino'] += 1
+            muertes.append(puntos[-1][1:3])
+        else:
+            estado['sin origen'] += 1
+            nacimientos.append(puntos[0][1:3])
+        for c in cadena:
+            color_rastro[c.id] = (org, dst)
+
+    unidos = sum(1 for c in cadenas if len(c) > 1)
+    vistos = estado['completo'] + estado['sin destino'] + estado['sin origen']
+    print(f"\nAccesos dibujados: {', '.join(nombre.values())}")
+    print(f"Antes de unir: {dict(antes)}")
+    print(f"Cadenas unidas: {unidos}")
+    print(f"Vehículos que pisaron algún acceso: {vistos}")
+    for k in ('completo', 'sin destino', 'sin origen', 'nunca pisó un acceso'):
+        v = estado[k]
+        pct = f" ({100 * v / vistos:.0f} %)" if vistos and k != 'nunca pisó un acceso' else ''
+        print(f"  {k:<22} {v}{pct}")
+    print('\nMatriz origen (fila) -> destino (columna):')
+    ids = [a['id'] for a in accesos]
+    ancho = max(len(n) for n in nombre.values()) + 2
+    print(' ' * ancho + ''.join(f'{nombre[j][:10]:>11}' for j in ids))
+    for i in ids:
+        print(f'{nombre[i]:<{ancho}}' + ''.join(f'{matriz[i][j]:>11}' for j in ids))
+
+    base = cv2.imread(ruta_json.replace('.json', '.jpg'))
+    if base is None:
+        base = np.zeros((datos['alto'], datos['ancho'], 3), np.uint8)
+    img = base.copy()
+    capa = img.copy()
+    for k, a in enumerate(accesos):
+        pts = np.array(a['points'], np.int32)
+        cv2.fillPoly(capa, [pts], COLORES[k % len(COLORES)])
+    cv2.addWeighted(capa, 0.25, img, 0.75, 0, img)
+    movs = sorted({v for v in color_rastro.values() if v[0] and v[1]})
+    col_mov = {m: COLORES[i % len(COLORES)] for i, m in enumerate(movs)}
+    lineas = np.zeros_like(img)
+    for r in rastros:
+        m = color_rastro.get(r['id'])
+        if m is None:
+            continue
+        col = col_mov.get(m, (120, 120, 120))
+        pts = [tuple(map(int, _apoyo(p))) for p in r['p']]
+        for a, b in zip(pts, pts[1:]):
+            cv2.line(lineas, a, b, col, 1, cv2.LINE_AA)
+    cv2.addWeighted(lineas, 0.9, img, 1.0, 0, img)
+    for x, y in muertes:
+        cv2.drawMarker(img, (int(x), int(y)), (0, 0, 255), cv2.MARKER_TILTED_CROSS, 9, 2)
+    for x, y in nacimientos:
+        cv2.drawMarker(img, (int(x), int(y)), (0, 255, 0), cv2.MARKER_CROSS, 9, 2)
+    for k, a in enumerate(accesos):
+        pts = np.array(a['points'], np.int32)
+        cv2.polylines(img, [pts], True, COLORES[k % len(COLORES)], 2, cv2.LINE_AA)
+        cx, cy = pts.mean(axis=0).astype(int)
+        cv2.putText(img, a['name'], (int(cx) - 30, int(cy)), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.imwrite(salida, img)
+
+    with open(salida.replace('.png', '.json'), 'w', encoding='utf-8') as fh:
+        json.dump({
+            'estado': dict(estado), 'unidos': unidos,
+            'matriz': {nombre[o]: {nombre[d]: n for d, n in f.items()} for o, f in matriz.items()},
+            'por_clase': {f'{nombre[o]} -> {nombre[d]}': dict(c) for (o, d), c in por_clase.items()},
+        }, fh, ensure_ascii=False, indent=1)
+    print(f'\n{salida}')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('json')
+    ap.add_argument('--accesos', default=None,
+                    help='JSON con [{"nombre": ..., "puntos": [[x, y], ...]}]: usa el motor '
+                         'de producción con accesos dibujados en vez de agruparlos solo')
     ap.add_argument('--min-cuadros', type=int, default=5)
     ap.add_argument('--min-recorrido', type=float, default=0.04,
                     help='desplazamiento mínimo como fracción de la diagonal')
@@ -196,6 +326,11 @@ def main():
     datos, rastros = cargar(args.json, args.min_cuadros, args.min_recorrido)
     if not rastros:
         sys.exit('Sin rastros con recorrido real')
+    if args.accesos:
+        modo_accesos(datos, rastros, args.accesos, args.json,
+                     args.salida or args.json.replace('.json', '__accesos.png'))
+        return
+
     roi = region_de_interes(rastros)
     fps = datos['fps']
 
@@ -258,6 +393,12 @@ def main():
         for a, b in zip(pts, pts[1:]):
             cv2.line(capa, a, b, col, 1, cv2.LINE_AA)
     cv2.addWeighted(capa, 0.9, img, 1.0, 0, img)
+    # Dónde nace (verde) y dónde muere (rojo) cada rastro: es lo que hay que
+    # mirar para dibujar los accesos a mano.
+    for r in rastros:
+        a, b = _apoyo(r['p'][0]), _apoyo(r['p'][-1])
+        cv2.circle(img, (int(a[0]), int(a[1])), 2, (0, 255, 0), -1)
+        cv2.circle(img, (int(b[0]), int(b[1])), 2, (0, 0, 255), -1)
     for nombre, modelo, col in (('E', m_ent, (0, 255, 0)), ('S', m_sal, (0, 0, 255))):
         if modelo is None:
             continue
