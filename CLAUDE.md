@@ -690,6 +690,20 @@ rastreadores sobre la misma detección y compara contra lo guardado y el
 conteo manual. La columna "viejo" tiene que reproducir lo guardado; si no,
 la emulación no es fiel.
 
+**Medido en la hora pico validada (15:00, la peor del día, 0.80×)**, con
+la misma detección para los dos rastreadores:
+
+| | guardado | viejo | corregido | manual |
+|---|---|---|---|---|
+| Calzada oriente (cercana) | 1 148 | 1 148 | **1 216** | 1 281 |
+| Calzada poniente (fondo) | 659 | 659 | **706** | 978 |
+| Ambas | 1 807 (80 %) | 1 807 (80 %) | **1 922 (85 %)** | 2 259 |
+
+"Viejo" reproduce lo guardado al vehículo, así que la emulación es fiel.
+El corregido sube en los 4 cuartos de hora y en las dos calzadas. Falta la
+misma medición en una hora tranquila (07:00) para descartar que sobrecuente
+donde el viejo ya acertaba.
+
 Queda otro defecto sin tocar, a propósito para medir uno a la vez: una
 detección cuyo mejor emparejamiento tuvo IoU bajo entra dos veces a la
 lista de sin pareja y crea dos rastros.
