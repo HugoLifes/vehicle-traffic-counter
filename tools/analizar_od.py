@@ -178,7 +178,8 @@ def _voto(modelo, pts, roi, razon):
     return Counter(etiquetas.tolist()).most_common(1)[0][0]
 
 
-def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida):
+def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
+                 tolerancia=1.2, tamano=(0.6, 1.6)):
     """
     Origen-destino con accesos DIBUJADOS, usando el mismo motor que la
     plataforma (src/engine/origen_destino.py) en vez de la agrupación
@@ -216,7 +217,11 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida):
         org, dst = recorrido(o.puntos)
         antes['completo' if org and dst else 'incompleto' if org or dst else 'sin acceso'] += 1
 
-    cadenas = unir_pedazos(objetos, datos['fps'])
+    lista_uniones = []
+    cadenas = unir_pedazos(objetos, datos['fps'], max_hueco_s=hueco, tolerancia=tolerancia,
+                           rango_tamano=tamano, uniones=lista_uniones)
+    print(f"Unión de pedazos: hueco <= {hueco} s, tolerancia {tolerancia} altos, "
+          f"tamaño {tamano[0]}-{tamano[1]}")
     matriz = defaultdict(Counter)
     por_clase = defaultdict(Counter)
     estado = Counter()
@@ -295,8 +300,14 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida):
     cv2.imwrite(salida, img)
 
     with open(salida.replace('.png', '.json'), 'w', encoding='utf-8') as fh:
+        por_id = {r['id']: r for r in rastros}
         json.dump({
             'estado': dict(estado), 'unidos': unidos,
+            # Cada unión: último punto del pedazo que murió y primer punto
+            # del que nació, [cuadro, x1, y1, x2, y2, conf], para recortarlos
+            # del video y comprobar que son el mismo vehículo.
+            'uniones': [{'muere': por_id[a]['p'][-1], 'nace': por_id[b]['p'][0]}
+                        for a, b in lista_uniones if a in por_id and b in por_id],
             'matriz': {nombre[o]: {nombre[d]: n for d, n in f.items()} for o, f in matriz.items()},
             'por_clase': {f'{nombre[o]} -> {nombre[d]}': dict(c) for (o, d), c in por_clase.items()},
         }, fh, ensure_ascii=False, indent=1)
@@ -315,10 +326,13 @@ def main():
                     help='desplazamiento mínimo como fracción de la diagonal')
     ap.add_argument('--centro', type=float, default=1 / 6,
                     help='margen de orilla por lado, como fracción de la escena')
-    ap.add_argument('--hueco', type=float, default=1.5,
+    ap.add_argument('--hueco', type=float, default=2.0,
                     help='segundos máximos entre pedazos para unirlos')
-    ap.add_argument('--tolerancia', type=float, default=1.0,
+    ap.add_argument('--tolerancia', type=float, default=1.2,
                     help='distancia máxima al punto esperado, en altos de caja')
+    ap.add_argument('--tamano', type=float, nargs=2, default=(0.6, 1.6),
+                    metavar=('MIN', 'MAX'),
+                    help='razón de alto aceptable entre el pedazo que nace y el que muere')
     ap.add_argument('--sin-unir', action='store_true')
     ap.add_argument('--salida', default=None)
     args = ap.parse_args()
@@ -328,7 +342,9 @@ def main():
         sys.exit('Sin rastros con recorrido real')
     if args.accesos:
         modo_accesos(datos, rastros, args.accesos, args.json,
-                     args.salida or args.json.replace('.json', '__accesos.png'))
+                     args.salida or args.json.replace('.json', '__accesos.png'),
+                     hueco=args.hueco, tolerancia=args.tolerancia,
+                     tamano=tuple(args.tamano))
         return
 
     roi = region_de_interes(rastros)

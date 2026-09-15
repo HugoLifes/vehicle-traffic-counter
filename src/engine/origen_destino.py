@@ -115,8 +115,24 @@ def recorrido(puntos, min_fuera: int = 15) -> Tuple[Optional[int], Optional[int]
     return origen, (posteriores[-1][0] if posteriores else None)
 
 
+def _alto_de_extremo(puntos, al_final: bool, n: int = 5) -> float:
+    """
+    Alto del vehículo en un extremo del rastro: el MAYOR de los últimos (o
+    primeros) n puntos, no el del punto extremo.
+
+    Justo antes de perderse detrás de un obstáculo, y justo al reaparecer,
+    la caja cubre solo la parte visible del vehículo y se encoge. Medido en
+    Entrada y salida Altozano con ByteTrack: comparando un solo punto por
+    extremo, 15 de 68 pares muerte-nacimiento se rechazaban por tamaño.
+    """
+    tramo = puntos[-n:] if al_final else puntos[:n]
+    return max(p[3] for p in tramo)
+
+
 def unir_pedazos(rastros: List[Rastro], fps: float,
-                 max_hueco_s: float = 2.0, tolerancia: float = 1.2) -> List[List[Rastro]]:
+                 max_hueco_s: float = 2.0, tolerancia: float = 1.2,
+                 rango_tamano: Tuple[float, float] = (0.6, 1.6),
+                 uniones: Optional[List] = None) -> List[List[Rastro]]:
     """
     Encadena rastros sin destino con rastros sin origen que nacen poco
     después donde el primero habría llegado.
@@ -144,19 +160,21 @@ def unir_pedazos(rastros: List[Rastro], fps: float,
 
     pares = []
     for a in sin_destino:
-        fa, xa, ya, ha, acc_a = a.puntos[-1]
+        fa, xa, ya, _, acc_a = a.puntos[-1]
+        ha = _alto_de_extremo(a.puntos, al_final=True)
         vx, vy = velocidad(a.puntos[-1 - min(len(a.puntos) - 1, 4):])
         rapidez_a = math.hypot(vx, vy)
         for b in rastros:
             if b is a or not b.puntos:
                 continue
-            fb, xb, yb, hb, acc_b = b.puntos[0]
+            fb, xb, yb, _, acc_b = b.puntos[0]
+            hb = _alto_de_extremo(b.puntos, al_final=False)
             dt = fb - fa
             if not 0 < dt <= hueco:
                 continue
             if acc_b is not None and acc_b != acc_a:
                 continue       # nace dentro de OTRO acceso: es un origen legítimo
-            if not 0.6 <= hb / max(ha, 1) <= 1.6:
+            if not rango_tamano[0] <= hb / max(ha, 1) <= rango_tamano[1]:
                 continue
             escala = max(ha, hb, 1)
             ex, ey = xa + vx * dt, ya + vy * dt
@@ -196,6 +214,11 @@ def unir_pedazos(rastros: List[Rastro], fps: float,
         for f, c in zip(filas, cols):
             if costo[f, c] < 1e6:
                 siguiente[ids_a[f]] = ids_b[c]
+                if uniones is not None:
+                    # Para verificar a ojo que los dos pedazos son el mismo
+                    # vehículo: cuadro y caja del final de uno y del inicio
+                    # del otro.
+                    uniones.append((ids_a[f], ids_b[c]))
     usados_b = set(siguiente.values())
 
     por_id = {r.id: r for r in rastros}
