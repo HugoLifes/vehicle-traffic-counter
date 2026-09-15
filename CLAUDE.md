@@ -682,6 +682,20 @@ Para que haya cuartos de hora comparables hay que contar la ventana
 completa del manual, no un tramo suelto de 5 minutos: en Blvd Ind, los 8
 videos de 16:34 a 17:54.
 
+**En curso en el Jetson (15-sep-2026)**, con el contenedor reconstruido
+(ByteTrack, `lap`, rastreador corregido, filtro de pedazos quietos):
+
+| proyecto | aforo | videos | cuartos comparables |
+|---|---|---|---|
+| 4 | Blvd Ind, tarde (26-feb-2025) | 8, 16:34–17:54 | 16:45, 17:00, 17:15, 17:30 |
+| 5 | Entrada y salida Altozano, mañana (8-abr-2025) | 6, 06:56–07:56 | solo 7:30 (falta el video de 07:06) |
+
+Se crearon con `data/od/herramientas/crear_aforo_od.sh` (API: proyecto,
+subida con hora del nombre y fecha del OSD, accesos, "Empezar conteo") y
+`comparar_al_terminar.sh` corre `comparar_od_real.py` sobre los dos al
+terminar la cola (`data/od/comparacion.log`). Primera vez que el
+direccional corre dentro de la plataforma y no en las herramientas.
+
 ### Cómo decide la plataforma
 
 `src/engine/origen_destino.py`. Cada brazo es una zona de tipo `acceso`;
