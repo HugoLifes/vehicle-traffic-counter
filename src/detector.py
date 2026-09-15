@@ -153,6 +153,17 @@ class VehicleDetector:
             logging.error(f"Error cargando modelo: {e}")
             raise
     
+    def _opciones_precision(self) -> Dict:
+        """
+        `half` solo se pasa a predict() cuando FP16 está activado.
+
+        En ultralytics 8.4 el argumento está obsoleto y avisa en CADA
+        llamada aunque valga False: un aviso por cuadro, que en un aforo de
+        24 h son más de un millón de líneas en el log del contenedor. False
+        ya es el valor por omisión, así que omitirlo no cambia la detección.
+        """
+        return {'half': True} if self.half_precision else {}
+
     def set_detection_band(self, band: Optional[Tuple[int, int]]):
         """
         Limitar la detección a una franja horizontal (y0, y1) del cuadro.
@@ -242,7 +253,7 @@ class VehicleDetector:
                 imgsz=self.input_size,
                 verbose=False,
                 device=self.device,
-                half=self.half_precision
+                **self._opciones_precision()
             )
             
             # Procesar resultados
@@ -312,7 +323,7 @@ class VehicleDetector:
                 imgsz=self.input_size,
                 verbose=False,
                 device=self.device,
-                half=self.half_precision
+                **self._opciones_precision()
             )
             
             all_detections = []
