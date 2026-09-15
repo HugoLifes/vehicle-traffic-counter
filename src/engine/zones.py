@@ -94,10 +94,14 @@ def filter_detections(zones: List[Dict], detections: List[Dict]) -> List[Dict]:
     de exclusión. Si no hay ninguna calzada dibujada no filtra nada: un
     proyecto sin zonas tiene que seguir comportándose como antes.
     """
-    # Un acceso también es vía: si el proyecto tiene calzadas y accesos, lo
-    # que circula por un acceso no se puede descartar por no estar dentro de
-    # una calzada, o el aforo direccional perdería su origen o su destino.
-    calzadas = [z for z in zones if z.get('kind') in ('calzada', 'acceso')]
+    # Los accesos NO definen dónde está la vía. Un acceso es la puerta de
+    # entrada o salida de un brazo; el centro de la intersección queda fuera
+    # de todos ellos. Contarlos como vía descartaba cada detección del centro
+    # en los proyectos que solo tienen accesos: los vehículos desaparecían
+    # justo al cruzar y el rastro se partía. Medido en producción, primer
+    # video de Blvd Ind: 14 movimientos completos y 89 incompletos, contra
+    # 56 % de completos analizando las mismas escenas sin ese filtro.
+    calzadas = [z for z in zones if z.get('kind') == 'calzada']
     excluir = [z for z in zones if z.get('kind') == 'excluir']
     if not calzadas and not excluir:
         return detections
