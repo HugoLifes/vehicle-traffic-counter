@@ -168,6 +168,10 @@ se podía contestar de otro modo:
 | `exportar_comparacion.py` | Sacar a JSON todo lo que el reporte necesita, acotable por calzada |
 | `reporte_calibracion_pdf.py` | Reporte de calibración en PDF para presentar a la empresa |
 | `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
+| `calidad_video.py` | Medir si un video nuevo sirve ANTES de contarlo: resolución, bitrate, nitidez y alto de los vehículos |
+| `extraer_trayectorias.py` | Guardar el recorrido completo de cada vehículo a JSON, con el rastreador propio o ByteTrack |
+| `analizar_od.py` | Origen-destino sobre ese JSON en segundos: rastros partidos, accesos, matriz |
+| `recontar_sin_guardar.py` | Medir un cambio del rastreador contra el conteo manual sin tocar la base |
 
 ---
 
@@ -623,6 +627,79 @@ justamente una de las que no se pueden medir.
 Detalle curioso y contraintuitivo: de noche la calzada **del fondo** cuenta
 mejor que la cercana (0.048× contra 0.010×). Lo cercano se quema y se
 barre más, porque cruza más rápido en píxeles.
+
+---
+
+## Aforo direccional (origen-destino)
+
+La empresa mandó 30 videos de 5 aforos direccionales (feb y abr 2025). En
+el Jetson están en `data/od/videos/`, y todo lo de prueba vive en
+`data/od/` (herramientas, trayectorias, imágenes).
+
+### Calidad de cada aforo, medida y mirando el cuadro
+
+`tools/calidad_video.py`, sobre el mejor video de cada aforo:
+
+| aforo | video | alto mediano | para origen-destino |
+|---|---|---|---|
+| Entrada y salida Altozano | 1280×720 | **52 px** | buena; hay autos detenidos que excluir y un letrero que tapa la calle del arco |
+| Blvd Ind | 1280×720 | 36 px | buena, varios brazos bajo el puente; el lente tapa la esquina derecha |
+| Fraccionamientos | 1280×720 | 29 px | regular: la carcasa de la cámara tapa ~35 % de la imagen |
+| Glorieta Altozano | 1280×720 | 33 px | difícil: la glorieta casi fuera de cuadro y un estacionamiento lleno (conf 0.45) |
+| Altozano y Blvd Independencia | **640×360** | 18 px | mala: el mismo límite de tamaño del aforo de Cd. Juárez |
+
+Dos videos no dan ninguna detección (`BLVD IND 06-36`, `GLORIETA 06-44`):
+de noche o desenfocados. Tres de la tarde vienen a 640×360.
+
+### Cómo decide la plataforma
+
+`src/engine/origen_destino.py`. Cada brazo es una zona de tipo `acceso`;
+el primer acceso que pisa el vehículo es su origen y el último, después de
+salir del origen, su destino. Los movimientos se deciden **al cerrar el
+video**, para poder unir los pedazos de rastro que partió una oclusión. Los
+incompletos (se vio origen o destino, no ambos) se declaran aparte y **no
+se reparten**: repartirlos sería suponer a dónde iba el vehículo.
+
+**Los accesos se dibujan, no se adivinan.** Se probó la agrupación
+automática de extremos de rastro (arXiv 2607.10949, 3.4 % de error en
+cámaras de orilla): en Entrada y salida Altozano el acceso del arco queda al
+fondo de la imagen, los vehículos aparecen a distintas distancias, y el
+acceso se partió en seis grupos.
+
+### El rastreador partía los rastros justo cuando la vía se llena
+
+`VehicleTracker` llamaba a `predict()` dentro del doble ciclo detección ×
+rastro: con D vehículos en pantalla, el Kalman avanzaba D pasos por cuadro
+y `miss_streak` subía D. Un vehículo que el detector perdía unos cuadros se
+borraba en 30/D cuadros en vez de 30. Medido con cajas sintéticas perdidas
+5 cuadros:
+
+| vehículos en pantalla | antes | corregido |
+|---|---|---|
+| 1 | 0 de 1 partidos | 0 de 1 |
+| 8 | **8 de 8** | 0 de 8 |
+| 15 | **15 de 15** | 0 de 15 |
+
+Sin pérdidas no cambiaba nada (0 cambios de identidad antes y después), así
+que la primera hipótesis —que la predicción se pasaba de largo— era falsa;
+lo que pesa es la ausencia multiplicada.
+
+**Toca el aforo por línea ya validado.** Antes de desplegarlo se mide con
+`tools/recontar_sin_guardar.py`, que recuenta en memoria con los dos
+rastreadores sobre la misma detección y compara contra lo guardado y el
+conteo manual. La columna "viejo" tiene que reproducir lo guardado; si no,
+la emulación no es fiel.
+
+Queda otro defecto sin tocar, a propósito para medir uno a la vez: una
+detección cuyo mejor emparejamiento tuvo IoU bajo entra dos veces a la
+lista de sin pareja y crea dos rastros.
+
+### No correr dos trabajos de GPU a la vez en el Orin
+
+Dos extracciones en paralelo dieron `NvMapMemAllocInternalTagged error 12`
+y cuadros sin detección, que parten rastros artificialmente: la comparación
+de rastreadores de esa corrida no valía. Solo, ByteTrack con cuadro completo
+de 1280×720 va a 14.4 cuadros/s (5 min de video en 5.2 min).
 
 ---
 
