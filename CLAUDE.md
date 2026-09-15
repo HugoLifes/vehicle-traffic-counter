@@ -751,6 +751,24 @@ el vehículo aparece y desaparece de verdad), ByteTrack pasó de **40 % a
 mirar dónde nacen y mueren los rastros (`analizar_od.py` pinta los
 extremos) antes de dar los accesos por buenos.
 
+**Se probó filtrar las uniones por color y NO se activa.** Idea razonable:
+las uniones malas de Blvd Ind eran de colores obviamente distintos. Firma
+Lab del centro de la caja, mediana de 5 muestras por extremo
+(`tools/firmas_color.py`, `origen_destino.firma_color`), con el hueco en 1 s:
+
+| aforo | sin color | umbral 45 | umbral 30 | umbral 20 |
+|---|---|---|---|---|
+| Blvd Ind: uniones / completos | 20 / 57 % | 17 / 56 % | 15 / 56 % | 13 / 55 % |
+| Entrada Altozano: uniones / completos | 50 / 71 % | 48 / 69 % | 47 / 67 % | 45 / 65 % |
+
+Mirando las hojas: en Blvd Ind el umbral 30 quitó 3–4 uniones malas, pero
+la asignación global **reacomodó** y aparecieron otras igual de malas
+(una camioneta blanca con un auto oscuro). En Altozano, donde casi todas
+las uniones eran buenas, quitó uniones buenas: justo antes de perderse la
+caja ya incluye el letrero amarillo y el color medido deja de ser el del
+vehículo. Queda apagado (`max_delta_color=None`); el código se conserva
+por si otra cámara, con más resolución, lo vuelve útil.
+
 ### El rastreador partía los rastros justo cuando la vía se llena
 
 `VehicleTracker` llamaba a `predict()` dentro del doble ciclo detección ×
