@@ -179,7 +179,7 @@ def _voto(modelo, pts, roi, razon):
 
 
 def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
-                 tolerancia=1.2, tamano=(0.6, 1.6)):
+                 tolerancia=1.2, tamano=(0.6, 1.6), firmas=None, color=None):
     """
     Origen-destino con accesos DIBUJADOS, usando el mismo motor que la
     plataforma (src/engine/origen_destino.py) en vez de la agrupación
@@ -210,6 +210,10 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
             o.puntos.append((p[0], x, y, p[4] - p[2], acceso_de_punto(accesos, x, y)))
             o.confianzas.append(p[5])
         o.clases = Counter({r['clase']: len(r['p'])})
+        if firmas and r['id'] in firmas:
+            # El motor toma la mediana de las primeras y de las últimas 5.
+            o.colores = [tuple(c) for c in firmas[r['id']]['ini']] + \
+                        [tuple(c) for c in firmas[r['id']]['fin']]
         objetos.append(o)
 
     antes = Counter()
@@ -219,9 +223,10 @@ def modo_accesos(datos, rastros, ruta_accesos, ruta_json, salida, hueco=2.0,
 
     lista_uniones = []
     cadenas = unir_pedazos(objetos, datos['fps'], max_hueco_s=hueco, tolerancia=tolerancia,
-                           rango_tamano=tamano, uniones=lista_uniones)
+                           rango_tamano=tamano, uniones=lista_uniones,
+                           max_delta_color=color)
     print(f"Unión de pedazos: hueco <= {hueco} s, tolerancia {tolerancia} altos, "
-          f"tamaño {tamano[0]}-{tamano[1]}")
+          f"tamaño {tamano[0]}-{tamano[1]}, color {color if color else 'sin usar'}")
     matriz = defaultdict(Counter)
     por_clase = defaultdict(Counter)
     estado = Counter()
@@ -326,13 +331,19 @@ def main():
                     help='desplazamiento mínimo como fracción de la diagonal')
     ap.add_argument('--centro', type=float, default=1 / 6,
                     help='margen de orilla por lado, como fracción de la escena')
-    ap.add_argument('--hueco', type=float, default=2.0,
+    # Los predeterminados son los del motor de producción
+    # (src/engine/origen_destino.py), donde está la medición que los eligió.
+    ap.add_argument('--hueco', type=float, default=1.0,
                     help='segundos máximos entre pedazos para unirlos')
-    ap.add_argument('--tolerancia', type=float, default=1.2,
+    ap.add_argument('--tolerancia', type=float, default=2.0,
                     help='distancia máxima al punto esperado, en altos de caja')
-    ap.add_argument('--tamano', type=float, nargs=2, default=(0.6, 1.6),
+    ap.add_argument('--tamano', type=float, nargs=2, default=(0.5, 2.0),
                     metavar=('MIN', 'MAX'),
                     help='razón de alto aceptable entre el pedazo que nace y el que muere')
+    ap.add_argument('--firmas', default=None,
+                    help='JSON de tools/firmas_color.py con el color de cada rastro')
+    ap.add_argument('--color', type=float, default=None,
+                    help='diferencia de color máxima (Lab) para unir dos pedazos')
     ap.add_argument('--sin-unir', action='store_true')
     ap.add_argument('--salida', default=None)
     args = ap.parse_args()
@@ -344,7 +355,8 @@ def main():
         modo_accesos(datos, rastros, args.accesos, args.json,
                      args.salida or args.json.replace('.json', '__accesos.png'),
                      hueco=args.hueco, tolerancia=args.tolerancia,
-                     tamano=tuple(args.tamano))
+                     tamano=tuple(args.tamano), color=args.color,
+                     firmas=json.load(open(args.firmas, encoding='utf-8')) if args.firmas else None)
         return
 
     roi = region_de_interes(rastros)

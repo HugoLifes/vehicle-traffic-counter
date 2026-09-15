@@ -666,6 +666,91 @@ cámaras de orilla): en Entrada y salida Altozano el acceso del arco queda al
 fondo de la imagen, los vehículos aparecen a distintas distancias, y el
 acceso se partió en seis grupos.
 
+### ByteTrack para el direccional, y la unión de pedazos verificada a ojo
+
+En Entrada y salida Altozano (5 min, accesos dibujados), movimientos con
+origen Y destino:
+
+| rastreador | completos |
+|---|---|
+| propio (viejo o corregido) | 15–16 % |
+| ByteTrack | 47 % |
+| ByteTrack + unión de pedazos afinada | **71 %** |
+
+ByteTrack gana porque su segunda pasada usa las detecciones de baja
+confianza, que es lo que queda de un vehículo medio tapado; el propio las
+descarta a 0.25. Con el propio, los rastros se parten a campo abierto a lo
+largo de toda la calle.
+
+Con ByteTrack, casi todo lo que quedaba incompleto moría detrás de **un
+letrero de peatones** y renacía del otro lado a ~1.9 altos de caja. El
+motor rechazaba esos pares por distancia (30 de 68) y por tamaño (15 de 68:
+la caja medio tapada se encoge). Se afinó y **se verificó mirando cada
+unión recortada** (`tools/hoja_uniones.py`), porque un total más alto no
+dice si se unieron vehículos distintos:
+
+| hueco | tolerancia | tamaño | completos | uniones erróneas a ojo |
+|---|---|---|---|---|
+| 2 s | 1.2 altos | 0.6–1.6 | 47 % | — |
+| **1 s** | **2.0 altos** | **0.5–2.0** | **71 %** | **2 claras + 3 dudosas de 53** |
+| 3 s | 3.0 altos | 0.5–2.0 | 75 % | ~5 claras + ~5 dudosas de 48 |
+
+Los errores se concentran en huecos largos (16–41 cuadros). Quedan como
+predeterminados del motor los de 1 s.
+
+**Alargar el `track_buffer` de ByteTrack NO ayuda**, aunque parecía la
+palanca obvia (a 15 fps el 30 por omisión conserva un rastro perdido solo
+15 cuadros). Sobre las mismas detecciones: buffer 30 / 60 / 90 → 53 / 50 /
+51 % completos, y los completos antes de unir no se mueven (46 / 45 / 46).
+Al reaparecer detrás del letrero, la caja predicha ya no se solapa con la
+detección; lo recupera la unión de pedazos, no el rastreador.
+
+Para barrer parámetros del rastreador sin gastar GPU: detectar una vez con
+`extraer_trayectorias.py --guardar-detecciones` y rastrear desde el archivo
+con `--desde-detecciones` (~400 cuadros/s en el CPU del Jetson). Reproduce
+la corrida en vivo: 435 rastros contra 434, el mismo 53 %.
+
+**En el cruce sintético la conclusión es otra**, y hay que conocer por qué.
+Ahí hay verdad por vehículo, 8 movimientos que se cruzan en el centro y
+huecos de 3–20 cuadros (150 vehículos × 5 semillas):
+
+| variante | correctos | equivocados | incompletos |
+|---|---|---|---|
+| 2 s / 1.2 / 0.6–1.6 | 147.2 | 0.0 | 5.6 |
+| 2 s / 2.0 / 0.5–2.0 | 147.2 | 0.0 | 5.6 |
+| 1 s / 2.0 / 0.5–2.0 | 135.8 | 0.6 | 27.2 |
+
+La tolerancia amplia **no** junta vehículos distintos ni con tránsito
+cruzado; lo que cuesta es el tope de 1 s, que deja incompletos a los
+vehículos genuinos tapados más de un segundo. Con huecos de hasta 10
+cuadros (la mediana real es 7) todas las variantes dan igual.
+
+El choque con el video real tiene explicación: la simulación no tiene
+vehículos parecidos que aparezcan cerca, así que ahí un hueco largo siempre
+es el mismo vehículo; en Altozano casi nunca lo era.
+
+**Blvd Ind lo decidió** (tránsito cruzado real, 5 min, 1280×720). Uniones
+revisadas a ojo con `hoja_uniones.py`:
+
+| hueco | uniones | juntan vehículos distintos |
+|---|---|---|
+| **1 s** | 22 | 3–5 |
+| 2 s | 39 | **~15** (camioneta blanca con auto oscuro, autobús con pickup…) |
+
+El tope queda en 1 s. **La simulación engañaba**: con tránsito cruzado y
+vehículos parecidos, pasado un segundo el que reaparece suele ser otro.
+
+ByteTrack también gana aquí, aunque por menos: 40 % de movimientos
+completos contra 32 % del rastreador propio corregido.
+
+**Lo que más pesó fue dibujar bien los accesos.** Con los primeros
+polígonos muchos vehículos aparecían justo debajo de "Bajo puente" y morían
+antes de llegar a "Derecha". Ampliándolos (que el acceso llegue hasta donde
+el vehículo aparece y desaparece de verdad), ByteTrack pasó de **40 % a
+57 %** y los "sin origen" de 24 % a 7 %. Al calibrar un aforo direccional,
+mirar dónde nacen y mueren los rastros (`analizar_od.py` pinta los
+extremos) antes de dar los accesos por buenos.
+
 ### El rastreador partía los rastros justo cuando la vía se llena
 
 `VehicleTracker` llamaba a `predict()` dentro del doble ciclo detección ×

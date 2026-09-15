@@ -10,6 +10,10 @@
 
 # Motor de conteo (tracking)
 filterpy==1.4.5
+# ByteTrack de ultralytics, para el aforo direccional. ultralytics lo pide
+# y lo instala solo al primer uso, pero eso vive dentro del contenedor en
+# marcha y se pierde al reconstruir; además necesita internet en ese momento.
+lap>=0.5.12
 # scipy va explícito aunque filterpy lo arrastre: en ARM64 su instalación
 # es lenta o falla si pip decide compilarlo, y conviene que aparezca en el
 # error de build en vez de descubrirlo al primer conteo.

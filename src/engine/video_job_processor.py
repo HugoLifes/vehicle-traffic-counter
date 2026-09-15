@@ -28,6 +28,7 @@ from src.tracker import VehicleTracker
 from src.storage import traffic_db
 from src.engine.lanes import build_lane_counters
 from src.engine.origen_destino import AforoDireccional
+from src.engine.rastreo_bytetrack import RastreadorBytetrack
 from src.engine.zones import (band_from_zones, draw_zones, filter_detections,
                               load_zones, zone_for_bbox)
 from src.visualizer import Visualizer
@@ -199,6 +200,10 @@ class VideoJobProcessor:
             return
 
         writer = None
+        # El detector se comparte entre videos: si este bajó el umbral para
+        # el direccional, hay que devolverlo aunque el video falle, o el
+        # siguiente aforo por línea contaría con 0.1 sin que nadie lo note.
+        umbral_restaurar = None
         try:
             detector = self._get_detector()
             tracker = VehicleTracker(
@@ -229,6 +234,24 @@ class VideoJobProcessor:
             # Aforo direccional: se activa solo si hay dos accesos o más. Un
             # proyecto puede tener líneas, accesos o ambos.
             direccional = AforoDireccional(zonas, fps)
+
+            # El direccional usa ByteTrack y el aforo por línea sigue con el
+            # rastreador propio, que es con el que está validado contra el
+            # conteo manual. ByteTrack necesita ver detecciones desde 0.1;
+            # las líneas siguen recibiendo solo las de su umbral de siempre.
+            rastreador_od = None
+            umbral_linea = detector.confidence_threshold
+            if direccional.activo:
+                try:
+                    rastreador_od = RastreadorBytetrack(fps)
+                    detector.confidence_threshold = min(umbral_linea,
+                                                        RastreadorBytetrack.CONF_MINIMA)
+                    umbral_restaurar = umbral_linea
+                except Exception as e:
+                    logging.warning(
+                        f"ByteTrack no disponible ({e}); el aforo direccional de "
+                        f"{job['original_name']} usa el rastreador propio, que parte más rastros"
+                    )
 
             if not lane_counters and not direccional.activo:
                 raise RuntimeError(
@@ -294,11 +317,17 @@ class VideoJobProcessor:
                 # Se filtra ANTES del tracker, no después: un vehículo
                 # estacionado fuera de la calzada que llega a formar track
                 # ya ensucia el conteo aunque después se descarte.
+                if rastreador_od is not None:
+                    tracks_od = rastreador_od.update(filter_detections(zonas, detections), frame)
+                    # Las líneas y el aviso de zonas ven exactamente lo de
+                    # antes: solo detecciones a su umbral de siempre.
+                    detections = [d for d in detections if d['confidence'] >= umbral_linea]
                 det_crudas += len(detections)
                 detections = filter_detections(zonas, detections)
                 det_en_zona += len(detections)
                 tracks = tracker.update(detections)
-                direccional.observar(frame_count, tracks)
+                direccional.observar(frame_count,
+                                     tracks_od if rastreador_od is not None else tracks)
 
                 # Hora real de este frame dentro del video (no la hora en
                 # que se está procesando el archivo) — es lo que permite
@@ -453,6 +482,8 @@ class VideoJobProcessor:
             cap.release()
             if writer is not None:
                 writer.release()
+            if umbral_restaurar is not None and self._detector is not None:
+                self._detector.confidence_threshold = umbral_restaurar
 
 
 _processor: Optional[VideoJobProcessor] = None

@@ -51,8 +51,46 @@ def acceso_de_punto(accesos: List[Dict], x: float, y: float) -> Optional[int]:
     return None
 
 
+def firma_color(frame, bbox) -> Optional[Tuple[float, float, float]]:
+    """
+    Color medio del vehículo en Lab, sobre el centro de la caja.
+
+    Sirve para no unir dos pedazos de rastro de vehículos distintos. En Blvd
+    Ind, con tránsito cruzado, las uniones equivocadas que se vieron a ojo
+    eran casi todas de colores obviamente distintos: camioneta blanca con
+    auto oscuro, autobús con pickup, oscuro con amarillo. La posición, el
+    tamaño y la dirección no los separan; el color sí.
+
+    Se toma el 60 % central de la caja para no promediar el pavimento que
+    asoma por las orillas. Lab y no RGB porque la distancia en Lab se parece
+    a la diferencia de color que ve una persona.
+    """
+    import cv2
+    x1, y1, x2, y2 = bbox
+    w, h = x2 - x1, y2 - y1
+    X1, X2 = int(max(0, x1 + 0.2 * w)), int(min(frame.shape[1], x2 - 0.2 * w))
+    Y1, Y2 = int(max(0, y1 + 0.2 * h)), int(min(frame.shape[0], y2 - 0.2 * h))
+    if X2 - X1 < 2 or Y2 - Y1 < 2:
+        return None
+    lab = cv2.cvtColor(frame[Y1:Y2, X1:X2], cv2.COLOR_BGR2LAB).reshape(-1, 3)
+    m = lab.mean(axis=0)
+    return (float(m[0]), float(m[1]), float(m[2]))
+
+
+def distancia_color(a, b) -> Optional[float]:
+    if a is None or b is None:
+        return None
+    return math.dist(a, b)
+
+
+def _mediana_color(colores):
+    if not colores:
+        return None
+    return tuple(sorted(c[i] for c in colores)[len(colores) // 2] for i in range(3))
+
+
 class Rastro:
-    __slots__ = ('id', 'puntos', 'clases', 'confianzas')
+    __slots__ = ('id', 'puntos', 'clases', 'confianzas', 'colores')
 
     def __init__(self, tid):
         self.id = tid
@@ -60,6 +98,17 @@ class Rastro:
         self.puntos: List[Tuple[int, float, float, float, Optional[int]]] = []
         self.clases: Counter = Counter()
         self.confianzas: List[float] = []
+        # Firmas de color muestreadas a lo largo del rastro, en orden.
+        self.colores: List[Tuple[float, float, float]] = []
+
+    def color_inicio(self):
+        return _mediana_color(self.colores[:5])
+
+    def color_fin(self):
+        # Mediana de las últimas 5 y no la última: justo antes de perderse
+        # detrás de un obstáculo la caja ya incluye al obstáculo (en Altozano,
+        # un letrero amarillo) y su color deja de ser el del vehículo.
+        return _mediana_color(self.colores[-5:])
 
 
 def _tramos(puntos, min_fuera: int):
@@ -129,10 +178,27 @@ def _alto_de_extremo(puntos, al_final: bool, n: int = 5) -> float:
     return max(p[3] for p in tramo)
 
 
+# Parámetros de unión, medidos en Entrada y salida Altozano (5 min, ByteTrack,
+# accesos dibujados), verificando a ojo cada unión recortada del video con
+# tools/hoja_uniones.py:
+#
+#   hueco  tolerancia  tamaño    completos  uniones que juntan vehículos distintos
+#   2 s    1.2 altos   0.6-1.6   47 %       —
+#   1 s    2.0 altos   0.5-2.0   71 %       2 claras + 3 dudosas de 53
+#   3 s    3.0 altos   0.5-2.0   75 %       ~5 claras + ~5 dudosas de 48
+#
+# Los errores se concentran en huecos largos (16-41 cuadros): pasado un
+# segundo, el que reaparece suele ser OTRO vehículo. Por eso 1 s y no 3.
+HUECO_MAX_S = 1.0
+TOLERANCIA_ALTOS = 2.0
+RANGO_TAMANO = (0.5, 2.0)
+
+
 def unir_pedazos(rastros: List[Rastro], fps: float,
-                 max_hueco_s: float = 2.0, tolerancia: float = 1.2,
-                 rango_tamano: Tuple[float, float] = (0.6, 1.6),
-                 uniones: Optional[List] = None) -> List[List[Rastro]]:
+                 max_hueco_s: float = HUECO_MAX_S, tolerancia: float = TOLERANCIA_ALTOS,
+                 rango_tamano: Tuple[float, float] = RANGO_TAMANO,
+                 uniones: Optional[List] = None,
+                 max_delta_color: Optional[float] = None) -> List[List[Rastro]]:
     """
     Encadena rastros sin destino con rastros sin origen que nacen poco
     después donde el primero habría llegado.
@@ -195,7 +261,14 @@ def unir_pedazos(rastros: List[Rastro], fps: float,
                 coseno = (vx * ubx + vy * uby) / (rapidez_a * rapidez_b)
                 if coseno < -0.3:
                     continue
-            pares.append((a.id, b.id, dist / limite + 0.5 * dt / hueco - 0.3 * coseno))
+            costo_par = dist / limite + 0.5 * dt / hueco - 0.3 * coseno
+            if max_delta_color is not None:
+                dcol = distancia_color(a.color_fin(), b.color_inicio())
+                if dcol is not None:
+                    if dcol > max_delta_color:
+                        continue   # otro color: otro vehículo
+                    costo_par += 0.5 * dcol / max_delta_color
+            pares.append((a.id, b.id, costo_par))
 
     # Asignación óptima global y no voraz: cuando dos vehículos se tapan a
     # la vez, la unión más barata para uno puede robarle al otro la suya.
@@ -255,7 +328,7 @@ class AforoDireccional:
     def activo(self) -> bool:
         return len(self.accesos) >= 2
 
-    def observar(self, cuadro: int, tracks: List[Dict]):
+    def observar(self, cuadro: int, tracks: List[Dict], frame=None):
         if not self.activo:
             return
         guardar = cuadro % CADA_N_CUADROS == 0
@@ -265,6 +338,12 @@ class AforoDireccional:
                 r = self._rastros[t['id']] = Rastro(t['id'])
             r.clases[t['class_name']] += 1
             r.confianzas.append(t['confidence'])
+            # Color cada 5 cuadros: basta para la mediana de cada extremo y
+            # no suma costo apreciable frente a la detección.
+            if frame is not None and (len(r.confianzas) <= 5 or cuadro % 5 == 0):
+                c = firma_color(frame, t['bbox'])
+                if c is not None:
+                    r.colores.append(c)
             x, y = _punto_de_apoyo(t['bbox'])
             acc = acceso_de_punto(self.accesos, x, y)
             # Siempre se guarda el primer punto y todo cambio de zona: son
