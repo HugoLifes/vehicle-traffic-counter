@@ -651,6 +651,37 @@ el Jetson están en `data/od/videos/`, y todo lo de prueba vive en
 Dos videos no dan ninguna detección (`BLVD IND 06-36`, `GLORIETA 06-44`):
 de noche o desenfocados. Tres de la tarde vienen a 640×360.
 
+### Hay conteo manual direccional para contrastar
+
+`referencias/aforo_direccional/`: un Excel por aforo (7), el mismo formato
+en todos. Movimientos en clave `origen_destino` (`2_3`) con clases A, B y C
+por cuarto de hora, en bloques de una hora (6:45–7:45 y, en Blvd.
+Independencia, también 16:45–17:45).
+
+**Los números de acceso no están en la hoja: están en formas dibujadas
+encima del croquis satelital** (círculos con 1, 2, 3… y flechas). openpyxl
+las descarta en silencio ("Shapes and drawings will be lost"); hay que
+leerlas de `xl/drawings/drawing1.xml`. Medido así:
+
+- *Entrada y salida Altozano*: 1 = calle al sureste (entre el canal y la
+  barda), 2 = calle del fraccionamiento (la del arco), 3 = calle al norte
+  junto al canal. Domina `2_3` (499 veh/h de 6:45 a 7:45).
+- *Blvd. Independencia*: 1 = Juárez Porvenir (norte), 2 = sur, 3 = Blvd.
+  Independencia al oriente, 4 = al poniente. El tránsito de paso SOBRE el
+  puente casi no figura (`3_4` y `4_3` < 10 por cuarto de hora): se cuenta
+  lo de abajo.
+
+`tools/comparar_od_real.py` contrasta un proyecto de la plataforma contra
+ese Excel. Qué acceso dibujado es qué número no se adivina por el nombre:
+prueba todas las asignaciones y se queda con la de menos error, igual que
+el emparejamiento calzada↔sentido del aforo por línea. Reporta cada
+movimiento por cuarto de hora y su **GEH** (criterio: 85 % de movimientos
+con GEH < 5). Probado con verdad conocida: recupera la asignación exacta.
+
+Para que haya cuartos de hora comparables hay que contar la ventana
+completa del manual, no un tramo suelto de 5 minutos: en Blvd Ind, los 8
+videos de 16:34 a 17:54.
+
 ### Cómo decide la plataforma
 
 `src/engine/origen_destino.py`. Cada brazo es una zona de tipo `acceso`;
@@ -828,9 +859,19 @@ la misma detección para los dos rastreadores:
 | Ambas | 1 807 (80 %) | 1 807 (80 %) | **1 922 (85 %)** | 2 259 |
 
 "Viejo" reproduce lo guardado al vehículo, así que la emulación es fiel.
-El corregido sube en los 4 cuartos de hora y en las dos calzadas. Falta la
-misma medición en una hora tranquila (07:00) para descartar que sobrecuente
-donde el viejo ya acertaba.
+El corregido sube en los 4 cuartos de hora y en las dos calzadas.
+
+**Y en una hora tranquila (07:00), donde el viejo ya acertaba:**
+
+| | guardado | viejo | corregido | manual |
+|---|---|---|---|---|
+| Calzada oriente (cercana) | 755 | 755 | **763** | 768 |
+| Calzada poniente (fondo) | 1 187 | 1 187 | **1 246** | 1 307 |
+| Ambas | 1 942 (94 %) | 1 942 (94 %) | **2 009 (97 %)** | 2 075 |
+
+No sobrecuenta: los 4 cuartos de hora quedan por debajo del manual
+(496/528, 512/534, 506/517, 495/496). Validado en la peor hora y en una
+tranquila, se despliega.
 
 Queda otro defecto sin tocar, a propósito para medir uno a la vez: una
 detección cuyo mejor emparejamiento tuvo IoU bajo entra dos veces a la
