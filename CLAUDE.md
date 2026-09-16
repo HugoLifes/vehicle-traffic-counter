@@ -172,6 +172,12 @@ se podía contestar de otro modo:
 | `extraer_trayectorias.py` | Guardar el recorrido completo de cada vehículo a JSON, con el rastreador propio o ByteTrack |
 | `analizar_od.py` | Origen-destino sobre ese JSON en segundos: rastros partidos, accesos, matriz |
 | `recontar_sin_guardar.py` | Medir un cambio del rastreador contra el conteo manual sin tocar la base |
+| `diagnosticar_encuadre.py` | Calificar si un video sirve para aforar, antes de gastar horas contándolo |
+| `comparar_od_real.py` | Contrastar el aforo direccional contra el conteo manual de la empresa, con GEH |
+| `probar_accesos_od.py` | Probar otro dibujo de accesos sobre rastros ya extraídos, sin volver a detectar |
+| `mapa_extremos_od.py` | Ver dónde nacen y mueren los rastros de una ventana completa |
+| `hoja_uniones.py` | Revisar a ojo si las uniones de rastros partidos son el mismo vehículo |
+| `firmas_color.py` | Color de cada rastro para la unión por apariencia (probado, hoy apagado) |
 
 ---
 
@@ -1046,6 +1052,21 @@ El corregido sube en los 4 cuartos de hora y en las dos calzadas.
 No sobrecuenta: los 4 cuartos de hora quedan por debajo del manual
 (496/528, 512/534, 506/517, 495/496). Validado en la peor hora y en una
 tranquila, se despliega.
+
+**Desplegado y con el día completo recontado** (135 videos, 23 859 cruces
+contra 22 508 antes), medido con `comparar_aforo_real.py` sobre la ventana
+comparable 06:30–20:00 (54 cuartos de hora):
+
+| | nuestro | manual | razón |
+|---|---|---|---|
+| Calzada oriente (cercana) | 12 623 | 12 647 | **1.00×** |
+| Calzada poniente (fondo) | 10 639 | 11 793 | 0.90× |
+| Ambos sentidos | 23 262 | 24 440 | **0.95×** |
+
+Antes de la corrección ese total estaba en 0.90×. El reparto entre sentidos
+sale 54/46 contra 52/48 real y la correlación del perfil por cuarto de hora
+es r = +0.96. La calzada del fondo se queda en 0.90× por el tamaño del
+vehículo (14–17 px), que es límite de cámara y no del rastreador.
 
 Queda otro defecto sin tocar, a propósito para medir uno a la vez: una
 detección cuyo mejor emparejamiento tuvo IoU bajo entra dos veces a la
