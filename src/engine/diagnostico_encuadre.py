@@ -49,6 +49,10 @@ NITIDEZ_BAJA = 1000.0
 CONFIANZA_BUENA = 0.60
 CONFIANZA_MALA = 0.45
 
+# Por debajo de esto un factor arrastra el puntaje lo bastante como para
+# tener que explicarse en un aviso.
+FACTOR_FLOJO = 0.35
+
 
 def medir_imagen(video: str, det, muestras: int = 10) -> Dict:
     """
@@ -222,6 +226,14 @@ def calificar(m: Dict, direccional: bool = False) -> Dict:
     puntaje = round(100 * sum(v * p for v, p in factores.values())
                     / sum(p for _, p in factores.values()))
 
+    # Ningún puntaje bajo sin explicación: todo factor que quede por debajo
+    # de FLOJO tiene que decir qué le pasa. Antes cada aviso llevaba su
+    # propio umbral, más duro que el del puntaje, y un video podía salir en
+    # 49/100 sin un solo aviso: Fraccionamientos 06:46 tiene brillo 149
+    # (el aviso pedía 150) y nitidez 1 180 (el aviso pedía menos de 1 000),
+    # y esos dos factores puntuaban 0.03 y 0.13.
+    flojo = lambda nombre: factores[nombre][0] < FACTOR_FLOJO   # noqa: E731
+
     if alto < ALTO_MINIMO:
         avisos.append(f'El vehículo mide {alto:.0f} px de alto; se necesitan ~33 px para '
                       'contar bien y 40 px para clasificar. Acerca el encuadre o sube la cámara.')
@@ -231,14 +243,29 @@ def calificar(m: Dict, direccional: bool = False) -> Dict:
     if bajo20 is not None and bajo20 >= 40:
         avisos.append(f'El {bajo20:.0f} % de los vehículos se ve por debajo de 20 px. '
                       'Esa parte del encuadre no se puede aforar.')
+    if direccional and flojo('tamaño en todo el recorrido'):
+        p25 = m.get('alto_p25') or 0
+        avisos.append(f'En la parte lejana del cuadro el vehículo baja a {p25:.0f} px (la cuarta '
+                      'parte más chica de los que se ven). El aforo direccional tiene que seguirlo '
+                      'por todo el recorrido, y ahí se pierde: ese brazo va a quedar corto.')
     if brillo >= BRILLO_ALTO:
         avisos.append(f'Imagen sobreexpuesta (brillo {brillo:.0f}). De noche la cámara abre la '
                       'exposición y cada vehículo sale como una estela: fuerza obturador rápido.')
+    elif flojo('exposición'):
+        avisos.append(f'La imagen va muy clara (brillo {brillo:.0f}); pasando de '
+                      f'{BRILLO_ALTO:.0f} el conteo se desploma a 0.03x. Baja la exposición de '
+                      'la cámara o fuerza obturador rápido.')
     if nitidez and nitidez < NITIDEZ_BAJA:
         avisos.append(f'Imagen poco nítida ({nitidez:.0f}). Puede ser desenfoque, suciedad en el '
                       'lente o movimiento barrido.')
+    elif nitidez and flojo('nitidez'):
+        avisos.append(f'Imagen justa de nitidez ({nitidez:.0f}): los videos que cuentan bien '
+                      'andan entre 2 400 y 4 700. Revisa el enfoque, el lente y el obturador.')
     if conf < CONFIANZA_MALA:
         avisos.append(f'El detector reconoce los vehículos con poca seguridad ({conf:.2f}).')
+    elif flojo('confianza del detector'):
+        avisos.append(f'El detector reconoce los vehículos con seguridad justa ({conf:.2f}); '
+                      f'de día, en material que cuenta bien, anda en {CONFIANZA_BUENA:.2f}.')
     if dets >= 12:
         avisos.append(f'Hay {dets:.0f} vehículos por cuadro: con la vía llena se tapan entre sí '
                       'y el conteo baja (medido: de 0.95x a 0.86x). Ayuda subir la cámara.')

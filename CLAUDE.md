@@ -173,6 +173,7 @@ se podía contestar de otro modo:
 | `analizar_od.py` | Origen-destino sobre ese JSON en segundos: rastros partidos, accesos, matriz |
 | `recontar_sin_guardar.py` | Medir un cambio del rastreador contra el conteo manual sin tocar la base |
 | `diagnosticar_encuadre.py` | Calificar si un video sirve para aforar, antes de gastar horas contándolo |
+| `probar_diagnostico_encuadre.py` | Regresión del diagnóstico sobre los ocho casos ya medidos, sin GPU |
 | `comparar_od_real.py` | Contrastar el aforo direccional contra el conteo manual de la empresa, con GEH |
 | `probar_accesos_od.py` | Probar otro dibujo de accesos sobre rastros ya extraídos, sin volver a detectar |
 | `mapa_extremos_od.py` | Ver dónde nacen y mueren los rastros de una ventana completa |
@@ -856,6 +857,70 @@ escena (algo tapa la vía), la Glorieta casi no tiene extremos en la orilla
 veredicto (verde 0.90–0.99×, ámbar 0.80–0.95×, rojo ninguno) y avisos
 concretos. Son tres escenas validadas: alcanza para avisar, no para
 prometer.
+
+**Puesto a prueba sobre otro video de cada aforo** (16-sep-2026, uno por
+uno en el Jetson; el segundo pasó por la API, que es el camino real):
+
+| video | veredicto | imagen | rastreo | lo que ya se sabe del aforo |
+|---|---|---|---|---|
+| Entrada Altozano 07:26 | BUENO (78) | 78 | 87 % / 38 % | sirvió ✔ |
+| Entrada Altozano 07:56 (API) | REGULAR (65) | 65 | 98 | sirvió ✔ |
+| Entrada Altozano 06:56 (API) | NO RECOMENDABLE (0) | 23 | 0 | amanecer: 11 px y 0.5 detecciones por cuadro ✔ |
+| Glorieta Altozano 07:14 | NO RECOMENDABLE (39) | 51 | 39 | falló ✔ |
+| Altozano y Blvd Ind 07:49 (640×360) | NO RECOMENDABLE (38) | 38 | 77 | 48 % de los vehículos bajo 20 px ✔ |
+| **Blvd Independencia 17:04** | **REGULAR (74)** | 74 | 77 | **falló ✘** |
+
+**El diagnóstico NO detecta el paso a desnivel.** Con otro video del mismo
+aforo, Blvd Independencia da 66 % de concentración y 28 % en la orilla —no
+el 54 % / 30 % del video con el que se fijaron los umbrales— y aprueba como
+"regular, 0.80–0.95×", cuando su matriz real salió al 51 % con 2 de 15
+movimientos por debajo de GEH 5. Es otra vez la lección del modelo de
+visión: **una sola condición no valida nada**, y aquí cada umbral se fijó
+con un video por escena. **No se mueven los umbrales para que ese caso
+cuadre**: con tres escenas eso es ajustar a la muestra, no medir. Lo que
+queda es el aviso genérico del direccional —comprobar a ojo que los cuatro
+accesos se vean completos y que nada los tape—, así que **para el aforo
+direccional el diagnóstico avisa, no autoriza.**
+
+**Pocos rastros no es mal encuadre.** La etapa de rastreo reprobaba con
+0/100 cualquier video con menos de 10 rastros en el minuto de prueba, y eso
+mezcla dos causas opuestas:
+
+| video | detecciones por cuadro | rastros | qué es |
+|---|---|---|---|
+| Fraccionamientos 07:26 | 2.1 | 5 | calle tranquila, encuadre bien (30 px, conf 0.71) |
+| Entrada Altozano 06:56 | 0.5 | 0 | amanecer: ahí de verdad no se ve nada |
+
+Las separa **cuántos vehículos ve el detector en la imagen**, no cuántos
+alcanza a seguir. Con menos de 10 rastros pero al menos 1 detección por
+cuadro la etapa se declara **no concluyente**, manda la etapa por imagen y
+el aviso dice que hubo poco tránsito y que conviene medir más minutos.
+Fraccionamientos pasó de "NO SIRVE (0)" —por la razón equivocada— a
+"REGULAR (50)" por las razones reales: sobreexpuesto (148), poco nítido
+(1 298) y vehículo de 30 px.
+
+**El veredicto solo no sirve; lo accionable es el aviso.** La cola mostraba
+"Encuadre no recomendable · 39/100" y nada más. Ahora esa pill abre el
+detalle con la exactitud esperable y los avisos, y **se abre sola cuando el
+encuadre no sale bueno**: esconder "esta perspectiva va a costar exactitud"
+detrás de un clic es no avisar.
+
+Y para que el aviso exista siempre: **cada aviso llevaba su propio umbral,
+más duro que el del puntaje**, así que un video podía salir en 49/100 sin
+un solo aviso. Pasó con Fraccionamientos 06:46 —brillo 149 cuando el aviso
+pedía 150, nitidez 1 180 cuando el aviso pedía menos de 1 000, y el cuartil
+bajo del alto en 17 px, que ni siquiera tenía aviso— tres factores
+puntuando casi cero y ninguno explicado. Ahora todo factor por debajo de
+0.35 se explica, y la regresión lo comprueba:
+
+```bash
+python tools/probar_diagnostico_encuadre.py
+```
+
+Ocho casos con las cifras que se midieron de verdad en el Jetson, sin GPU y
+en un segundo: cada uno conserva su color y **ningún video que no salga
+"bueno" se queda sin un aviso concreto.** Sirve para tocar umbrales sin
+volver a gastar horas de proceso.
 
 **No corre si hay videos en la cola.** Dos trabajos de GPU a la vez dan
 `NvMapMemAllocInternalTagged error 12` y dejan cuadros sin detección. Pasó
