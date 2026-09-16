@@ -1058,6 +1058,38 @@
   color: var(--accent-ink);
 }
 
+/* --- Diagnóstico del encuadre en la cola ------------------------------ */
+
+/* La pill del encuadre abre el detalle: es un botón, pero se ve igual que
+   las demás pills para no inventar un control nuevo en la fila. */
+.pill-boton {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.pill-boton:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 999px; }
+
+.job-diagnostico {
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--border);
+  background: var(--surface-1);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+}
+.jd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.jd-title { font-weight: 600; font-size: var(--text-sm); }
+.jd-fuente { margin: 0; font-size: var(--text-xs); color: var(--ink-3); }
+
 /* --- Vista rápida del video en la cola -------------------------------- */
 
 .job-player {

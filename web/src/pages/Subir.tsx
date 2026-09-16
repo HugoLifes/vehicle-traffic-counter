@@ -155,6 +155,12 @@ function JobRow({
   const { data: diag } = useDiagnostico(job.id);
   const diagnosticar = useDiagnosticar();
   const d = diag?.datos?.diagnostico;
+  /* Los avisos son lo útil del diagnóstico —dicen qué cambiar de la cámara—,
+     así que cuando el encuadre NO sale bueno el detalle se abre solo:
+     esconder "esta perspectiva va a costar exactitud" detrás de un clic es
+     no avisar. El usuario puede cerrarlo, y entonces manda su elección. */
+  const [verDetalle, setVerDetalle] = useState<boolean | null>(null);
+  const abierto = verDetalle ?? (d ? d.color !== 'verde' : false);
   const TONO: Record<string, 'good' | 'warning' | 'critical'> = {
     verde: 'good',
     ambar: 'warning',
@@ -199,9 +205,17 @@ function JobRow({
         </Pill>
 
         {d ? (
-          <Pill tone={TONO[d.color]} dot>
-            Encuadre {d.veredicto} · {d.puntaje}/100
-          </Pill>
+          <button
+            type="button"
+            className="pill-boton"
+            aria-expanded={abierto}
+            title={abierto ? 'Ocultar el detalle del encuadre' : 'Ver por qué y qué cambiar'}
+            onClick={() => setVerDetalle(!abierto)}
+          >
+            <Pill tone={TONO[d.color]} dot>
+              Encuadre {d.veredicto} · {d.puntaje}/100
+            </Pill>
+          </button>
         ) : (
           <Button
             onClick={() => diagnosticar.mutate({ jobId: job.id })}
@@ -231,6 +245,53 @@ function JobRow({
           <IconTrash strokeWidth={2} />
         </IconButton>
       </div>
+
+      {d && abierto && (
+        /*
+          Qué le pasa a este encuadre y qué se puede hacer. El veredicto solo
+          no sirve de nada: lo accionable es el aviso ("el vehículo mide 22 px",
+          "imagen sobreexpuesta", "los rastros mueren a media escena").
+        */
+        <div className="job-diagnostico rise">
+          <div className="jd-head">
+            <span className="jd-title">
+              Encuadre {d.veredicto} · {d.puntaje}/100
+              {d.razon_esperada
+                ? ` · exactitud esperable ${d.razon_esperada[0].toFixed(2)}×–${d.razon_esperada[1].toFixed(2)}× del conteo real`
+                : ' · con este encuadre no se puede prometer exactitud'}
+            </span>
+            <Button
+              onClick={() => diagnosticar.mutate({ jobId: job.id })}
+              disabled={diagnosticar.isPending}
+            >
+              {diagnosticar.isPending ? 'Revisando…' : 'Revisar de nuevo'}
+            </Button>
+          </div>
+
+          {d.avisos.length > 0 ? (
+            <div className="notice-stack">
+              {d.avisos.map((a, i) => (
+                <Notice
+                  key={i}
+                  tone={d.color === 'rojo' ? 'critical' : 'warning'}
+                  title={i === 0 ? 'Esta perspectiva puede afectar el aforo' : undefined}
+                >
+                  {a}
+                </Notice>
+              ))}
+            </div>
+          ) : (
+            <Notice tone="good" title="El encuadre no tiene pegas">
+              El vehículo se ve bastante grande y los rastros entran y salen por donde deben.
+            </Notice>
+          )}
+
+          <p className="jd-fuente">
+            Medido sobre este mismo video ({d.etapa}), antes de contarlo. No es una predicción del
+            modelo: son las señales que en este proyecto se contrastaron contra conteos manuales.
+          </p>
+        </div>
+      )}
 
       {open && (
         /*

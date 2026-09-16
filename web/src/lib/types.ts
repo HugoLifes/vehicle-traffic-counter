@@ -127,9 +127,11 @@ export interface DiagnosticoEncuadre {
   avisos: string[];
   razon_esperada: [number, number] | null;
   etapa: string;
-  /** Puntaje de cada etapa cuando se corrieron las dos. */
+  /** Puntaje de cada etapa cuando se corrieron las dos. `rastreo` viene en
+      null cuando esa etapa no fue concluyente (poco tránsito en el minuto
+      de prueba), y entonces manda la etapa por imagen. */
   imagen?: number;
-  rastreo?: number;
+  rastreo?: number | null;
 }
 
 export interface DiagnosticoGuardado {
