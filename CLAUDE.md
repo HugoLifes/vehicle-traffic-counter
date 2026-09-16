@@ -792,6 +792,17 @@ En Blvd Ind falla por lo mismo de siempre, y aquí se ve sin ambigüedad: el
 `data/od/herramientas/comparar_accesos.py` lo contrasta contra el Excel de
 la empresa emparejando accesos por datos.
 
+**La Glorieta Altozano tampoco sirve, y por otra razón: no vemos el
+tránsito.** Se contó su ventana completa (8 videos, 07:00–08:00, 4 cuartos
+comparables): 124 movimientos completos y ~1 630 vehículos detectados
+contra ~5 760 del conteo manual, un tercio. Los dos movimientos dominantes
+del manual (`2_3` con 1 956/h y `3_2` con 1 325/h) salen en **cero**: esa
+cámara mira al Blvd. Altozano y el flujo grande de la Y, el que va y viene
+de Blvd. Independencia, pasa fuera del encuadre. Los incompletos se
+amontonan a media imagen (x 320–560 y 960–1120), no en las orillas: el
+vehículo aparece y desaparece en medio de la escena. **Si el vehículo no
+está en el video no hay nada que afinar.**
+
 **Qué se puede ofrecer hoy, por tipo de cruce:**
 
 - Intersección plana, con los brazos a la vista: matriz origen-destino,
