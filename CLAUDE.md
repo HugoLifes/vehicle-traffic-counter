@@ -771,6 +771,35 @@ vista elevada que vea las cuatro esquinas. **No seguir afinando accesos
 sobre este material.** El proyecto 4 queda con los accesos v2, que fueron
 los menos malos.
 
+### El entregable que SÍ sale donde la matriz no: volumen por acceso
+
+La matriz origen-destino exige seguir al vehículo de un extremo a otro del
+cruce. El **volumen por acceso** (cuántos entraron y cuántos salieron por
+cada brazo) solo exige verlo entrar o salir, así que **cuenta también los
+movimientos incompletos**: uno del que no se vio el destino sigue diciendo
+por dónde entró. Medido contra el conteo manual:
+
+| aforo | entradas | salidas | accesos con GEH < 5 |
+|---|---|---|---|
+| Entrada y salida Altozano (7:30) | 308 contra 275 | 292 contra 275 | **5 de 6 (83 %)** |
+| Blvd Independencia (4 cuartos) | 4 535 contra 5 374 | 3 040 contra 5 374 | 0 de 8 |
+
+En Blvd Ind falla por lo mismo de siempre, y aquí se ve sin ambigüedad: el
+**acceso 4 da 0 entradas y 0 salidas**. La cámara no lo ve; no es ajuste.
+
+`get_matriz_od` devuelve `por_acceso`, y lo muestran el endpoint
+`/direccional`, la sección del reporte y la hoja DIRECCIONAL del Excel.
+`data/od/herramientas/comparar_accesos.py` lo contrasta contra el Excel de
+la empresa emparejando accesos por datos.
+
+**Qué se puede ofrecer hoy, por tipo de cruce:**
+
+- Intersección plana, con los brazos a la vista: matriz origen-destino,
+  con el movimiento dominante al 88 % (Entrada y salida Altozano).
+- Cualquier cámara que vea el brazo completo: volumen por acceso.
+- Paso a desnivel con una sola cámara: **nada fiable**; hacen falta dos
+  cámaras.
+
 ### Cómo decide la plataforma
 
 `src/engine/origen_destino.py`. Cada brazo es una zona de tipo `acceso`;
