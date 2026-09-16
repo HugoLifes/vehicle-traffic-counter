@@ -588,8 +588,20 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15) -> Dict:
         return d.strftime('%Y-%m-%d') + f' {m // 60:02d}:{m % 60:02d}'
 
     completos, incompletos = defaultdict(int), defaultdict(int)
+    # Volumen por acceso: cuántos ENTRARON y cuántos SALIERON por cada brazo.
+    # Cuenta también los movimientos incompletos, y esa es la razón de ser de
+    # este bloque: un vehículo del que no se vio el destino sigue diciendo por
+    # dónde entró. La matriz origen-destino exige seguirlo por todo el cruce;
+    # el volumen por acceso solo exige verlo entrar o salir, así que se puede
+    # entregar en cámaras donde la matriz no alcanza. Medido contra el conteo
+    # manual de Entrada y salida Altozano: 5 de 6 cifras con GEH < 5.
+    entradas, salidas = defaultdict(int), defaultdict(int)
     for f in filas:
         clave_t = intervalo(f['timestamp'])
+        if f['origen_id'] is not None:
+            entradas[(clave_t, f['origen_id'])] += 1
+        if f['destino_id'] is not None:
+            salidas[(clave_t, f['destino_id'])] += 1
         if f['origen_id'] is not None and f['destino_id'] is not None:
             completos[(clave_t, f['origen_id'], f['destino_id'], f['vehicle_type'])] += 1
         else:
@@ -604,6 +616,11 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15) -> Dict:
         'incompletos': [
             {'intervalo': t, 'origen_id': o, 'destino_id': d, 'total': n}
             for (t, o, d), n in sorted(incompletos.items(), key=lambda kv: str(kv[0]))
+        ],
+        'por_acceso': [
+            {'intervalo': t, 'acceso_id': a,
+             'entradas': entradas[(t, a)], 'salidas': salidas[(t, a)]}
+            for t, a in sorted(set(entradas) | set(salidas), key=lambda k: (k[0], k[1]))
         ],
     }
 

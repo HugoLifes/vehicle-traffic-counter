@@ -132,12 +132,23 @@ export interface IncompletoOD {
   total: number;
 }
 
+/** Cuántos vehículos entraron y salieron por un acceso en un intervalo.
+    Incluye los movimientos incompletos: uno del que no se vio el destino
+    sigue diciendo por dónde entró. */
+export interface VolumenAcceso {
+  intervalo: string;
+  acceso_id: number;
+  entradas: number;
+  salidas: number;
+}
+
 export interface AforoDireccional {
   /** id del acceso → nombre. Las llaves llegan como texto (JSON). */
   accesos: Record<string, string>;
   intervalo_minutos: number;
   movimientos: MovimientoOD[];
   incompletos: IncompletoOD[];
+  por_acceso: VolumenAcceso[];
 }
 
 export interface Zone {

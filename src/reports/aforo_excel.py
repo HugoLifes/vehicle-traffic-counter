@@ -528,6 +528,36 @@ def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
             _celda(ws, fila, 2 + j, por_clase[k].get(c, 0))
         _celda(ws, fila, 2 + len(clases), total_od[k], _CABECERA, _GRIS)
 
+    # 4. Volumen por acceso: entradas y salidas de cada brazo.
+    #
+    # Va aparte de la matriz porque se puede entregar donde la matriz no
+    # alcanza: cuenta también los movimientos incompletos, ya que un
+    # vehículo del que no se vio el destino sigue diciendo por dónde entró.
+    por_acceso = defaultdict(lambda: [0, 0])
+    for v in od.get("por_acceso", []):
+        por_acceso[v["acceso_id"]][0] += v["entradas"]
+        por_acceso[v["acceso_id"]][1] += v["salidas"]
+    if por_acceso:
+        fila += 3
+        _celda(ws, fila, 1, "VOLUMEN POR ACCESO", _SUBTITULO, _AZUL)
+        ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=3)
+        fila += 1
+        for j, etiqueta in enumerate(("ACCESO", "ENTRADAS", "SALIDAS")):
+            _celda(ws, fila, 1 + j, etiqueta, _CABECERA, _GRIS)
+        for acc in accesos:
+            fila += 1
+            _celda(ws, fila, 1, nombre[acc], _NORMAL)
+            _celda(ws, fila, 2, por_acceso[acc][0])
+            _celda(ws, fila, 3, por_acceso[acc][1])
+        fila += 1
+        _celda(ws, fila, 1, "TOTAL", _CABECERA, _GRIS)
+        _celda(ws, fila, 2, sum(v[0] for v in por_acceso.values()), _CABECERA, _GRIS)
+        _celda(ws, fila, 3, sum(v[1] for v in por_acceso.values()), _CABECERA, _GRIS)
+        nota2 = ws.cell(fila + 1, 1,
+                        "Las entradas y salidas incluyen los vehículos con movimiento "
+                        "incompleto: no se supo a dónde iban, pero sí por dónde pasaron.")
+        nota2.font = Font(size=9, italic=True)
+
     ws.column_dimensions["A"].width = 26
     return sum(total_od.values())
 

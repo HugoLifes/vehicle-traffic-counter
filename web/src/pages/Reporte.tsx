@@ -303,6 +303,43 @@ function Direccional({ d }: { d: AforoDireccional }) {
           </tbody>
         </table>
       </div>
+      {d.por_acceso.length > 0 && (
+        <>
+          <h4 className="chart-sub" style={{ marginTop: 'var(--space-4)' }}>
+            Volumen por acceso
+          </h4>
+          <p className="chart-sub">
+            Cuántos vehículos entraron y salieron por cada brazo. Incluye los movimientos
+            incompletos: de esos no se supo a dónde iban, pero sí por dónde pasaron, así que esta
+            tabla se puede entregar aunque la matriz de arriba quede corta.
+          </p>
+          <div className="table-scroll">
+            <table className="data-table">
+              <caption className="visually-hidden">Entradas y salidas por acceso.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Acceso</th>
+                  <th scope="col">Entradas</th>
+                  <th scope="col">Salidas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accesos.map((a) => {
+                  const v = d.por_acceso.filter((x) => x.acceso_id === a);
+                  return (
+                    <tr key={a}>
+                      <th scope="row">{nombre(a)}</th>
+                      <td>{formatNumber(v.reduce((s, x) => s + x.entradas, 0))}</td>
+                      <td>{formatNumber(v.reduce((s, x) => s + x.salidas, 0))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       {incompletos > 0 && (
         <Notice tone="warning" title={`${formatNumber(incompletos)} movimientos incompletos`}>
           De estos vehículos se vio el origen o el destino, no ambos: los tapó otro vehículo o
