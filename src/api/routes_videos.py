@@ -228,7 +228,8 @@ def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
             from src.engine.rastreo_bytetrack import RastreadorBytetrack
             detector.confidence_threshold = min(umbral, RastreadorBytetrack.CONF_MINIMA)
             medidas_rastreo = medir_rastreo(job["stored_path"], detector, minutos)
-            medidas_rastreo.update(calificar_rastreo(medidas_rastreo))
+            medidas_rastreo.update(calificar_rastreo(
+                medidas_rastreo, medidas.get("detecciones_por_cuadro")))
     finally:
         detector.confidence_threshold = umbral
         detector.set_detection_band(banda)

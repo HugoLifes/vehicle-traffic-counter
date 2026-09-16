@@ -73,7 +73,8 @@ def main():
         # ByteTrack necesita ver las detecciones flojas para su segunda pasada.
         det.confidence_threshold = min(det.confidence_threshold, RastreadorBytetrack.CONF_MINIMA)
         rastreo = medir_rastreo(a.video, det, a.minutos)
-        rastreo = dict(rastreo, **calificar_rastreo(rastreo))
+        rastreo = dict(rastreo, **calificar_rastreo(
+            rastreo, m.get('detecciones_por_cuadro')))
 
     d = combinar(imagen, rastreo)
     print(f"\n{os.path.basename(a.video)}")
@@ -81,9 +82,10 @@ def main():
     print(f"  vehículo {m.get('alto_mediana', 0):.0f} px de alto, confianza {m.get('confianza')}, "
           f"brillo {m.get('brillo')}, nitidez {m.get('nitidez')}")
     if rastreo:
+        nota = '' if rastreo.get('concluyente', True) else '  (no concluyente: poco tránsito)'
         print(f"  rastreo: {rastreo['rastros']} vehículos, extremos en 6 celdas "
               f"{rastreo['concentracion']:.0f} %, en la orilla {rastreo['borde']:.0f} %, "
-              f"partidos {rastreo['partidos_pct']:.0f} %")
+              f"partidos {rastreo['partidos_pct']:.0f} %{nota}")
     print(f"\n  {resumen_texto(d)}")
     for av in d['avisos']:
         print(f"   · {av}")

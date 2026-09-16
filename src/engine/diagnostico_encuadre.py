@@ -289,19 +289,42 @@ def calificar(m: Dict, direccional: bool = False) -> Dict:
 CONCENTRACION_BUENA = 75.0   # % de extremos en las 6 celdas más usadas
 BORDE_MINIMO = 15.0          # % de extremos pegados a la orilla del cuadro
 
+# Con menos de 10 rastros las proporciones de esta etapa son ruido (con 5
+# rastros hay 10 extremos: un vehículo mueve la cifra 10 puntos). Y "pocos
+# rastros" tiene DOS causas opuestas, una del encuadre y la otra no. Medido
+# sobre el material: Fraccionamientos da 2.1 detecciones por cuadro y 5
+# rastros —una calle tranquila, con el encuadre bien— y el amanecer de
+# Entrada y salida Altozano da 0.5 detecciones por cuadro y 0 rastros, que
+# ahí sí es que no se ve nada. Lo que las separa es cuántos vehículos ve el
+# detector en la imagen, no cuántos alcanza a seguir.
+RASTROS_MINIMOS = 10
+DETS_CUADRO_HAY_TRANSITO = 1.0
 
-def calificar_rastreo(r: Dict) -> Dict:
+
+def calificar_rastreo(r: Dict, dets_por_cuadro: Optional[float] = None) -> Dict:
     """
     r: {'rastros', 'concentracion', 'borde', 'celdas', 'partidos_pct'}
        tal como los mide tools/diagnosticar_encuadre.py sobre un minuto.
+
+    dets_por_cuadro: el `detecciones_por_cuadro` de la etapa por imagen. Sin
+       él, pocos rastros se toman como encuadre malo, que es lo que esta
+       etapa suponía antes y sale mal en una calle de poco tránsito.
     """
     avisos: List[str] = []
     conc = r.get('concentracion') or 0
     borde = r.get('borde') or 0
     partidos = r.get('partidos_pct') or 0
 
-    if r.get('rastros', 0) < 10:
-        return {'puntaje': 0, 'veredicto': 'no sirve', 'color': 'rojo',
+    if r.get('rastros', 0) < RASTROS_MINIMOS:
+        n = r.get('rastros', 0)
+        if dets_por_cuadro is not None and dets_por_cuadro >= DETS_CUADRO_HAY_TRANSITO:
+            # Hay vehículos en el cuadro; que pasen pocos no dice nada del
+            # encuadre. Esta etapa se declara no concluyente y manda la otra.
+            return {'concluyente': False, 'avisos': [
+                f'Solo se siguieron {n} vehículos en el minuto de prueba, aunque el detector '
+                f've {dets_por_cuadro:.1f} por cuadro: es poco tránsito, no un problema del '
+                'encuadre. Para juzgarlo, diagnostica más minutos o un video de hora pico.']}
+        return {'puntaje': 0, 'veredicto': 'no sirve', 'color': 'rojo', 'concluyente': True,
                 'avisos': ['Casi no se siguió ningún vehículo en el minuto de prueba.']}
 
     if conc < CONCENTRACION_BUENA:
@@ -326,7 +349,8 @@ def calificar_rastreo(r: Dict) -> Dict:
         veredicto, color = 'regular', 'ambar'
     else:
         veredicto, color = 'no recomendable', 'rojo'
-    return {'puntaje': puntaje, 'veredicto': veredicto, 'color': color, 'avisos': avisos}
+    return {'puntaje': puntaje, 'veredicto': veredicto, 'color': color,
+            'concluyente': True, 'avisos': avisos}
 
 
 def combinar(imagen: Dict, rastreo: Optional[Dict] = None) -> Dict:
@@ -336,6 +360,16 @@ def combinar(imagen: Dict, rastreo: Optional[Dict] = None) -> Dict:
     """
     if rastreo is None:
         return dict(imagen, etapa='solo imagen')
+    if not rastreo.get('concluyente', True):
+        # El rastreo no vio bastante para opinar: manda la etapa por imagen,
+        # con el aviso de por qué. Puntuar esto como encuadre malo reprobaba
+        # calles de poco tránsito por no tener tránsito.
+        avisos = rastreo.get('avisos', []) + imagen.get('avisos', [])
+        genericos = [a for a in avisos if a.startswith('En aforo direccional')]
+        return dict(imagen,
+                    avisos=[a for a in avisos if a not in genericos] + genericos,
+                    imagen=imagen['puntaje'], rastreo=None,
+                    etapa='solo imagen (el rastreo no fue concluyente)')
     orden = {'verde': 2, 'ambar': 1, 'rojo': 0}
     peor = min((imagen, rastreo), key=lambda d: orden.get(d['color'], 0))
     # El rango esperado sale del veredicto FINAL y no de la mejor etapa: con
