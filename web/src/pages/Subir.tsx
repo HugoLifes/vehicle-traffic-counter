@@ -12,7 +12,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, EmptyState, IconButton, Notice, Pill } from '../components/ui';
 import { IconClose, IconEye, IconTrash, IconUpload, IconVideo } from '../components/Icons';
-import { useDeleteVideo, useStartCounting, useUploadVideos, useVideos } from '../lib/queries';
+import {
+  useDeleteVideo,
+  useDiagnosticar,
+  useDiagnostico,
+  useStartCounting,
+  useUploadVideos,
+  useVideos,
+} from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
 import { errorMessage, frameUrl, videoUrl } from '../lib/api';
 import {
@@ -142,6 +149,18 @@ function JobRow({
   const format = fileExtension(job.original_name).replace('.', '').toUpperCase();
   const start = job.video_start_time ? job.video_start_time.slice(11, 19) : 'sin hora';
 
+  /* Diagnóstico del encuadre: dice si vale la pena contar este video antes
+     de gastar horas en hacerlo. Corre sobre la misma GPU que la cola, así
+     que el backend lo rechaza mientras haya videos contándose. */
+  const { data: diag } = useDiagnostico(job.id);
+  const diagnosticar = useDiagnosticar();
+  const d = diag?.datos?.diagnostico;
+  const TONO: Record<string, 'good' | 'warning' | 'critical'> = {
+    verde: 'good',
+    ambar: 'warning',
+    rojo: 'critical',
+  };
+
   return (
     <>
       <div className="job-row">
@@ -178,6 +197,19 @@ function JobRow({
             ? `Error: ${job.error}`
             : JOB_STATUS_LABEL[job.status]}
         </Pill>
+
+        {d ? (
+          <Pill tone={TONO[d.color]} dot>
+            Encuadre {d.veredicto} · {d.puntaje}/100
+          </Pill>
+        ) : (
+          <Button
+            onClick={() => diagnosticar.mutate({ jobId: job.id })}
+            disabled={diagnosticar.isPending}
+          >
+            {diagnosticar.isPending ? 'Revisando…' : 'Revisar encuadre'}
+          </Button>
+        )}
 
         {job.status === 'done' && (
           <IconButton

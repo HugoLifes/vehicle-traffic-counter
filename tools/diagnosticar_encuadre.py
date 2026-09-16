@@ -29,15 +29,12 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 sys.path.insert(0, os.path.join(RAIZ, 'tools'))
 
-from calidad_video import medir                                   # noqa: E402
 from src.detector import VehicleDetector                          # noqa: E402
 from src.engine.diagnostico_encuadre import (calificar,           # noqa: E402
                                              calificar_rastreo, combinar,
+                                             medir_imagen, medir_rastreo,
                                              resumen_texto)
-from src.engine.origen_destino import Rastro, se_movio, unir_pedazos   # noqa: E402
 from src.engine.rastreo_bytetrack import RastreadorBytetrack      # noqa: E402
-
-CELDA = 80
 
 
 def _config():
@@ -47,49 +44,6 @@ def _config():
             return yaml.safe_load(fh) or {}
     except OSError:
         return {}
-
-
-def medir_rastreo(video, det, minutos, banda=None):
-    """Rastrea un minuto y mide dónde nacen y mueren los rastros."""
-    cap = cv2.VideoCapture(video)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 15
-    ancho = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    det.set_detection_band(banda)
-    trk = RastreadorBytetrack(fps)
-    rastros = {}
-    n = 0
-    tope = int(minutos * 60 * fps)
-    while n < tope:
-        ok, f = cap.read()
-        if not ok:
-            break
-        for t in trk.update(det.detect(f)[0], f):
-            r = rastros.setdefault(t['id'], Rastro(t['id']))
-            x1, y1, x2, y2 = t['bbox']
-            r.puntos.append((n, (x1 + x2) / 2, y2, y2 - y1, None))
-        n += 1
-    cap.release()
-
-    moviles = [r for r in rastros.values() if r.puntos and se_movio(r.puntos)]
-    cadenas = unir_pedazos(moviles, fps)
-    extremos = []
-    for c in cadenas:
-        pts = [p for r in c for p in r.puntos]
-        extremos.append(pts[0][1:3])
-        extremos.append(pts[-1][1:3])
-    if not extremos:
-        return {'rastros': 0, 'concentracion': 0, 'borde': 0, 'celdas': 0, 'partidos_pct': 0}
-    rejilla = Counter((int(x) // CELDA, int(y) // CELDA) for x, y in extremos)
-    return {
-        'rastros': len(cadenas),
-        'concentracion': 100 * sum(n for _, n in rejilla.most_common(6)) / len(extremos),
-        'borde': 100 * sum(1 for x, y in extremos
-                           if x < 70 or x > ancho - 70 or y < 70 or y > alto - 70) / len(extremos),
-        'celdas': len(rejilla),
-        'partidos_pct': 100 * sum(1 for c in cadenas if len(c) > 1) / max(1, len(cadenas)),
-        'cuadros': n,
-    }
 
 
 def main():
@@ -110,7 +64,7 @@ def main():
                           cfg.get('iou_threshold', 0.5),
                           cfg.get('input_size', 1280), 'auto')
     det.set_detection_band(None)
-    m = medir(a.video, det, a.muestras)
+    m = medir_imagen(a.video, det, a.muestras)
     m.pop('_ejemplo', None)
     imagen = calificar(m, direccional=a.direccional)
 

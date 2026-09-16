@@ -114,6 +114,38 @@ export interface RagRespuesta {
   fuentes: RagFuente[];
 }
 
+/* --- Diagnóstico de encuadre -------------------------------------------- */
+
+/** Qué tan apto es el encuadre para aforar, medido ANTES de contar.
+    No promete un porcentaje de exactitud: `razon_esperada` es el rango
+    contra conteo manual que corresponde al veredicto, y los avisos dicen
+    qué cambiar. */
+export interface DiagnosticoEncuadre {
+  puntaje: number;
+  veredicto: string;
+  color: 'verde' | 'ambar' | 'rojo';
+  avisos: string[];
+  razon_esperada: [number, number] | null;
+  etapa: string;
+  /** Puntaje de cada etapa cuando se corrieron las dos. */
+  imagen?: number;
+  rastreo?: number;
+}
+
+export interface DiagnosticoGuardado {
+  job_id: number;
+  puntaje: number;
+  veredicto: string;
+  color: 'verde' | 'ambar' | 'rojo';
+  etapa: string;
+  created_at: string;
+  datos: {
+    medidas: Record<string, unknown>;
+    rastreo: Record<string, number> | null;
+    diagnostico: DiagnosticoEncuadre;
+  };
+}
+
 /* --- Aforo direccional (origen-destino) --------------------------------- */
 
 export interface MovimientoOD {

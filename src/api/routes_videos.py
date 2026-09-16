@@ -167,6 +167,78 @@ def delete_video(job_id: int):
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
+@router.get("/{job_id}/diagnostico")
+def leer_diagnostico(job_id: int):
+    """El diagnóstico guardado de este video, si ya se hizo."""
+    d = traffic_db.get_diagnostico(job_id)
+    if d is None:
+        raise HTTPException(404, "Este video todavía no tiene diagnóstico de encuadre")
+    return d
+
+
+@router.post("/{job_id}/diagnostico")
+def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
+                 minutos: float = 1.0):
+    """
+    ¿Sirve este encuadre para aforar? Se mide ANTES de contar.
+
+    Dos etapas: la primera mira unos cuadros (tamaño del vehículo,
+    exposición, nitidez, confianza) y la segunda rastrea un minuto para ver
+    dónde nacen y mueren los rastros. La primera sola no alcanza: calificaba
+    mejor a un cruce que después falló (41 px pero con un puente tapando dos
+    accesos) que al único que funcionó.
+
+    **No corre si hay videos contándose.** Dos trabajos de GPU a la vez en el
+    Orin dan `NvMapMemAllocInternalTagged error 12` y dejan cuadros sin
+    detección: pasó de verdad, y arruina las dos medidas. Mejor pedir que
+    espere que devolver un diagnóstico inventado.
+    """
+    from src.engine.diagnostico_encuadre import (calificar, calificar_rastreo,
+                                                 combinar, medir_imagen)
+
+    job = traffic_db.get_video_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Video no encontrado")
+    if not Path(job["stored_path"]).exists():
+        raise HTTPException(409, "El archivo de este video ya no está en disco")
+
+    ocupados = traffic_db.get_queued_video_jobs()
+    if ocupados:
+        raise HTTPException(
+            409,
+            f"Hay {len(ocupados)} videos en la cola de conteo. El diagnóstico usa la misma "
+            "GPU y correr los dos a la vez estropea ambos: inténtalo cuando la cola termine."
+        )
+
+    procesador = get_processor()
+    if procesador is None:
+        raise HTTPException(503, "El procesador de video no está disponible")
+    detector = procesador._get_detector()
+    umbral = detector.confidence_threshold
+    banda = getattr(detector, "detection_band", None)
+    try:
+        detector.set_detection_band(None)
+        medidas = medir_imagen(job["stored_path"], detector)
+        medidas.pop("_ejemplo", None)
+        imagen = calificar(medidas, direccional=direccional)
+
+        medidas_rastreo = None
+        if rastreo and imagen["puntaje"] > 0:
+            from src.engine.diagnostico_encuadre import medir_rastreo
+            from src.engine.rastreo_bytetrack import RastreadorBytetrack
+            detector.confidence_threshold = min(umbral, RastreadorBytetrack.CONF_MINIMA)
+            medidas_rastreo = medir_rastreo(job["stored_path"], detector, minutos)
+            medidas_rastreo.update(calificar_rastreo(medidas_rastreo))
+    finally:
+        detector.confidence_threshold = umbral
+        detector.set_detection_band(banda)
+
+    d = {"medidas": medidas, "rastreo": medidas_rastreo,
+         "diagnostico": combinar(imagen, medidas_rastreo)}
+    traffic_db.guardar_diagnostico(job_id, job.get("project_id"), d)
+    return d
+
+
 @router.get("/live-frame")
 def live_frame():
     """

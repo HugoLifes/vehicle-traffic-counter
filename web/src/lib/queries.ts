@@ -69,6 +69,33 @@ export function useDireccional(projectId: number | null, minutes: number) {
   });
 }
 
+export function useDiagnostico(jobId: number) {
+  return useQuery({
+    queryKey: ['diagnostico', jobId],
+    queryFn: () => api.getDiagnostico(jobId),
+    // 404 = todavía no se ha diagnosticado; no es un error que reintentar.
+    retry: false,
+  });
+}
+
+export function useDiagnosticar() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...conAviso({
+      mutationFn: ({ jobId, direccional }: { jobId: number; direccional?: boolean }) =>
+        api.diagnosticarVideo(jobId, direccional),
+      exito: (d) => ({
+        titulo: `Encuadre ${d.diagnostico.veredicto}`,
+        detalle: `${d.diagnostico.puntaje}/100`,
+      }),
+      fallo: 'No se pudo diagnosticar el encuadre',
+    }),
+    onSuccess: (_d, v) => {
+      void qc.invalidateQueries({ queryKey: ['diagnostico', v.jobId] });
+    },
+  });
+}
+
 export function useEngineState() {
   return useQuery({
     queryKey: keys.engine,

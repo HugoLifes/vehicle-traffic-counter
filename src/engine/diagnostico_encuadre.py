@@ -23,7 +23,13 @@ Se alimenta de las mismas medidas que produce `tools/calidad_video.py`, así
 que el diagnóstico y la medición no pueden desviarse entre sí.
 """
 
+import os
 from typing import Dict, List, Optional
+
+try:
+    import cv2
+except ImportError:      # pragma: no cover - cv2 siempre está en producción
+    cv2 = None
 
 # Alto del vehículo en píxeles. El detector necesita ~40 px para trabajar
 # con holgura; a 33 px el aforo por línea dio 0.96x contra conteo manual y
@@ -42,6 +48,127 @@ NITIDEZ_BAJA = 1000.0
 # Confianza media del detector sobre los vehículos vistos.
 CONFIANZA_BUENA = 0.60
 CONFIANZA_MALA = 0.45
+
+
+def medir_imagen(video: str, det, muestras: int = 10) -> Dict:
+    """
+    Medidas de unos cuadros repartidos a lo largo del video.
+
+    Vive aquí y no en tools/ porque las usan tres caminos —la herramienta de
+    calidad, la de diagnóstico y la API— y si se duplican terminan midiendo
+    cosas distintas con el mismo nombre.
+    """
+    import statistics
+    cap = cv2.VideoCapture(video)
+    if not cap.isOpened():
+        return {'error': 'no abre'}
+    ancho = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+
+    altos, confs, brillo, contraste, nitidez = [], [], [], [], []
+    por_clase: Dict[str, int] = {}
+    mejor, ejemplo = -1, None
+    for i in range(muestras):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int((i + 0.5) * total / max(1, muestras)))
+        ok, f = cap.read()
+        if not ok:
+            continue
+        gris = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+        brillo.append(float(gris.mean()))
+        contraste.append(float(gris.std()))
+        nitidez.append(float(cv2.Laplacian(gris, cv2.CV_64F).var()))
+        dets, _ = det.detect(f)
+        for d in dets:
+            x1, y1, x2, y2 = d['bbox']
+            altos.append(y2 - y1)
+            confs.append(d['confidence'])
+            por_clase[d['class_name']] = por_clase.get(d['class_name'], 0) + 1
+        if len(dets) > mejor:
+            mejor, ejemplo = len(dets), (f, dets)
+    cap.release()
+
+    def pct(p):
+        if not altos:
+            return None
+        v = sorted(altos)
+        return v[min(len(v) - 1, int(p * len(v)))]
+
+    segundos = total / fps if fps else 0
+    return {
+        'resolucion': f'{ancho}x{alto}', 'fps': round(fps, 1),
+        'minutos': round(segundos / 60, 1),
+        'kbps': round(os.path.getsize(video) * 8 / segundos / 1000) if segundos else None,
+        'brillo': round(statistics.mean(brillo)) if brillo else None,
+        'contraste': round(statistics.mean(contraste)) if contraste else None,
+        'nitidez': round(statistics.median(nitidez)) if nitidez else None,
+        'detecciones_por_cuadro': round(len(altos) / max(1, len(brillo)), 1),
+        'alto_p25': pct(.25), 'alto_mediana': pct(.5), 'alto_p75': pct(.75),
+        'pct_bajo_20px': round(100 * sum(a < 20 for a in altos) / len(altos)) if altos else None,
+        'pct_40px_o_mas': round(100 * sum(a >= 40 for a in altos) / len(altos)) if altos else None,
+        'confianza': round(statistics.mean(confs), 2) if confs else None,
+        'clases': por_clase,
+        '_ejemplo': ejemplo,
+    }
+
+
+CELDA_EXTREMOS = 80
+
+
+def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None) -> Dict:
+    """
+    Rastrea unos minutos y mide dónde nacen y mueren los rastros.
+
+    El detector tiene que venir con el umbral bajo (ByteTrack necesita ver
+    las detecciones flojas para su segunda pasada); quien llama lo ajusta y
+    lo restaura, porque el detector se comparte con la cola de conteo.
+    """
+    from collections import Counter
+
+    from src.engine.origen_destino import Rastro, se_movio, unir_pedazos
+    from src.engine.rastreo_bytetrack import RastreadorBytetrack
+
+    cap = cv2.VideoCapture(video)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 15
+    ancho = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    det.set_detection_band(banda)
+    trk = RastreadorBytetrack(fps)
+    rastros: Dict[int, object] = {}
+    n, tope = 0, int(minutos * 60 * fps)
+    while n < tope:
+        ok, f = cap.read()
+        if not ok:
+            break
+        for tr in trk.update(det.detect(f)[0], f):
+            r = rastros.get(tr['id'])
+            if r is None:
+                r = rastros[tr['id']] = Rastro(tr['id'])
+            x1, y1, x2, y2 = tr['bbox']
+            r.puntos.append((n, (x1 + x2) / 2, y2, y2 - y1, None))
+        n += 1
+    cap.release()
+
+    cadenas = unir_pedazos([r for r in rastros.values() if r.puntos and se_movio(r.puntos)], fps)
+    extremos = []
+    for c in cadenas:
+        pts = [p for r in c for p in r.puntos]
+        extremos.append(pts[0][1:3])
+        extremos.append(pts[-1][1:3])
+    if not extremos:
+        return {'rastros': 0, 'concentracion': 0, 'borde': 0, 'celdas': 0,
+                'partidos_pct': 0, 'cuadros': n}
+    rejilla = Counter((int(x) // CELDA_EXTREMOS, int(y) // CELDA_EXTREMOS) for x, y in extremos)
+    return {
+        'rastros': len(cadenas),
+        'concentracion': 100 * sum(v for _, v in rejilla.most_common(6)) / len(extremos),
+        'borde': 100 * sum(1 for x, y in extremos
+                           if x < 70 or x > ancho - 70 or y < 70 or y > alto - 70) / len(extremos),
+        'celdas': len(rejilla),
+        'partidos_pct': 100 * sum(1 for c in cadenas if len(c) > 1) / max(1, len(cadenas)),
+        'cuadros': n,
+    }
 
 
 def _banda(valor: float, bueno: float, malo: float) -> float:

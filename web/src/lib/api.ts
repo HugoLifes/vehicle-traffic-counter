@@ -25,7 +25,14 @@ import type {
   RagConversacion,
   RagMensaje,
 } from './types';
-import type { AforoDireccional, EventoProyecto, FichaCamara, FuenteVideo } from './types';
+import type {
+  AforoDireccional,
+  DiagnosticoEncuadre,
+  DiagnosticoGuardado,
+  EventoProyecto,
+  FichaCamara,
+  FuenteVideo,
+} from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -207,6 +214,17 @@ export const getDireccional = (projectId: number, minutes: number) =>
   request<AforoDireccional>(`/api/projects/${projectId}/direccional?interval_minutes=${minutes}`);
 
 export const videoUrl = (jobId: number) => `/api/videos/${jobId}/video`;
+
+export const getDiagnostico = (jobId: number) =>
+  request<DiagnosticoGuardado>(`/api/videos/${jobId}/diagnostico`);
+
+/* El diagnóstico usa la misma GPU que la cola de conteo, así que el backend
+   lo rechaza mientras haya videos contándose. */
+export const diagnosticarVideo = (jobId: number, direccional = false) =>
+  request<{ diagnostico: DiagnosticoEncuadre }>(
+    `/api/videos/${jobId}/diagnostico?rastreo=true&direccional=${direccional}`,
+    { method: 'POST' },
+  );
 
 /* --- Exportación --------------------------------------------------------
    Enlaces directos, no fetch: así el navegador maneja la descarga con su

@@ -202,6 +202,24 @@ def init_schema():
         "CREATE INDEX IF NOT EXISTS idx_movimientos_job ON movimientos(job_id)"
     )
 
+    # Diagnóstico del encuadre de un video: qué tan apto es para aforar,
+    # medido ANTES de contarlo. Se guarda para no repetir el cálculo y para
+    # que quede en el historial de la intersección: si el aforo sale bajo,
+    # el diagnóstico dice si era esperable.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS diagnosticos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL UNIQUE REFERENCES video_jobs(id),
+            project_id INTEGER REFERENCES projects(id),
+            puntaje INTEGER NOT NULL,
+            veredicto TEXT NOT NULL,
+            color TEXT NOT NULL,
+            etapa TEXT NOT NULL,
+            datos TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
     # Registro de lo que se le ha hecho a cada intersección. Un aforo
     # sustenta decisiones de obra, así que tiene que poder responder
     # "¿de dónde salió esta cifra?": con qué calibración se contó, cuándo
@@ -372,6 +390,9 @@ def delete_project(project_id: int) -> Dict:
         # el borrado del proyecto entero.
         "movimientos": conn.execute(
             "DELETE FROM movimientos WHERE project_id = ?", (project_id,)
+        ).rowcount,
+        "diagnosticos": conn.execute(
+            "DELETE FROM diagnosticos WHERE project_id = ?", (project_id,)
         ).rowcount,
         "videos": conn.execute(
             "DELETE FROM video_jobs WHERE project_id = ?", (project_id,)
@@ -555,6 +576,44 @@ def record_movimientos(project_id: int, job_id: Optional[int],
     )
     conn.commit()
     return len(movimientos)
+
+
+def guardar_diagnostico(job_id: int, project_id: Optional[int], d: Dict) -> None:
+    """Un diagnóstico por video; rehacerlo reemplaza al anterior."""
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO diagnosticos (job_id, project_id, puntaje, veredicto, color, etapa, datos)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(job_id) DO UPDATE SET
+             puntaje=excluded.puntaje, veredicto=excluded.veredicto, color=excluded.color,
+             etapa=excluded.etapa, datos=excluded.datos, created_at=datetime('now')""",
+        (job_id, project_id, d['diagnostico']['puntaje'], d['diagnostico']['veredicto'],
+         d['diagnostico']['color'], d['diagnostico'].get('etapa', 'solo imagen'),
+         json.dumps(d, ensure_ascii=False))
+    )
+    conn.commit()
+
+
+def get_diagnostico(job_id: int) -> Optional[Dict]:
+    conn = get_connection()
+    fila = conn.execute("SELECT * FROM diagnosticos WHERE job_id = ?", (job_id,)).fetchone()
+    if fila is None:
+        return None
+    d = dict(fila)
+    d['datos'] = json.loads(d['datos'])
+    return d
+
+
+def list_diagnosticos(project_id: int) -> List[Dict]:
+    conn = get_connection()
+    salida = []
+    for fila in conn.execute(
+        "SELECT * FROM diagnosticos WHERE project_id = ? ORDER BY job_id", (project_id,)
+    ):
+        d = dict(fila)
+        d['datos'] = json.loads(d['datos'])
+        salida.append(d)
+    return salida
 
 
 def delete_movimientos_for_job(job_id: int) -> int:
@@ -820,7 +879,9 @@ def update_video_job(job_id: int, **fields):
 
 def delete_video_job(job_id: int):
     conn = get_connection()
-    # movimientos.job_id es llave foránea: sin esto el borrado falla.
+    # movimientos.job_id y diagnosticos.job_id son llaves foráneas: sin esto
+    # el borrado falla.
+    conn.execute("DELETE FROM diagnosticos WHERE job_id = ?", (job_id,))
     conn.execute("DELETE FROM movimientos WHERE job_id = ?", (job_id,))
     conn.execute("DELETE FROM video_jobs WHERE id = ?", (job_id,))
     conn.commit()

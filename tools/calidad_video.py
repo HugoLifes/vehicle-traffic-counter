@@ -33,6 +33,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.detector import VehicleDetector   # noqa: E402
+from src.engine.diagnostico_encuadre import medir_imagen   # noqa: E402
 
 EXTENSIONES = ('.mkv', '.mp4', '.avi', '.mov', '.ts')
 
@@ -54,81 +55,25 @@ def _percentil(valores, p):
 
 
 def medir(ruta, det, muestras):
-    cap = cv2.VideoCapture(ruta)
-    if not cap.isOpened():
-        return {'ruta': ruta, 'error': 'no abre'}
-    ancho = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 0
-    declarados = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    # El total que declara el contenedor .mkv miente (9001 contra 6059
-    # reales en el material anterior), y con él saldría mal el bitrate. Se
-    # busca el final de verdad saltando al último tramo.
-    reales = declarados
-    if declarados > 0:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, declarados - 1))
-        ok, _ = cap.read()
-        if not ok:
-            lo, hi = 0, declarados
-            while hi - lo > fps:
-                mid = (lo + hi) // 2
-                cap.set(cv2.CAP_PROP_POS_FRAMES, mid)
-                ok, _ = cap.read()
-                lo, hi = (mid, hi) if ok else (lo, mid)
-            reales = lo
-    segundos = reales / fps if fps else 0
-    kbps = os.path.getsize(ruta) * 8 / segundos / 1000 if segundos else None
-
-    altos, confs, brillo, contraste, nitidez = [], [], [], [], []
-    por_clase = {}
-    ejemplo = None
-    mejor = -1
-    for i in range(muestras):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int((i + 0.5) * reales / muestras))
-        ok, f = cap.read()
-        if not ok:
-            continue
-        gris = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-        brillo.append(float(gris.mean()))
-        contraste.append(float(gris.std()))
-        nitidez.append(float(cv2.Laplacian(gris, cv2.CV_64F).var()))
-        dets, _ = det.detect(f)
+    """Las medidas las hace el motor (src/engine/diagnostico_encuadre), que
+    es el mismo que usan el diagnóstico y la API: si cada herramienta tuviera
+    su copia terminarían midiendo cosas distintas con el mismo nombre. Aquí
+    solo se agrega el cuadro de ejemplo dibujado."""
+    m = medir_imagen(ruta, det, muestras)
+    m['ruta'] = ruta
+    ejemplo = m.pop('_ejemplo', None)
+    if ejemplo is not None:
+        cuadro, dets = ejemplo
+        img = cuadro.copy()
         for d in dets:
-            x1, y1, x2, y2 = d['bbox']
-            altos.append(y2 - y1)
-            confs.append(d['confidence'])
-            por_clase[d['class_name']] = por_clase.get(d['class_name'], 0) + 1
-        # El cuadro con más vehículos es el que mejor enseña la escena.
-        if len(dets) > mejor:
-            mejor = len(dets)
-            ejemplo = f.copy()
-            for d in dets:
-                x1, y1, x2, y2 = map(int, d['bbox'])
-                cv2.rectangle(ejemplo, (x1, y1), (x2, y2), (0, 255, 255), 1)
-                cv2.putText(ejemplo, f"{y2 - y1}", (x1, max(8, y1 - 2)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
-    cap.release()
-
-    return {
-        'ruta': ruta,
-        'resolucion': f'{ancho}x{alto}',
-        'fps': round(fps, 1),
-        'minutos': round(segundos / 60, 1),
-        'kbps': round(kbps) if kbps else None,
-        'brillo': round(statistics.mean(brillo)) if brillo else None,
-        'contraste': round(statistics.mean(contraste)) if contraste else None,
-        'nitidez': round(statistics.median(nitidez)) if nitidez else None,
-        'detecciones_por_cuadro': round(len(altos) / max(1, len(brillo)), 1),
-        'alto_p25': _percentil(altos, .25),
-        'alto_mediana': _percentil(altos, .5),
-        'alto_p75': _percentil(altos, .75),
-        'pct_bajo_20px': round(100 * sum(a < 20 for a in altos) / len(altos)) if altos else None,
-        'pct_40px_o_mas': round(100 * sum(a >= 40 for a in altos) / len(altos)) if altos else None,
-        'confianza': round(statistics.mean(confs), 2) if confs else None,
-        'clases': por_clase,
-        '_ejemplo': ejemplo,
-    }
+            x1, y1, x2, y2 = map(int, d['bbox'])
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 255), 1)
+            cv2.putText(img, f"{y2 - y1}", (x1, max(8, y1 - 2)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+        m['_ejemplo'] = img
+    else:
+        m['_ejemplo'] = None
+    return m
 
 
 def main():

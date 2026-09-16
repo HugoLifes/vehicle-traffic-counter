@@ -811,6 +811,51 @@ está en el video no hay nada que afinar.**
 - Paso a desnivel con una sola cámara: **nada fiable**; hacen falta dos
   cámaras.
 
+### Diagnóstico de encuadre: calificar el video antes de contarlo
+
+`src/engine/diagnostico_encuadre.py`, endpoint
+`POST /api/videos/{job_id}/diagnostico`, botón "Revisar encuadre" en Subir.
+
+Nace de lo caro que salió descubrirlo contando: Blvd Independencia costó 4 h
+de proceso para concluir que el puente tapa dos accesos y la Glorieta 1.5 h
+para ver que solo se veía un tercio del tránsito.
+
+**Dos etapas, porque la primera sola miente:**
+
+| aforo | solo imagen | con rastreo | resultado real |
+|---|---|---|---|
+| Entrada y salida Altozano | REGULAR (69) | **BUENO (80)** | sirvió |
+| Blvd Independencia | BUENO (77) | **REGULAR (58)** | falló |
+| Glorieta Altozano | REGULAR (66) | **NO RECOMENDABLE (42)** | falló |
+
+La etapa por imagen mide tamaño del vehículo, exposición, nitidez y
+confianza con los umbrales ya medidos contra conteos manuales. **Calificaba
+mejor al cruce que falló** (41 px) que al único que funcionó (43 px con
+menos confianza), porque lo que decide no es cómo se ve el vehículo sino si
+se alcanza a ver por dónde entra y sale.
+
+La etapa por rastreo (un minuto) mide dónde nacen y mueren los rastros:
+
+| aforo | extremos en 6 celdas | en la orilla del cuadro |
+|---|---|---|
+| Entrada y salida Altozano | **81 %** | 36 % |
+| Blvd Independencia | 54 % (repartidos en 72 celdas) | 30 % |
+| Glorieta Altozano | 64 % | **1 %** |
+
+Cada fracaso tiene su firma: Blvd Ind dispersa los extremos por toda la
+escena (algo tapa la vía), la Glorieta casi no tiene extremos en la orilla
+(el acceso queda fuera del encuadre).
+
+**No inventa un porcentaje de exactitud**: entrega el rango esperado del
+veredicto (verde 0.90–0.99×, ámbar 0.80–0.95×, rojo ninguno) y avisos
+concretos. Son tres escenas validadas: alcanza para avisar, no para
+prometer.
+
+**No corre si hay videos en la cola.** Dos trabajos de GPU a la vez dan
+`NvMapMemAllocInternalTagged error 12` y dejan cuadros sin detección. Pasó
+dos veces, la segunda por lanzar el diagnóstico durante el recuento de
+Juárez; el endpoint ahora responde 409 y pide esperar.
+
 ### Cómo decide la plataforma
 
 `src/engine/origen_destino.py`. Cada brazo es una zona de tipo `acceso`;
