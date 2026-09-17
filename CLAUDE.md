@@ -557,6 +557,11 @@ Medido sobre el día completo, hora por hora contra el conteo manual:
 **Correlación entre volumen y razón: r = −0.83.** No es ruido: cuanto más
 tránsito hay, menor proporción capturamos.
 
+Esa tabla es de antes de corregir el rastreador. **Con el día recontado**
+(horario medible, ambos sentidos): en las 5 horas con menos de 1 600
+veh/h, **0.99×**; en las 5 con 2 000 o más, **0.91×**. La brecha se achicó
+pero sigue, y casi toda está en la calzada del fondo (0.72× a las 15:00).
+
 La causa más probable es **oclusión**. Con la vía llena los vehículos se
 tapan entre sí desde el ángulo de esta cámara, y el que va detrás no llega
 a verse. Es un límite del punto de vista, no del modelo — y es justo lo que
