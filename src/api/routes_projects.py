@@ -446,11 +446,19 @@ def start_counting(project_id: int):
 
 
 @router.get("/{project_id}/direccional")
-def direccional(project_id: int, interval_minutes: Optional[int] = None):
-    """Aforo direccional: movimientos por intervalo, origen, destino y clase."""
+def direccional(project_id: int, interval_minutes: Optional[int] = None,
+                metodo: str = "trayectoria"):
+    """
+    Aforo direccional: movimientos por intervalo, origen, destino y clase.
+
+    metodo=trayectoria (por omisión) decide cada vehículo por la forma de su
+    recorrido; metodo=zonas, solo por los accesos que pisó.
+    """
     project = traffic_db.get_project(project_id)
     if project is None:
         raise HTTPException(404, "Proyecto no encontrado")
+    if metodo not in ("trayectoria", "zonas"):
+        raise HTTPException(422, "metodo tiene que ser 'trayectoria' o 'zonas'")
     return traffic_db.get_matriz_od(
-        project_id, interval_minutes or project.get("interval_minutes") or 15
+        project_id, interval_minutes or project.get("interval_minutes") or 15, metodo
     )

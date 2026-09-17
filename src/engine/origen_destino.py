@@ -36,6 +36,7 @@ import math
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
+from src.engine.od_trayectoria import compactar
 from src.engine.zones import _contiene, _punto_de_apoyo
 
 # Cuántos puntos se guardan por rastro. Un vehículo tarda de 5 a 20 s en
@@ -442,6 +443,10 @@ class AforoDireccional:
                 'confidence': round(sum(confs) / len(confs), 3) if confs else None,
                 'pedazos': len(cadena),
                 'completo': origen is not None and destino is not None,
+                # Recorrido compacto: con él el informe decide el movimiento
+                # por trayectoria (od_trayectoria.py) y recupera los
+                # vehículos que las zonas dejaban a medias.
+                'recorrido': compactar(puntos, self.fps, destino),
             })
         self._rastros.clear()
         return movimientos

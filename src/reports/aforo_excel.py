@@ -480,9 +480,22 @@ def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
     incompletos = sum(i["total"] for i in od["incompletos"])
     fila += 1
     nota = ws.cell(fila, 1,
-                   f"Además, {incompletos} vehículos con movimiento incompleto (se vio su "
-                   "origen o su destino, no ambos). No se reparten entre los movimientos.")
+                   f"Además, {incompletos} vehículos cuyo movimiento no se pudo decidir (se vio "
+                   "muy poco de su recorrido). No se reparten entre los movimientos.")
     nota.font = Font(size=9, italic=True, color="9C2F26")
+    if od.get("metodo") == "trayectoria":
+        # Se declara cómo se decidió cada vehículo: quien reciba el informe
+        # tiene que poder distinguir lo visto de punta a punta de lo que se
+        # completó por la forma del recorrido.
+        r = od.get("resumen_metodo", {})
+        fila += 1
+        metodo = ws.cell(
+            fila, 1,
+            f"Método: {r.get('completo por zonas', 0)} vehículos vistos entrar y salir por un "
+            f"acceso y {r.get('completado por trayectoria', 0)} decididos por la forma de su "
+            "recorrido (los tapó algo a medio cruce); los pedazos de un mismo vehículo se "
+            "cuentan una vez.")
+        metodo.font = Font(size=9, italic=True, color="555555")
 
     # 2. Por cuarto de hora, una columna por movimiento con tránsito.
     movimientos = sorted((k for k, v in total_od.items() if v),

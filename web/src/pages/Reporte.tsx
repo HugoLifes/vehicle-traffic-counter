@@ -265,6 +265,7 @@ function Direccional({ d }: { d: AforoDireccional }) {
   const completos = [...total.values()].reduce((a, b) => a + b, 0);
   const incompletos = d.incompletos.reduce((a, b) => a + b.total, 0);
   const pctCompletos = completos + incompletos > 0 ? (100 * completos) / (completos + incompletos) : 0;
+  const porTrayectoria = d.resumen_metodo?.['completado por trayectoria'] ?? 0;
 
   return (
     <Card className="chart-card">
@@ -273,6 +274,13 @@ function Direccional({ d }: { d: AforoDireccional }) {
         {formatNumber(completos)} vehículos con origen y destino identificados (
         {Math.round(pctCompletos)} % de los vistos). Fila: acceso por el que entró. Columna: acceso
         por el que salió. La diagonal son vueltas en U.
+        {d.metodo === 'trayectoria' && porTrayectoria > 0 && (
+          <>
+            {' '}
+            De ellos, {formatNumber(porTrayectoria)} se decidieron por la forma de su recorrido: algo
+            los tapó a medio cruce, pero se vio lo suficiente para saber a dónde iban.
+          </>
+        )}
       </p>
       <div className="table-scroll">
         <table className="data-table">
@@ -341,9 +349,9 @@ function Direccional({ d }: { d: AforoDireccional }) {
       )}
 
       {incompletos > 0 && (
-        <Notice tone="warning" title={`${formatNumber(incompletos)} movimientos incompletos`}>
-          De estos vehículos se vio el origen o el destino, no ambos: los tapó otro vehículo o
-          salieron del encuadre. No se reparten entre los movimientos de la tabla.
+        <Notice tone="warning" title={`${formatNumber(incompletos)} movimientos sin decidir`}>
+          De estos vehículos se vio muy poco de su recorrido para saber a dónde iban: los tapó otro
+          vehículo o salieron del encuadre. No se reparten entre los movimientos de la tabla.
         </Notice>
       )}
     </Card>

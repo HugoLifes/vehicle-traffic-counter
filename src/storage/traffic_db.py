@@ -201,6 +201,11 @@ def init_schema():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_movimientos_job ON movimientos(job_id)"
     )
+    # Recorrido compacto de cada vehículo (JSON, hasta 48 puntos). Con él el
+    # informe decide el movimiento por trayectoria y no solo por las zonas
+    # que pisó (src/engine/od_trayectoria.py). Los movimientos guardados
+    # antes no lo tienen y se siguen decidiendo por zonas.
+    _ensure_column(conn, "movimientos", "recorrido", "TEXT")
 
     # Diagnóstico del encuadre de un video: qué tan apto es para aforar,
     # medido ANTES de contarlo. Se guarda para no repetir el cálculo y para
@@ -568,11 +573,13 @@ def record_movimientos(project_id: int, job_id: Optional[int],
     conn.executemany(
         """INSERT INTO movimientos (project_id, job_id, origen_id, destino_id,
                                     vehicle_type, bbox_height, confidence,
-                                    pedazos, timestamp)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                    pedazos, timestamp, recorrido)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [(project_id, job_id, m['origen_id'], m['destino_id'], m['vehicle_type'],
           m.get('bbox_height'), m.get('confidence'), m.get('pedazos', 1),
-          m['timestamp']) for m in movimientos]
+          m['timestamp'],
+          json.dumps(m['recorrido'], separators=(',', ':')) if m.get('recorrido') else None)
+         for m in movimientos]
     )
     conn.commit()
     return len(movimientos)
@@ -624,25 +631,73 @@ def delete_movimientos_for_job(job_id: int) -> int:
     return cur.rowcount
 
 
-def get_matriz_od(project_id: int, interval_minutes: int = 15) -> Dict:
+# Decidir por trayectoria cuesta unos segundos sobre un aforo de miles de
+# vehículos y el informe lo pide cada vez que cambia el intervalo: se guarda
+# el resultado mientras los movimientos del proyecto no cambien.
+_cache_trayectoria: Dict = {}
+
+
+def _decidir_por_trayectoria(project_id: int, filas) -> Dict:
+    from src.engine import od_trayectoria
+
+    firma = (len(filas), max((f['id'] for f in filas), default=0))
+    guardado = _cache_trayectoria.get(project_id)
+    if guardado and guardado[0] == firma:
+        return guardado[1]
+
+    registros = []
+    for f in filas:
+        ts = datetime.fromisoformat(f['timestamp'])
+        rec = json.loads(f['recorrido']) if f['recorrido'] else None
+        if rec:
+            # La hora de inicio del video da la precisión de centésimas que
+            # necesita el emparejamiento de pedazos; el timestamp del
+            # movimiento viene truncado al segundo.
+            if f['video_start_time']:
+                inicio = datetime.fromisoformat(f['video_start_time']).timestamp()
+            else:
+                inicio = ts.timestamp() - rec['t'][0]
+            reg = od_trayectoria.registro(f['origen_id'], f['destino_id'], rec, inicio,
+                                          f['job_id'], f['vehicle_type'], clave=f['id'])
+        else:
+            reg = {'org': f['origen_id'], 'dst': f['destino_id'], 'video': f['job_id'],
+                   'clave': f['id'], 't0': ts.timestamp(), 't1': ts.timestamp(),
+                   'puntos': None, 'fin_en_destino': False, 'vehicle_type': f['vehicle_type']}
+        registros.append(reg)
+    decision = od_trayectoria.decidir(registros)
+    resultado = {'vehiculos': decision['vehiculos'], 'sin_decidir': decision['sin_decidir'],
+                 'motivos': decision['motivos']}
+    _cache_trayectoria[project_id] = (firma, resultado)
+    return resultado
+
+
+def get_matriz_od(project_id: int, interval_minutes: int = 15,
+                  metodo: str = 'trayectoria') -> Dict:
     """
     Aforo direccional agregado: por intervalo, origen, destino y clase.
 
-    Devuelve también los incompletos por separado. No se reparten entre los
-    movimientos completos: hacerlo es suponer que el vehículo que se perdió
-    iba a donde van los demás, y eso es justo lo que el aforo mide.
+    metodo:
+      'trayectoria' — cada vehículo se decide por la forma de su recorrido
+         (src/engine/od_trayectoria.py): recupera los que un obstáculo dejó a
+         medias y corrige las zonas rozadas. En Entrada y salida Altozano,
+         0.99x contra el conteo manual donde las zonas daban 0.74x.
+      'zonas' — solo los que se vieron entrar y salir por un acceso.
+
+    Los que no se pueden decidir se declaran aparte, con su motivo, y no se
+    reparten entre los movimientos: repartirlos es suponer a dónde iban.
     """
     conn = get_connection()
     accesos = {z['id']: z['name'] for z in list_zones(project_id, active_only=False)
                if z.get('kind') == 'acceso'}
     filas = conn.execute(
-        """SELECT origen_id, destino_id, vehicle_type, timestamp
-           FROM movimientos WHERE project_id = ? ORDER BY timestamp""",
+        """SELECT m.id, m.job_id, m.origen_id, m.destino_id, m.vehicle_type, m.timestamp,
+                  m.recorrido, v.video_start_time
+           FROM movimientos m LEFT JOIN video_jobs v ON v.id = m.job_id
+           WHERE m.project_id = ? ORDER BY m.timestamp""",
         (project_id,)
     ).fetchall()
 
-    def intervalo(ts):
-        d = datetime.fromisoformat(ts)
+    def intervalo(d):
         m = (d.hour * 60 + d.minute) // interval_minutes * interval_minutes
         return d.strftime('%Y-%m-%d') + f' {m // 60:02d}:{m % 60:02d}'
 
@@ -656,18 +711,37 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15) -> Dict:
     # manual de Entrada y salida Altozano: 5 de 6 cifras con GEH < 5.
     entradas, salidas = defaultdict(int), defaultdict(int)
     for f in filas:
-        clave_t = intervalo(f['timestamp'])
+        clave_t = intervalo(datetime.fromisoformat(f['timestamp']))
         if f['origen_id'] is not None:
             entradas[(clave_t, f['origen_id'])] += 1
         if f['destino_id'] is not None:
             salidas[(clave_t, f['destino_id'])] += 1
-        if f['origen_id'] is not None and f['destino_id'] is not None:
-            completos[(clave_t, f['origen_id'], f['destino_id'], f['vehicle_type'])] += 1
-        else:
-            incompletos[(clave_t, f['origen_id'], f['destino_id'])] += 1
+
+    resumen = {}
+    if metodo == 'trayectoria' and any(f['recorrido'] for f in filas):
+        decision = _decidir_por_trayectoria(project_id, filas)
+        for v in decision['vehiculos']:
+            clave_t = intervalo(datetime.fromtimestamp(v['t0']))
+            completos[(clave_t, v['origen_id'], v['destino_id'], v['vehicle_type'])] += 1
+        for s in decision['sin_decidir']:
+            incompletos[(intervalo(datetime.fromtimestamp(s['t0'])),
+                         s['origen_id'], s['destino_id'])] += 1
+        resumen = decision['motivos']
+    else:
+        metodo = 'zonas'
+        for f in filas:
+            clave_t = intervalo(datetime.fromisoformat(f['timestamp']))
+            if f['origen_id'] is not None and f['destino_id'] is not None:
+                completos[(clave_t, f['origen_id'], f['destino_id'], f['vehicle_type'])] += 1
+            else:
+                incompletos[(clave_t, f['origen_id'], f['destino_id'])] += 1
     return {
         'accesos': accesos,
         'intervalo_minutos': interval_minutes,
+        'metodo': metodo,
+        # Cuántos vehículos se decidieron de cada forma y por qué quedaron
+        # los demás sin decidir: el informe lo declara.
+        'resumen_metodo': resumen,
         'movimientos': [
             {'intervalo': t, 'origen_id': o, 'destino_id': d, 'vehicle_type': c, 'total': n}
             for (t, o, d, c), n in sorted(completos.items(), key=lambda kv: str(kv[0]))

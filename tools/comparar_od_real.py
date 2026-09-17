@@ -15,8 +15,15 @@ Se reporta por movimiento el GEH, la medida estándar para validar conteos
 de tránsito: GEH = sqrt(2 (M - C)^2 / (M + C)) sobre flujos horarios. Se
 acepta un conteo cuando al menos 85 % de los movimientos tiene GEH < 5.
 
+Los movimientos de la plataforma se leen con get_matriz_od, el mismo
+camino que usan el informe y el Excel: por omisión decididos por
+trayectoria (--metodo zonas para los de antes). El emparejamiento se puede
+fijar por geometría con --asignacion; sin ella se busca el de menos error,
+que con pocos cuartos de hora rescata dibujos equivocados.
+
     python tools/comparar_od_real.py --proyecto 3 \\
-        --manual "referencias/aforo_direccional/AFORO BLVD. INDEPENDENCIA.xlsx"
+        --manual "referencias/aforo_direccional/AFORO BLVD. INDEPENDENCIA.xlsx" \\
+        --asignacion "Arco=2,Fondo izq=1,Izquierda=3,Abajo=3,Derecha=x"
 """
 
 import argparse
@@ -31,6 +38,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 BD = RAIZ / 'data' / 'traffic.db'
+sys.path.insert(0, str(RAIZ))
 
 
 def _minuto(etiqueta):
@@ -77,7 +85,7 @@ def leer_manual(ruta):
     return real
 
 
-def leer_plataforma(bd, proyecto):
+def leer_plataforma(bd, proyecto, metodo='trayectoria'):
     con = sqlite3.connect(f'file:{bd}?mode=ro', uri=True)
     con.row_factory = sqlite3.Row
     accesos = {r['id']: r['name'] for r in con.execute(
@@ -100,18 +108,22 @@ def leer_plataforma(bd, proyecto):
             cubiertos[-1][1] = max(cubiertos[-1][1], fin)
         else:
             cubiertos.append([ini, fin])
+    con.close()
+
+    from src.storage import traffic_db
+    traffic_db.DB_PATH = Path(bd)
+    od = traffic_db.get_matriz_od(proyecto, 15, metodo)
     completos = defaultdict(lambda: defaultdict(int))
     incompletos = defaultdict(int)
-    for r in con.execute("select origen_id o, destino_id d, timestamp ts from movimientos "
-                         "where project_id=?", (proyecto,)):
-        m = int(r['ts'][11:13]) * 60 + int(r['ts'][14:16])
-        q = m // 15 * 15
-        if r['o'] is not None and r['d'] is not None:
-            completos[q][(r['o'], r['d'])] += 1
-        else:
-            incompletos[q] += 1
-    con.close()
-    return accesos, cubiertos, completos, incompletos
+
+    def cuarto(intervalo):
+        return int(intervalo[11:13]) * 60 + int(intervalo[14:16])
+
+    for m in od['movimientos']:
+        completos[cuarto(m['intervalo'])][(m['origen_id'], m['destino_id'])] += m['total']
+    for i in od['incompletos']:
+        incompletos[cuarto(i['intervalo'])] += i['total']
+    return accesos, cubiertos, completos, incompletos, od
 
 
 def geh(m, c):
@@ -124,10 +136,14 @@ def main():
     ap.add_argument('--proyecto', type=int, required=True)
     ap.add_argument('--manual', required=True)
     ap.add_argument('--bd', type=Path, default=BD)
+    ap.add_argument('--metodo', choices=('trayectoria', 'zonas'), default='trayectoria')
+    ap.add_argument('--asignacion', default=None,
+                    help='"Nombre=número,..." fijado por geometría; x para un acceso que '
+                         'el manual no cuenta')
     a = ap.parse_args()
 
     real = leer_manual(a.manual)
-    accesos, cubiertos, completos, incompletos = leer_plataforma(a.bd, a.proyecto)
+    accesos, cubiertos, completos, incompletos, od = leer_plataforma(a.bd, a.proyecto, a.metodo)
     if not accesos:
         sys.exit(f'El proyecto {a.proyecto} no tiene accesos dibujados')
     cuartos = sorted(q for q in real
@@ -141,23 +157,39 @@ def main():
     print(f"Accesos de la plataforma: {', '.join(accesos[i] for i in ids)}")
     print(f"Accesos del conteo manual: {', '.join(numeros)}")
 
+    print(f"Método: {od['metodo']}" + (
+        '  (' + ', '.join(f'{k} {v}' for k, v in sorted(od['resumen_metodo'].items(),
+                                                        key=lambda kv: -kv[1])) + ')'
+        if od.get('resumen_metodo') else ''))
+
     def predicho(asig):
         p = defaultdict(lambda: defaultdict(int))
         for q in cuartos:
             for (o, d), n in completos[q].items():
-                p[q][f'{asig[o]}_{asig[d]}'] += n
+                if o in asig and d in asig and 'x' not in (asig[o], asig[d]):
+                    p[q][f'{asig[o]}_{asig[d]}'] += n
         return p
 
-    mejor = None
-    for combo in itertools.product(numeros, repeat=len(ids)):
-        asig = dict(zip(ids, combo))
-        p = predicho(asig)
-        err = sum(abs(p[q].get(mv, 0) - sum(real[q].get(mv, [0, 0, 0])))
-                  for q in cuartos for mv in set(movs_manual) | set(p[q]))
-        if mejor is None or err < mejor[0]:
-            mejor = (err, asig)
-    err, asig = mejor
-    print('\nEmparejamiento que menos error deja:')
+    if a.asignacion:
+        por_nombre = {n.strip(): v.strip() for n, v in
+                      (par.split('=') for par in a.asignacion.split(','))}
+        faltan = {accesos[i] for i in ids} - set(por_nombre)
+        if faltan:
+            sys.exit(f'La asignación no dice qué número es: {", ".join(sorted(faltan))}')
+        asig = {i: por_nombre[accesos[i]] for i in ids}
+        titulo = 'Emparejamiento fijado por geometría:'
+    else:
+        mejor = None
+        for combo in itertools.product(numeros, repeat=len(ids)):
+            asig = dict(zip(ids, combo))
+            p = predicho(asig)
+            err = sum(abs(p[q].get(mv, 0) - sum(real[q].get(mv, [0, 0, 0])))
+                      for q in cuartos for mv in set(movs_manual) | set(p[q]))
+            if mejor is None or err < mejor[0]:
+                mejor = (err, asig)
+        asig = mejor[1]
+        titulo = 'Emparejamiento que menos error deja:'
+    print('\n' + titulo)
     for i in ids:
         print(f'  {accesos[i]:<16} -> acceso {asig[i]}')
     p = predicho(asig)

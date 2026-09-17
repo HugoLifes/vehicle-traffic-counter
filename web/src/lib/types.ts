@@ -180,6 +180,13 @@ export interface AforoDireccional {
   /** id del acceso → nombre. Las llaves llegan como texto (JSON). */
   accesos: Record<string, string>;
   intervalo_minutos: number;
+  /** 'trayectoria': cada vehículo se decidió por la forma de su recorrido;
+      'zonas': solo por los accesos que pisó (videos contados antes de
+      guardar recorridos). */
+  metodo: 'trayectoria' | 'zonas';
+  /** Cuántos vehículos se decidieron de cada forma y por qué quedaron los
+      demás sin decidir. */
+  resumen_metodo: Record<string, number>;
   movimientos: MovimientoOD[];
   incompletos: IncompletoOD[];
   por_acceso: VolumenAcceso[];
