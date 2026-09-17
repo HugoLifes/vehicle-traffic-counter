@@ -439,7 +439,12 @@ def construir():
          'si el movimiento tiene 20, pero no si tiene 2 000. <b>Menos de 5 se acepta.</b> El '
          'criterio pide que al menos el <b>85 %</b> de los movimientos esté por debajo de 5. '
          'Ejemplo: 260 del sistema contra 252 del manual en un cuarto de hora da GEH 1.0, muy '
-         'bueno. (Cálculo: con los flujos por hora M y C, GEH = raíz de 2(M − C)² ÷ (M + C).)'),
+         'bueno. (Cálculo: con los flujos por hora M y C, GEH = raíz de 2(M − C)² ÷ (M + C); '
+         'los conteos de cuartos de hora se llevan a su equivalente por hora, como pide el '
+         'método.) Lo creó Geoffrey E. Havers en los años setenta y es el criterio que usa el '
+         'manual británico DMRB, que pide GEH menor a 5 en al menos el 85 % de los valores. '
+         'Entre 5 y 10 el manual dice que hay que revisar; arriba de 10, que casi seguro hay un '
+         'problema.'),
         ('Correlación (r)', 'Qué tanto se parece el "dibujo" de subidas y bajadas a lo largo del '
          'día entre el sistema y el conteo manual. +1 es idéntico y 0 es que no tienen nada que ver. '
          'En Cd. Juárez dio <b>r = +0.96</b>: el sistema marca las horas pico en las mismas horas.'),
