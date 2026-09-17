@@ -666,7 +666,7 @@ def _decidir_por_trayectoria(project_id: int, filas) -> Dict:
         registros.append(reg)
     decision = od_trayectoria.decidir(registros)
     resultado = {'vehiculos': decision['vehiculos'], 'sin_decidir': decision['sin_decidir'],
-                 'motivos': decision['motivos']}
+                 'motivos': decision['motivos'], 'rozadas': decision['rozadas']}
     _cache_trayectoria[project_id] = (firma, resultado)
     return resultado
 
@@ -710,12 +710,7 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
     # entregar en cámaras donde la matriz no alcanza. Medido contra el conteo
     # manual de Entrada y salida Altozano: 5 de 6 cifras con GEH < 5.
     entradas, salidas = defaultdict(int), defaultdict(int)
-    for f in filas:
-        clave_t = intervalo(datetime.fromisoformat(f['timestamp']))
-        if f['origen_id'] is not None:
-            entradas[(clave_t, f['origen_id'])] += 1
-        if f['destino_id'] is not None:
-            salidas[(clave_t, f['destino_id'])] += 1
+    rozadas = set()
 
     resumen = {}
     if metodo == 'trayectoria' and any(f['recorrido'] for f in filas):
@@ -727,6 +722,7 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
             incompletos[(intervalo(datetime.fromtimestamp(s['t0'])),
                          s['origen_id'], s['destino_id'])] += 1
         resumen = decision['motivos']
+        rozadas = set(decision['rozadas'])
     else:
         metodo = 'zonas'
         for f in filas:
@@ -735,6 +731,20 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
                 completos[(clave_t, f['origen_id'], f['destino_id'], f['vehicle_type'])] += 1
             else:
                 incompletos[(clave_t, f['origen_id'], f['destino_id'])] += 1
+
+    # Entradas y salidas por lo que se VIO en cada acceso, y no por la
+    # decisión por trayectoria. Medido a las 7:30 en Entrada y salida
+    # Altozano contra el manual: por zonas 5 de 6 cifras con GEH < 5, por
+    # trayectoria 4 de 6 (el arco daba 306 entradas contra 253: el pedazo sin
+    # decidir y el completado de un mismo vehículo contaban cada uno su
+    # entrada). La única corrección que sí se toma de la trayectoria: una
+    # zona solo rozada no es una salida (Derecha tenía 121 "salidas").
+    for f in filas:
+        clave_t = intervalo(datetime.fromisoformat(f['timestamp']))
+        if f['origen_id'] is not None:
+            entradas[(clave_t, f['origen_id'])] += 1
+        if f['destino_id'] is not None and f['id'] not in rozadas:
+            salidas[(clave_t, f['destino_id'])] += 1
     return {
         'accesos': accesos,
         'intervalo_minutos': interval_minutes,

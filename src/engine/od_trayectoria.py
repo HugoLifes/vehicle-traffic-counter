@@ -320,7 +320,7 @@ def decidir(registros: List[Dict], tpl: Optional[Dict] = None) -> Dict:
             mov = absorbida[mov]
         return mov
 
-    vehiculos, sin_decidir = [], []
+    vehiculos, sin_decidir, rozadas = [], [], []
     motivos = Counter()
     pedazos = defaultdict(list)
     completos = defaultdict(list)
@@ -360,6 +360,10 @@ def decidir(registros: List[Dict], tpl: Optional[Dict] = None) -> Dict:
                 aparte(reg, 'sin plantilla')
                 continue
             motivos['zona rozada, reasignado'] += 1
+            if mov[1] != reg['dst']:
+                # Solo si lo falso era el destino. En "Abajo -> Izquierda"
+                # lo falso era el origen (nació tarde) y la salida sí ocurrió.
+                rozadas.append(reg.get('clave'))
             pedazos[mov].append({'reg': reg, 'medida': _medir_mov(tpl[mov], *r)})
             continue
         mov, medida, motivo = asignar(reg, tpl)
@@ -386,4 +390,7 @@ def decidir(registros: List[Dict], tpl: Optional[Dict] = None) -> Dict:
             contar(p['reg'], mov, 'trayectoria')
 
     return {'vehiculos': vehiculos, 'sin_decidir': sin_decidir, 'motivos': dict(motivos),
+            # Completos por zonas cuyo destino era una zona solo rozada: esa
+            # "salida" no ocurrió.
+            'rozadas': rozadas,
             'plantillas': tpl, 'absorbida': absorbida}

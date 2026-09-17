@@ -178,6 +178,7 @@ se podía contestar de otro modo:
 | `probar_accesos_od.py` | Probar otro dibujo de accesos sobre rastros ya extraídos, sin volver a detectar |
 | `mapa_extremos_od.py` | Ver dónde nacen y mueren los rastros de una ventana completa |
 | `hoja_uniones.py` | Revisar a ojo si las uniones de rastros partidos son el mismo vehículo |
+| `od_por_trayectoria.py` | Contrastar la decisión por trayectoria contra el conteo manual, sobre rastros ya extraídos |
 | `firmas_color.py` | Color de cada rastro para la unión por apariencia (probado, hoy apagado) |
 
 ---
@@ -777,6 +778,119 @@ geométrico. Hacen falta dos cámaras (una a cada lado del puente) o una
 vista elevada que vea las cuatro esquinas. **No seguir afinando accesos
 sobre este material.** El proyecto 4 queda con los accesos v2, que fueron
 los menos malos.
+
+### Decidir por trayectoria: Entrada y salida Altozano de 0.74x a 0.99x
+
+El motor decidía cada movimiento **solo por las zonas** que pisaba el
+vehículo. Mirando los recorridos de los 5 videos de 07:16 a 08:06 aparecieron
+dos fallas, y ninguna era de detección:
+
+1. **Exige ver al vehículo entrar Y salir.** El letrero de peatones que hay
+   justo después del arco parte casi todos los rastros; el pedazo de antes y
+   el de después quedaban como dos incompletos.
+2. **Una zona que roza el carril de otro flujo inventa un movimiento.** La
+   esquina de "Derecha" alcanza el carril derecho de la salida del arco: **92
+   vehículos del movimiento principal** la tocaban antes de que el letrero
+   los tapara y quedaban como si fueran a ese acceso.
+
+**El emparejamiento "de menos error" escondía la segunda.** Mandaba
+"Derecha" al acceso 3 para rescatar esos 92. Por geometría —croquis del
+Excel, sombras de la mañana, el canal a la izquierda al fondo— la cámara
+está sobre la calle 3 mirando al sur: **Arco = 2, Fondo izq = 1 (camino junto
+al canal), Izquierda y Abajo = 3, y Derecha es un camino de terracería que
+el manual no cuenta.** Con pocos cuartos de hora, el emparejamiento libre
+rescata dibujos equivocados; `comparar_od_real.py` y `od_por_trayectoria.py`
+aceptan `--asignacion` para fijarlo por geometría.
+
+**Cómo decide ahora** (`src/engine/od_trayectoria.py`), como los mejores
+equipos del AI City Challenge 2021 en conteo por movimiento (en Jetson):
+cada vehículo se compara contra los recorridos representativos de cada
+movimiento, sacados de los completos del propio aforo.
+
+- Hasta 12 recorridos por movimiento, no uno: un movimiento es una franja
+  (dos carriles). Con un solo medoide, que "Arco -> Derecha" se reconociera
+  como parte de "Arco -> Izquierda" dependía del carril del medoide.
+- Separación = el punto **más** alejado, en altos de caja. Con el percentil
+  90, "hacia Derecha" cabía dentro de "vuelta al camino del fondo" porque
+  solo sus últimos puntos se apartan.
+- Una plantilla contenida en otra es esa otra vista a medias, **salvo** que
+  sus rastros mueran dentro de su zona de destino: los de "Abajo -> Derecha"
+  mueren ahí (se van detrás del árbol, 100 %), los de "Arco -> Derecha" no
+  (5 %: solo la rozan).
+- Un incompleto va al movimiento más probable (cercanía × cuántos lo hacen)
+  si pasa por la franja, en su sentido, cubre un cuarto del recorrido y la
+  probabilidad pasa de 0.9. Sin contar cuántos lo hacen, 112 de 116 quedaban
+  ambiguos entre el principal (553 completos) y uno de 4 que comparte la cola.
+- Los pedazos de un mismo movimiento que pueden ser el mismo vehículo
+  cuentan una vez. **Para contar no importa confundir a dos vehículos del
+  mismo movimiento**, así que aquí se tolera el hueco largo que en la unión
+  de rastros juntaba vehículos distintos. Revisado a ojo: los pares son el
+  pedazo que muere en el letrero y el que sigue del otro lado.
+- Los completos de una zona rozada son PEDAZOS, no completos: contados como
+  completos, el mismo vehículo se contaba otra vez al reaparecer tras el
+  letrero (2_3 salía en 1.13x hasta corregirlo).
+
+Medido con `tools/od_por_trayectoria.py` (7:15 al 91 % cubierto y 7:30),
+con plantillas de **otros videos** del mismo aforo (07:46 y 07:56) para no
+medir sobre lo aprendido:
+
+| | total | razón | GEH < 5 | 2_3 |
+|---|---|---|---|---|
+| manual | 468 | | | 434 |
+| zonas (asignación geométrica) | 346 | 0.74x | 2 de 6 | 334 (GEH 7.4) |
+| **trayectoria** | **462** | **0.99x** | **4 de 6** | **457 (GEH 1.6)** |
+
+Por cuarto de hora: 7:15 193 / 157 / 198 y 7:30 275 / 189 / 264. Con las
+plantillas de todos los videos da lo mismo (463). Y por el camino de
+producción de punta a punta —el motor real alimentado con los rastros,
+`record_movimientos`, `get_matriz_od` y `comparar_od_real.py` sobre una base
+de prueba— el cuarto de las 7:30 pasa de **193/275 (70 %) a 266/275 (97 %)**.
+
+**Dos candados, medidos donde la cámara NO cubre el cruce.** Sin ellos, en
+la Glorieta el método **inventó 421 vueltas en U**: pedazos de movimientos
+que la cámara nunca ve completos se pegaban a la única plantilla parecida.
+
+- Una vuelta en U nunca se completa con pedazos: se define por el regreso.
+- Un movimiento no se completa con más pedazos que completos vistos. En
+  Altozano el principal usó 0.4 por completo; en la Glorieta, 59.
+
+Con los candados la Glorieta queda **exactamente igual** que por zonas
+(0.03x, 5 de 9) y Blvd Independencia no empeora (0.51x → 0.60x, 2 de 16
+igual). **El método no arregla una cámara que no ve el cruce; recupera lo
+que una buena cámara pierde por un obstáculo.**
+
+**Lo que no sale: 1_3 y 3_1** (14 y 13 en la ventana). Pasan por el camino
+del fondo, donde el vehículo mide ~15 px, y la vuelta la comparten con el
+tránsito del arco: extender ahí el acceso 1 le pondría origen falso a 41
+rastros del movimiento principal. Es límite de la cámara, no del método.
+
+En producción, `AforoDireccional.cerrar` guarda un recorrido de 48 puntos
+por vehículo (`movimientos.recorrido`) y `get_matriz_od` decide por
+trayectoria por omisión (`metodo=zonas` para lo de antes, y lo que se contó
+sin recorrido se sigue decidiendo por zonas). El Excel y el reporte dicen
+cuántos se decidieron de cada forma.
+
+**Verificado en el Jetson con el proyecto 5 recontado** (6 videos, 1 081
+movimientos, todos con recorrido), con `comparar_od_real.py --asignacion`,
+que lee por `get_matriz_od` igual que el informe:
+
+| 7:30 | zonas | trayectoria | manual |
+|---|---|---|---|
+| total | 194 (71 %) | **266 (97 %)** | 275 |
+| 2_3 | 186 (GEH 8.9) | **260 (GEH 1.0)** | 252 |
+| sin decidir | 144 | 66 | |
+
+Idéntico a la prueba sin GPU. Decidir cuesta 5.7 s la primera vez en el
+Jetson y 0.02 s después: se guarda mientras los movimientos no cambien.
+
+**El volumen por acceso NO se pasa a trayectoria**, y está medido: a las
+7:30 por trayectoria el arco daba 306 entradas contra 253 del manual (el
+pedazo sin decidir y el completado de un mismo vehículo contaban cada uno
+su entrada); por zonas, 271. Se queda por zonas (5 de 6 cifras con GEH < 5
+con la asignación geométrica) y solo se toma una corrección de la
+trayectoria: **una zona rozada no es una salida**. Las salidas falsas hacia
+el camino que el manual no cuenta bajan de 34 a 9 sin mover ninguna otra
+cifra.
 
 ### El entregable que SÍ sale donde la matriz no: volumen por acceso
 
