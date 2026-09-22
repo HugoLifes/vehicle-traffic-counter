@@ -89,15 +89,33 @@ def medir_imagen(video: str, det, muestras: int = 10, zonas=None) -> Dict:
     altos, confs, brillo, contraste, nitidez = [], [], [], [], []
     por_clase: Dict[str, int] = {}
     mejor, ejemplo = -1, None
+    # Brillo, contraste y nitidez van sobre la vía, no sobre el cuadro: con
+    # media imagen de cielo a mediodía el brillo salía en 163 y el
+    # diagnóstico avisaba "sobreexpuesta, fuerza obturador rápido" en un
+    # video perfectamente diurno.
+    mascara = None
+    if zonas:
+        import numpy as np
+        mascara = np.zeros((alto, ancho), np.uint8)
+        for z in zonas:
+            cv2.fillPoly(mascara, [np.array(z, np.int32)], 255)
     for i in range(muestras):
         cap.set(cv2.CAP_PROP_POS_FRAMES, int((i + 0.5) * total / max(1, muestras)))
         ok, f = cap.read()
         if not ok:
             continue
         gris = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-        brillo.append(float(gris.mean()))
-        contraste.append(float(gris.std()))
-        nitidez.append(float(cv2.Laplacian(gris, cv2.CV_64F).var()))
+        if mascara is not None:
+            import numpy as np
+            dentro = gris[mascara > 0]
+            lap = cv2.Laplacian(gris, cv2.CV_64F)[mascara > 0]
+            brillo.append(float(dentro.mean()))
+            contraste.append(float(dentro.std()))
+            nitidez.append(float(np.var(lap)))
+        else:
+            brillo.append(float(gris.mean()))
+            contraste.append(float(gris.std()))
+            nitidez.append(float(cv2.Laplacian(gris, cv2.CV_64F).var()))
         dets, _ = det.detect(f)
         dets = [d for d in dets
                 if _en_zonas(zonas, (d['bbox'][0] + d['bbox'][2]) / 2, d['bbox'][3])]
