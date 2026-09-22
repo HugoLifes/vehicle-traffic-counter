@@ -34,7 +34,13 @@ RUN npm run build
 
 
 # --- Etapa 2: la plataforma ----------------------------------------------
-FROM ultralytics/ultralytics:latest-jetson-jetpack6
+# Versión FIJA, no `latest`. Todas las cifras validadas contra el conteo
+# manual (0.95× en Juárez, 0.99× en Entrada y salida Altozano) salieron de
+# ultralytics 8.4.154 con torch 2.10.0. El 22-sep-2026 `latest` ya apuntaba a
+# otra versión, y una reconstrucción de rutina la habría metido sin que nadie
+# lo decidiera: el detector y ByteTrack pueden cambiar de una versión a otra.
+# Subirla es una decisión que se mide antes, como cualquier otro cambio.
+FROM ultralytics/ultralytics:8.4.154-jetson-jetpack6
 
 WORKDIR /app
 

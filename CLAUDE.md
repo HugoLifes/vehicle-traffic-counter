@@ -646,6 +646,14 @@ Las cámaras públicas de los puentes Juárez–El Paso (HLS, 1920×1080) se ven
 nítidas y bien expuestas a la 01:00: la noche se puede grabar con otra
 configuración de cámara.
 
+**Esas mismas cámaras sirven para probar el modo en vivo**
+(`tools/probar_camara_en_vivo.py`, URLs en la página oficial del
+Fideicomiso de Puentes Fronterizos). De día, 2 min cada una: puente Zaragoza
+15 vehículos por cuadro a 71 px, calle Stanton 5 por cuadro a 71 px. Llegan
+19 cuadros por segundo y el Jetson procesa 12–13 a `imgsz` 1280 sobre el
+cuadro completo: alcanza para rastrear, pero con una cámara en vivo de esa
+resolución conviene bajar `input_size`.
+
 ### Velocidad por tramo (PT-914)
 
 `src/engine/velocidad.py`. Como el contador de ejes: dos mangueras a una
@@ -1015,6 +1023,32 @@ está en el video no hay nada que afinar.**
 - Cualquier cámara que vea el brazo completo: volumen por acceso.
 - Paso a desnivel con una sola cámara: **nada fiable**; hacen falta dos
   cámaras.
+
+### Contra una referencia ajena: AI City 2021, cam_5
+
+El conjunto AI City 2021 Track 1 está en el Jetson
+(`data/aicity/AIC21_Track1_Vehicle_Counting/`: 31 videos de 20 cámaras de
+EE. UU., con lluvia, nieve y amanecer). **No trae el conteo de referencia
+completo**: los organizadores lo guardaron para calificar y solo publicaron
+el primer minuto de cam_5 (96 vehículos, 12 movimientos). Se buscó y ningún
+equipo lo publicó; no volver a buscarlo.
+
+cam_5 es un ojo de pez de 1280×960 a 10 cuadros por segundo, un cruce de
+cuatro brazos. Rastros con ByteTrack, accesos dibujados donde nacen y mueren
+los rastros (`data/aicity/accesos_cam_5.json`, sin mirar la referencia), y
+los 12 movimientos asignados por la geometría de sus flechas:
+
+| | total | GEH < 5 | error sumado |
+|---|---|---|---|
+| referencia AI City | 96 | | |
+| solo por zonas | 78 (0.81×) | 6 de 12 | 18 |
+| **por trayectoria (producción)** | **91 (0.95×)** | **9 de 12** | **9** |
+
+Los cuatro movimientos grandes casi exactos (38/38, 27/25, 12/13, 10/10); se
+pierden los chicos que salen por la orilla inferior derecha del ojo de pez.
+La misma ganancia de la trayectoria que en Altozano, en otra cámara, otro
+país y otro lente. Es **un minuto**, con plantillas del mismo minuto: indica,
+no valida.
 
 ### Diagnóstico de encuadre: calificar el video antes de contarlo
 
