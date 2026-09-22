@@ -111,6 +111,20 @@ def main():
         for a in concretos:
             print(f"        · {a}")
 
+    # Brillo alto: la estela nocturna se distingue del concreto al sol por el
+    # CONTRASTE. Cd. Juárez de noche daba 172/70 y la cámara frontal a
+    # mediodía, 158/28.
+    base = dict(alto_mediana=35, alto_p25=29, pct_bajo_20px=1, confianza=0.6,
+                nitidez=1100, detecciones_por_cuadro=2.6)
+    noche = calificar(dict(base, brillo=172, contraste=70))['avisos']
+    dia = calificar(dict(base, brillo=158, contraste=28))['avisos']
+    if not any('estela' in a for a in noche):
+        print('MAL  brillo 172 con contraste 70 tendría que avisar de la estela nocturna')
+        fallos += 1
+    if any('estela' in a for a in dia):
+        print('MAL  brillo 158 con contraste 28 es pavimento claro, no estela nocturna')
+        fallos += 1
+
     # Sin el dato de la etapa por imagen, pocos rastros siguen siendo
     # "no sirve": es como se comportaban las llamadas viejas.
     sin_dato = calificar_rastreo(dict(rastros=3, concentracion=50, borde=10, partidos_pct=0), None)

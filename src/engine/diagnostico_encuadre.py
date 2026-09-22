@@ -40,6 +40,10 @@ ALTO_MINIMO = 20.0
 # De noche la cámara sobreexpone: brillo medio 168-177 contra 84 de día, y
 # el conteo se desploma a 0.03x. No es falta de luz, es exceso.
 BRILLO_ALTO = 150.0
+# Con el brillo alto, lo que separa la sobreexposición nocturna del pavimento
+# claro al sol es el CONTRASTE: la noche de Cd. Juárez daba 70 (faros contra
+# asfalto negro) y el concreto de mediodía, 28.
+CONTRASTE_ESTELA = 55.0
 
 # Varianza del laplaciano. Medido en el material: 2 400-4 700 en videos que
 # cuentan bien, 156-930 en los que salen barridos o desenfocados.
@@ -238,6 +242,7 @@ def calificar(m: Dict, direccional: bool = False) -> Dict:
     alto = m.get('alto_mediana')
     conf = m.get('confianza')
     brillo = m.get('brillo') or 0
+    contraste = m.get('contraste') or 0
     nitidez = m.get('nitidez') or 0
     bajo20 = m.get('pct_bajo_20px')
     dets = m.get('detecciones_por_cuadro') or 0
@@ -289,9 +294,19 @@ def calificar(m: Dict, direccional: bool = False) -> Dict:
         avisos.append(f'En la parte lejana del cuadro el vehículo baja a {p25:.0f} px (la cuarta '
                       'parte más chica de los que se ven). El aforo direccional tiene que seguirlo '
                       'por todo el recorrido, y ahí se pierde: ese brazo va a quedar corto.')
-    if brillo >= BRILLO_ALTO:
-        avisos.append(f'Imagen sobreexpuesta (brillo {brillo:.0f}). De noche la cámara abre la '
-                      'exposición y cada vehículo sale como una estela: fuerza obturador rápido.')
+    if brillo >= BRILLO_ALTO and contraste >= CONTRASTE_ESTELA:
+        avisos.append(f'Imagen sobreexpuesta (brillo {brillo:.0f} con contraste {contraste:.0f}). '
+                      'Es la firma del material nocturno de Cd. Juárez, donde la cámara abría la '
+                      'exposición, cada vehículo salía como una estela y el conteo caía a 0.03x: '
+                      'fuerza obturador rápido.')
+    elif brillo >= BRILLO_ALTO:
+        # Brillo alto con contraste bajo es pavimento claro al sol, no
+        # sobreexposición: en la cámara frontal de Cd. Juárez a mediodía el
+        # concreto daba brillo 158 y contraste 28, contra 168-177 y 70 de la
+        # noche. Se avisa, pero sin afirmar que es de noche.
+        avisos.append(f'La vía se ve muy clara (brillo {brillo:.0f}), aunque con contraste '
+                      f'{contraste:.0f}: puede ser pavimento de concreto al sol y no un problema. '
+                      'Mira un cuadro antes de tocar la exposición de la cámara.')
     elif flojo('exposición'):
         avisos.append(f'La imagen va muy clara (brillo {brillo:.0f}); pasando de '
                       f'{BRILLO_ALTO:.0f} el conteo se desploma a 0.03x. Baja la exposición de '
