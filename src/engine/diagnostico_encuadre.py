@@ -54,7 +54,22 @@ CONFIANZA_MALA = 0.45
 FACTOR_FLOJO = 0.35
 
 
-def medir_imagen(video: str, det, muestras: int = 10) -> Dict:
+def _en_zonas(zonas, x: float, y: float) -> bool:
+    """Si el punto de apoyo cae en alguna de las zonas donde se cuenta.
+
+    Sin zonas se mide todo el cuadro. Con ellas, solo lo que importa: en las
+    20 cámaras de AI City más de la mitad de las detecciones caían en
+    estacionamientos y calles que no se cuentan, y el alto mediano bajaba de
+    35 a 26 px en cam_5 (de 106 a 23 px en cam_10). Se calificaba a la
+    población equivocada.
+    """
+    if not zonas:
+        return True
+    from src.engine.zones import _contiene
+    return any(_contiene(z, x, y) for z in zonas)
+
+
+def medir_imagen(video: str, det, muestras: int = 10, zonas=None) -> Dict:
     """
     Medidas de unos cuadros repartidos a lo largo del video.
 
@@ -84,6 +99,8 @@ def medir_imagen(video: str, det, muestras: int = 10) -> Dict:
         contraste.append(float(gris.std()))
         nitidez.append(float(cv2.Laplacian(gris, cv2.CV_64F).var()))
         dets, _ = det.detect(f)
+        dets = [d for d in dets
+                if _en_zonas(zonas, (d['bbox'][0] + d['bbox'][2]) / 2, d['bbox'][3])]
         for d in dets:
             x1, y1, x2, y2 = d['bbox']
             altos.append(y2 - y1)
@@ -113,6 +130,7 @@ def medir_imagen(video: str, det, muestras: int = 10) -> Dict:
         'pct_40px_o_mas': round(100 * sum(a >= 40 for a in altos) / len(altos)) if altos else None,
         'confianza': round(statistics.mean(confs), 2) if confs else None,
         'clases': por_clase,
+        'region': f'{len(zonas)} zonas dibujadas' if zonas else 'toda la imagen',
         '_ejemplo': ejemplo,
     }
 
@@ -120,7 +138,7 @@ def medir_imagen(video: str, det, muestras: int = 10) -> Dict:
 CELDA_EXTREMOS = 80
 
 
-def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None) -> Dict:
+def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None, zonas=None) -> Dict:
     """
     Rastrea unos minutos y mide dónde nacen y mueren los rastros.
 
@@ -154,7 +172,12 @@ def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None) -> Dict:
         n += 1
     cap.release()
 
-    cadenas = unir_pedazos([r for r in rastros.values() if r.puntos and se_movio(r.puntos)], fps)
+    # Con zonas, solo los vehículos que pasan por ellas: el tránsito de una
+    # calle que no se cuenta no dice nada de si se ve por dónde entra y sale
+    # el que sí.
+    cadenas = unir_pedazos([r for r in rastros.values()
+                            if r.puntos and se_movio(r.puntos)
+                            and any(_en_zonas(zonas, p[1], p[2]) for p in r.puntos)], fps)
     extremos = []
     for c in cadenas:
         pts = [p for r in c for p in r.puntos]
@@ -373,6 +396,16 @@ def calificar_rastreo(r: Dict, dets_por_cuadro: Optional[float] = None) -> Dict:
     if puntaje >= 70:
         veredicto, color = 'bueno', 'verde'
     elif puntaje >= 45:
+        veredicto, color = 'regular', 'ambar'
+    elif borde >= BORDE_MINIMO:
+        # La dispersión sola no reprueba. Los umbrales salieron de tres escenas
+        # nuestras, y en un cruce grande los vehículos entran y salen por
+        # muchos carriles y se detienen en la fila del semáforo: sus extremos
+        # se reparten aunque se vean completos. AI City cam_5 salía "no
+        # recomendable" y su direccional dio 0.95x contra la referencia
+        # humana. Lo que sí es fatal, y reprueba, es que casi nada toque la
+        # orilla (la Glorieta: 1 %, el acceso queda fuera del cuadro).
+        puntaje = 45
         veredicto, color = 'regular', 'ambar'
     else:
         veredicto, color = 'no recomendable', 'rojo'

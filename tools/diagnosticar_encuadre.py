@@ -46,6 +46,17 @@ def _config():
         return {}
 
 
+def _leer_zona(valor):
+    if os.path.exists(valor):
+        with open(valor, encoding='utf-8') as fh:
+            texto = fh.read().strip()
+        if texto.startswith('['):
+            return json.loads(texto)
+        return [[float(v) for v in renglon.split(',')] for renglon in texto.splitlines()
+                if renglon.strip()]
+    return json.loads(valor)
+
+
 def main():
     cfg = _config()
     ap = argparse.ArgumentParser(description=__doc__,
@@ -57,6 +68,9 @@ def main():
                     help='califica para aforo direccional, que exige más')
     ap.add_argument('--solo-imagen', action='store_true', help='omitir la etapa de rastreo')
     ap.add_argument('--json', dest='salida_json', default=None)
+    ap.add_argument('--zona', action='append', default=None,
+                    help='polígono donde se cuenta: JSON [[x,y],...] o archivo con '
+                         'un "x,y" por renglón (formato ROI de AI City). Repetible.')
     a = ap.parse_args()
 
     det = VehicleDetector(cfg.get('model_path', 'models/yolov8s.pt'),
@@ -64,7 +78,8 @@ def main():
                           cfg.get('iou_threshold', 0.5),
                           cfg.get('input_size', 1280), 'auto')
     det.set_detection_band(None)
-    m = medir_imagen(a.video, det, a.muestras)
+    zonas = [_leer_zona(z) for z in a.zona] if a.zona else None
+    m = medir_imagen(a.video, det, a.muestras, zonas=zonas)
     # Un video que no abre no es un encuadre malo. Antes salía "NO SIRVE
     # (0/100), puede estar de noche o desenfocado": pasó con 30 videos de AI
     # City cuya ruta llevaba un retorno de carro invisible de la lista.
@@ -78,14 +93,15 @@ def main():
     if not a.solo_imagen and imagen['puntaje'] > 0:
         # ByteTrack necesita ver las detecciones flojas para su segunda pasada.
         det.confidence_threshold = min(det.confidence_threshold, RastreadorBytetrack.CONF_MINIMA)
-        rastreo = medir_rastreo(a.video, det, a.minutos)
+        rastreo = medir_rastreo(a.video, det, a.minutos, zonas=zonas)
         rastreo = dict(rastreo, **calificar_rastreo(
             rastreo, m.get('detecciones_por_cuadro')))
 
     d = combinar(imagen, rastreo)
     print(f"\n{os.path.basename(a.video)}")
     print(f"  {m.get('resolucion')}, {m.get('fps')} fps, {m.get('kbps')} kb/s")
-    print(f"  vehículo {m.get('alto_mediana', 0):.0f} px de alto, confianza {m.get('confianza')}, "
+    print(f"  medido en: {m.get('region')}")
+    print(f"  vehículo {m.get('alto_mediana') or 0:.0f} px de alto, confianza {m.get('confianza')}, "
           f"brillo {m.get('brillo')}, nitidez {m.get('nitidez')}")
     if rastreo:
         nota = '' if rastreo.get('concluyente', True) else '  (no concluyente: poco tránsito)'

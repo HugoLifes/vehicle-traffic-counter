@@ -218,7 +218,13 @@ def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
     banda = getattr(detector, "detection_band", None)
     try:
         detector.set_detection_band(None)
-        medidas = medir_imagen(job["stored_path"], detector)
+        # Con la intersección calibrada se mide solo dentro de sus zonas: el
+        # tránsito de un estacionamiento o de una calle que no se cuenta
+        # hundía el alto mediano y el veredicto.
+        from src.engine.zones import load_zones
+        zonas = [z["points"] for z in load_zones(job.get("project_id"))
+                 if z.get("kind") in ("calzada", "acceso")] or None
+        medidas = medir_imagen(job["stored_path"], detector, zonas=zonas)
         medidas.pop("_ejemplo", None)
         # Un archivo que no se deja leer no es un encuadre malo: calificarlo
         # daba "no sirve, puede estar de noche o desenfocado".
@@ -232,7 +238,7 @@ def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
             from src.engine.diagnostico_encuadre import medir_rastreo
             from src.engine.rastreo_bytetrack import RastreadorBytetrack
             detector.confidence_threshold = min(umbral, RastreadorBytetrack.CONF_MINIMA)
-            medidas_rastreo = medir_rastreo(job["stored_path"], detector, minutos)
+            medidas_rastreo = medir_rastreo(job["stored_path"], detector, minutos, zonas=zonas)
             medidas_rastreo.update(calificar_rastreo(
                 medidas_rastreo, medidas.get("detecciones_por_cuadro")))
     finally:
