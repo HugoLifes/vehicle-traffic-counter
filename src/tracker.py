@@ -369,9 +369,14 @@ class VehicleTracker:
                 matches.append((d, t))
                 if t in unmatched_tracks:
                     unmatched_tracks.remove(t)
-            else:
-                unmatched_detections.append(d)
-        
+            # Una detección cuyo mejor emparejamiento quedó por debajo del
+            # umbral NO se agrega aquí: ya la recoge la diferencia de
+            # conjuntos de abajo. Agregarla en los dos lados la metía DOS
+            # veces en la lista y creaba dos rastros del mismo vehículo, que
+            # al cruzar la línea se contaban dos veces. Visto en la cámara
+            # nueva de Cd. Juárez: una pickup contada como rastros 5802 y
+            # 5814 en el mismo segundo.
+
         # Agregar detecciones no asignadas
         all_detection_indices = set(range(len(detections)))
         matched_detection_indices = set([m[0] for m in matches])
