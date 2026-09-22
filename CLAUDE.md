@@ -102,6 +102,14 @@ punto por el que pasa cualquier trabajo.
 **Reprocesar duplicaba los conteos.** `crossings.job_id` permite borrar los
 cruces previos de un video antes de volver a contarlo.
 
+**Un video que fallaba se llevaba la cola entera.** Al subir los 741 videos
+del aforo frontal, las inserciones de la subida dejaron la base bloqueada
+unos segundos, el borrado de cruces previos falló con `database is locked` y
+la excepción mató el hilo de la cola: los 741 quedaron "en cola", sin nadie
+que los procesara y sin ningún aviso en la interfaz. Ahora el fallo de un
+video se registra, marca ese video como error y la cola sigue; y la conexión
+SQLite espera hasta 60 s por el bloqueo en vez de 5.
+
 **Una zona mal dibujada recorta el conteo sin dar error.** Medido: 107 → 36
 cruces con polígonos puestos a ojo. El procesador avisa en el log cuando el
 filtro descarta más del 40 % de las detecciones.
@@ -182,6 +190,7 @@ se podía contestar de otro modo:
 | `firmas_color.py` | Color de cada rastro para la unión por apariencia (probado, hoy apagado) |
 | `velocidad_contra_tubo.py` | Velocidad por tramo sobre recorridos ya extraídos, contra el contador de ejes, con horas de calibración y de prueba |
 | `probar_camara_en_vivo.py` | Si una cámara en vivo (RTSP, HTTP, HLS) sirve y el equipo alcanza su ritmo, sin guardar video |
+| `revisar_escena.py` | Qué videos de una entrega miran de verdad a la vía y cuáles son de instalación |
 
 ---
 
@@ -727,6 +736,63 @@ que cambia de tamaño.
 Largo del tramo, sobre las mismas horas: de 5 a 29 m el percentil 85 queda
 a ≤ 2.6 km/h; uno largo baja el ruido pero pierde vehículos (los rastros se
 parten antes de cruzar las dos líneas). 10–20 m es el punto razonable.
+
+---
+
+## La cámara nueva de Cd. Juárez: de frente y a 2560×1440
+
+El 19-sep-2026 la empresa volvió a grabar el mismo tramo con la cámara
+**montada de frente a la vía** en vez de de lado, y a **2560×1440 a 20
+cuadros por segundo** (16 veces más píxeles que los 640×360 anteriores). En
+el Jetson está en `data/nuevos/20260919/HORA/MINUTO.mp4` y en la plataforma
+es el **proyecto 7**, con dos zonas (una por calzada) y dos líneas atadas a
+ellas.
+
+Lo que cambia respecto al material viejo:
+
+| | cámara vieja (de lado) | cámara nueva (de frente) |
+|---|---|---|
+| Resolución | 640×360 | **2560×1440** |
+| Alto del vehículo en la línea | 14 px (fondo) / 41 px (cercana) | **115–150 px en las dos** |
+| Confianza en el cruce | 0.55 / 0.86 | **0.85** |
+| De noche | estelas, 0.03× del real | **se ven los vehículos** (20:00–23:59) |
+
+**Cuidado con la hora: la leyenda de la cámara miente.** Desde las 12:25 la
+fecha y hora impresas en la imagen se atrasaron cerca de un mes. Los videos
+están completos, así que la hora de cada uno sale de **la carpeta y el
+nombre del archivo**, nunca del OSD.
+
+Otras cosas que aparecieron al cargarlo, y que conviene mirar en cualquier
+entrega nueva:
+
+- **Los primeros minutos no son de la vía.** De 10:40 a 11:47 la cámara
+  grabó dentro del carro del instalador. Se detectan comparando una
+  miniatura en gris de un cuadro de cada video contra uno de la escena buena
+  (`data/nuevos/revisar_escena.py`): la correlación pasa de 0.15 a 0.55 en
+  cuanto queda montada. Ojo, esa correlación también baja de día a noche por
+  la luz, así que sirve para el arranque, no para separar escenas a ciegas.
+- **Un archivo cortado.** El de las 12:25 pesa 2.3 MB contra 6–7 MB y no
+  abre: a un MP4 interrumpido le falta el índice (`moov atom not found`). El
+  script de carga revisa los 742 y descarta el que no abre.
+- **El bitrate es bajo para esa resolución**: 817 kb/s. La nitidez sale en
+  1 109 (los videos que cuentan bien andan en 2 400–4 700). Subirlo a 4–8
+  Mb/s aprovecharía la resolución que la cámara ya entrega.
+- **El brillo alto de mediodía no es sobreexposición.** Sobre la vía da 158
+  con contraste 28; la noche mala de la cámara vieja daba 168–177 con
+  contraste **70**. El diagnóstico ya distingue los dos casos.
+
+**Cuánto tarda** (Orin Nano, cuadro de 2560×1440 con la franja de la vía):
+49 ms detectar + 22 dibujar + 15 escribir + 14 rastrear + 13 leer = ~150 ms
+por cuadro, o sea **~2.5 min por cada minuto de video** y unas 30 h para las
+12 h de grabación. Dos cosas medidas al respecto:
+
+- El video anotado se escribe a **1280 de ancho** y no a 2560: escribirlo y
+  recodificarlo a resolución completa costaba más que detectar (4 min por
+  minuto de video contra 2.5). La detección sigue sobre el cuadro completo.
+- Bajar `input_size` de 1280 a 960 ahorra 18 ms por cuadro y conserva las
+  detecciones grandes (83 de 83 por encima de 100 px), pero pierde las del
+  fondo (4.56 contra 5.30 vehículos por cuadro). **No se cambió**: ahorra
+  12 % del total y toca un parámetro validado.
 
 ---
 
