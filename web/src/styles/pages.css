@@ -530,6 +530,33 @@
 }
 .lane-item .lane-name-input:focus-visible { outline: 2px solid var(--accent); background: var(--surface-0); }
 
+/* El tramo de velocidad es una propiedad del carril, no otro objeto: va
+   como una fila discreta bajo su nombre, alineada con el texto y no con la
+   muestra de color. */
+.lane-block { display: flex; flex-direction: column; gap: var(--space-1); }
+.lane-tramo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding-inline-start: calc(12px + 4px + var(--space-2) + var(--space-05));
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.lane-tramo .tramo-accion {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lane-tramo .tramo-accion:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
+.lane-tramo .tramo-accion:focus-visible { outline: 2px solid var(--accent); border-radius: 3px; }
+
 .new-lane-form { display: flex; gap: var(--space-2); margin-top: var(--space-3); align-items: flex-end; }
 .new-lane-form .field { flex: 1 1 auto; }
 

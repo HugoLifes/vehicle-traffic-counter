@@ -48,6 +48,28 @@ export interface Lane {
   name: string;
   /* Exactamente dos puntos: [[x1, y1], [x2, y2]] en píxeles del frame. */
   points: [Point, Point];
+  /* Tramo de velocidad: null si la línea solo cuenta. */
+  tramo?: Tramo | null;
+}
+
+/**
+ * Segunda línea del tramo de velocidad y la distancia en el pavimento hasta
+ * la línea de conteo. Es el equivalente a las dos mangueras del contador de
+ * ejes: la velocidad sale de cuánto tarda cada vehículo en pasar de una a
+ * otra.
+ */
+export interface Tramo {
+  linea: [Point, Point];
+  distancia_m: number;
+}
+
+/* Velocidad de punto de un grupo de vehículos, en km/h. */
+export interface VelocidadResumen {
+  n: number;
+  media: number | null;
+  p15: number | null;
+  p50: number | null;
+  p85: number | null;
 }
 
 export type Point = [number, number];
@@ -249,6 +271,7 @@ export interface Interval {
   out: number;
   total: number;
   by_vehicle_type?: Record<string, VehicleCounts>;
+  velocidad?: VelocidadResumen;
 }
 
 export interface PeakHour {
@@ -272,6 +295,14 @@ export interface LaneMetrics {
   /* null = en este carril el vehículo se ve demasiado pequeño para separar
      liviano de pesado, así que no se entrega desglose por tipo. */
   umbral_pesado_px: number | null;
+  tramo?: Tramo | null;
+  /* El automóvil como regla: con la distancia capturada, cuánto medirían
+     de alto los automóviles del carril. 'revisar' = la distancia no cuadra. */
+  control_tramo?: {
+    estado: 'coherente' | 'revisar' | 'no_aplica' | 'sin_datos';
+    alto_auto_m: number | null;
+  } | null;
+  velocidad?: VelocidadResumen | null;
   peak_hour: PeakHour | null;
   intervals: Interval[];
 }

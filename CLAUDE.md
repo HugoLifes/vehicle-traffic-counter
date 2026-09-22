@@ -180,6 +180,8 @@ se podía contestar de otro modo:
 | `hoja_uniones.py` | Revisar a ojo si las uniones de rastros partidos son el mismo vehículo |
 | `od_por_trayectoria.py` | Contrastar la decisión por trayectoria contra el conteo manual, sobre rastros ya extraídos |
 | `firmas_color.py` | Color de cada rastro para la unión por apariencia (probado, hoy apagado) |
+| `velocidad_contra_tubo.py` | Velocidad por tramo sobre recorridos ya extraídos, contra el contador de ejes, con horas de calibración y de prueba |
+| `probar_camara_en_vivo.py` | Si una cámara en vivo (RTSP, HTTP, HLS) sirve y el equipo alcanza su ritmo, sin guardar video |
 
 ---
 
@@ -526,10 +528,9 @@ la que lleva al poniente?) y equivocarse invierte la comparación entera.
    el volumen). Se ataca con el ángulo de cámara, no con software.
 3. **El reporte por calzada.** `crossings.zone_id` ya guarda el dato; la
    pantalla todavía agrupa por línea.
-4. **Velocidad con dos líneas** (lo pide la PT-914). Además de dato
-   vendible sirve de control: una velocidad imposible delata un rastro mal
-   armado. El contador de ejes trae su propia tabla de velocidad por
-   intervalo para contrastar.
+4. ~~Velocidad con dos líneas~~ — hecho, ver "Velocidad por tramo". Falta
+   medir en campo la distancia de un tramo real para validar la cifra
+   absoluta sin calibrar contra el tubo.
 5. **Separar autobús de camión.** Hoy se entrega liviano contra pesado.
    El modelo de visión ya se probó y no sirve con esta cámara (ver arriba).
    Queda el **ancho** de la caja, que hay que guardar y reprocesar; medido,
@@ -640,6 +641,84 @@ justamente una de las que no se pueden medir.
 Detalle curioso y contraintuitivo: de noche la calzada **del fondo** cuenta
 mejor que la cercana (0.048× contra 0.010×). Lo cercano se quema y se
 barre más, porque cruza más rápido en píxeles.
+
+Las cámaras públicas de los puentes Juárez–El Paso (HLS, 1920×1080) se ven
+nítidas y bien expuestas a la 01:00: la noche se puede grabar con otra
+configuración de cámara.
+
+### Velocidad por tramo (PT-914)
+
+`src/engine/velocidad.py`. Como el contador de ejes: dos mangueras a una
+distancia conocida y el tiempo que tarda el vehículo en pasar de una a otra.
+Aquí la primera manguera es la línea de conteo y la segunda, una línea del
+**tramo** que se dibuja en Calibrar ("Medir velocidad en este carril") con
+la distancia en metros medida en el pavimento. Se usa el punto de apoyo,
+igual que el contador y las zonas, e interpola el instante del cruce entre
+cuadros.
+
+- `lane_configs.tramo_json` = `{"linea": [[x, y], [x, y]], "distancia_m": 15}`.
+- `crossings.tiempo_tramo_s` guarda el **tiempo**, no la velocidad. La
+  velocidad sale al reportar con la distancia vigente, así que **corregir
+  una distancia mal capturada corrige todo sin volver a contar** ("Corregir
+  distancia" no marca los videos como desactualizados; "Mover la línea" sí).
+- Fuera de 3–160 km/h no se reporta: es un rastro mal armado.
+- Sale en `get_interval_counts` (por intervalo y por carril), el Reporte y
+  la hoja VELOCIDAD del Excel. Solo en horas medibles.
+
+**Lo que enseñó el contador de ejes de Juárez.** Los dos equipos del mismo
+tramo no coinciden: pte-ote da 40.8 km/h de media y 46.7 de percentil 85
+(creíble); **ote-pte da 93.3 km/h y clasifica casi todos los automóviles
+como "2A-4T"**: tenía mal capturada la separación entre mangueras. Un error
+en la distancia escala todas las velocidades por el mismo factor y no avisa.
+
+**Control automático: el automóvil como regla.** Con la distancia del tramo
+y lo que mide el recorrido en píxeles sale la escala, y con ella el alto de
+los automóviles (`control_distancia`). Con la distancia buena salen de 1.39
+y 1.54 m; con la del contador ote-pte habrían salido de 4.1 m. Fuera de
+1.1–2.1 m el Reporte y el Excel piden revisar la distancia. Solo aplica si
+el tramo corre de lado en la imagen (≤ 30°).
+
+**Validación contra el contador pte-ote** (calzada del fondo, 14–17 px),
+`tools/velocidad_contra_tubo.py` sobre recorridos de un video por hora. No
+hay distancia medida en campo, así que se fija con la mediana de las 07:00 y
+**se miden las otras 12 horas** (08:00–19:00, un video de 10 min por hora):
+
+| | nuestro | contador de ejes |
+|---|---|---|
+| Percentil 85, error medio | **+0.8 km/h** | |
+| Percentil 85, error absoluto medio | **1.3 km/h** | (46.4–47.1 km/h por hora) |
+| Mediana, diferencia por hora | −0.3 a −2.4 km/h (≈ −4 %) | 40.6–42.7 km/h |
+| Vehículos medidos por hora | 64–137 en 10 min | 115–167 en 15 min |
+
+La bajada de las 11:00 la registran los dos (38.5 y 40.6 km/h de mediana).
+El perfil por hora correlaciona r = +0.60, poco porque la velocidad real casi
+no cambia en el día. La distancia implícita del tramo es 11.2 m para 112 px.
+Contra el contador ote-pte (descompuesto, ×2.35) la calzada cercana solo
+sirve para la forma: percentil 85 a ~1.5 km/h reales.
+
+**El reparto sale más ancho que el real** (12 % bajo 32 km/h contra 4 %,
+13 % entre 48 y 56 contra 4 %). No es el instante del cruce (ajustar una
+recta al recorrido no lo angosta) ni un sesgo de pesados. Es geometría:
+**las líneas se trazaron verticales en la imagen y no siguen la
+perspectiva**, así que cada carril queda con otra distancia real. La
+velocidad sube con cada carril más cercano a la cámara en las DOS calzadas
+(37 → 45 km/h en la del fondo, 39 → 47 en la cercana), justo al revés de
+lo que haría el comportamiento de los conductores en una de ellas.
+Consecuencias:
+
+- Se entregan media, mediana y percentil 85; **el percentil 15 no**, porque
+  la cola lenta no aguanta.
+- La pantalla pide trazar las dos líneas sobre marcas que crucen la
+  calzada (raya de alto, paso peatonal, juntas), no a ojo.
+
+Los **pesados son más lentos de verdad**: cajas de 22 px o más en la
+calzada del fondo, mediana 34 km/h contra 42 de los automóviles. Borde
+delantero, trasero y centro de la caja dan lo mismo, así que no es la caja
+que cambia de tamaño.
+
+Largo del tramo, sobre las mismas horas: de 5 a 29 m el percentil 85 queda
+a ≤ 2.6 km/h; uno largo baja el ruido pero pierde vehículos (los rastros se
+parten antes de cruzar las dos líneas). 10–20 m es el punto razonable.
 
 ---
 

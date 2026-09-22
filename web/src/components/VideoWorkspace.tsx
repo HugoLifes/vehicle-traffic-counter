@@ -453,6 +453,49 @@ export function VideoWorkspace({
       ctx.fillText(d.confidence.toFixed(2), x1, Math.max(9, y1 - 2));
     }
 
+    /* El tramo de velocidad va punteado: es la segunda manguera, no una
+       línea que cuente. Se une a la de conteo por los puntos medios y se
+       rotula con la distancia, para que se lea qué se midió en el
+       pavimento — un error en ese número escala todas las velocidades. */
+    lanes.forEach((lane, i) => {
+      if (!lane.tramo) return;
+      const color = laneColor(i);
+      const [q1, q2] = lane.tramo.linea;
+      const m1: Point = [
+        (lane.points[0][0] + lane.points[1][0]) / 2,
+        (lane.points[0][1] + lane.points[1][1]) / 2,
+      ];
+      const m2: Point = [(q1[0] + q2[0]) / 2, (q1[1] + q2[1]) / 2];
+      ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(q1[0], q1[1]);
+      ctx.lineTo(q2[0], q2[1]);
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(q1[0], q1[1]);
+      ctx.lineTo(q2[0], q2[1]);
+      ctx.stroke();
+      ctx.setLineDash([2, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(m1[0], m1[1]);
+      ctx.lineTo(m2[0], m2[1]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const texto = `${lane.tramo.distancia_m} m`;
+      const c: Point = [(m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2];
+      ctx.font = 'bold 12px sans-serif';
+      const w = ctx.measureText(texto).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.fillRect(c[0] - w / 2 - 4, c[1] + 6, w + 8, 16);
+      ctx.fillStyle = color;
+      ctx.fillText(texto, c[0] - w / 2, c[1] + 18);
+    });
+
     lanes.forEach((lane, i) => linea(lane.points[0], lane.points[1], laneColor(i), lane.name));
 
     if (drawKind === 'zona') {

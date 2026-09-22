@@ -38,6 +38,7 @@ import {
   useCreateZone,
   useDeleteZone,
   useRenameZone,
+  useSetTramo,
   useZones,
 } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
@@ -93,6 +94,7 @@ export default function Calibrar() {
   const createLane = useCreateLane(projectId ?? 0);
   const renameLane = useRenameLane(projectId ?? 0);
   const removeLane = useDeleteLane(projectId ?? 0);
+  const setTramo = useSetTramo(projectId ?? 0);
   const startCounting = useStartCounting();
 
   const { data: segments, isLoading: cargandoVideos } = useQuery({
@@ -132,6 +134,12 @@ export default function Calibrar() {
   const [hint, setHint] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<Lane | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  /* Carril al que se le está dibujando el tramo de velocidad. Mientras no
+     sea null, los dos puntos que se marquen son la SEGUNDA línea de ese
+     carril y no un carril nuevo. */
+  const [tramoDe, setTramoDe] = useState<Lane | null>(null);
+  const [distancia, setDistancia] = useState('');
+  const distanciaRef = useRef<HTMLInputElement>(null);
 
   const segment = segments?.find((s) => s.job_id === jobId) ?? null;
 
@@ -150,6 +158,7 @@ export default function Calibrar() {
     setDrawMode(false);
     setWarnings([]);
     setHint(null);
+    setTramoDe(null);
   }, [segments, params]);
 
   // El rastro de movimiento es opcional: si el proyecto no tiene conteos
@@ -188,6 +197,14 @@ export default function Calibrar() {
       setPoints((prev) => {
         if (prev.length >= 2) return prev;
         const next = [...prev, p];
+        if (next.length === 2 && tramoDe) {
+          setDrawMode(false);
+          setWarnings([]);
+          setDistancia(tramoDe.tramo ? String(tramoDe.tramo.distancia_m) : '');
+          setHint('Escribe la distancia en metros entre esta línea y la de conteo.');
+          setTimeout(() => distanciaRef.current?.focus(), 0);
+          return next;
+        }
         if (next.length === 2 && segment) {
           setDrawMode(false);
           setWarnings(validarLinea(next[0], next[1], anchoVideo ?? 640, heatmap !== null));
@@ -203,8 +220,55 @@ export default function Calibrar() {
         return next;
       });
     },
-    [segment, heatmap, lanes, drawKind, points.length],
+    [segment, heatmap, lanes, drawKind, points.length, tramoDe],
   );
+
+  function iniciarTramo(lane: Lane) {
+    setTramoDe(lane);
+    setDrawKind('linea');
+    setDrawMode(true);
+    setPoints([]);
+    setWarnings([]);
+    setHint(
+      `Marca la segunda línea del tramo de "${lane.name}": cruzando la misma calzada, a una distancia que puedas medir en el pavimento.`,
+    );
+  }
+
+  /* Sin volver a dibujar: la base guarda el tiempo de paso, así que una
+     distancia corregida recalcula todas las velocidades sin volver a contar. */
+  function corregirDistancia(lane: Lane) {
+    if (!lane.tramo) return;
+    setTramoDe(lane);
+    setDrawMode(false);
+    setWarnings([]);
+    setPoints([lane.tramo.linea[0], lane.tramo.linea[1]]);
+    setDistancia(String(lane.tramo.distancia_m));
+    setHint('Corrige la distancia. Las velocidades ya medidas se recalculan sin volver a contar.');
+    setTimeout(() => distanciaRef.current?.focus(), 0);
+  }
+
+  const distanciaNum = Number(distancia.replace(',', '.'));
+  const distanciaValida =
+    distancia.trim() !== '' && Number.isFinite(distanciaNum) && distanciaNum > 0 && distanciaNum <= 500;
+
+  async function saveTramo() {
+    if (!tramoDe || points.length !== 2 || !distanciaValida) return;
+    const soloDistancia =
+      !!tramoDe.tramo &&
+      JSON.stringify(tramoDe.tramo.linea) === JSON.stringify([points[0], points[1]]);
+    await setTramo.mutateAsync({
+      laneId: tramoDe.id,
+      tramo: { linea: [points[0], points[1]], distancia_m: distanciaNum },
+    });
+    setPoints([]);
+    setTramoDe(null);
+    setDistancia('');
+    setHint(
+      soloDistancia
+        ? 'Distancia corregida. Las velocidades ya medidas se recalcularon con ella.'
+        : 'Tramo guardado. Los videos que se cuenten a partir de ahora ya miden velocidad; los que ya estaban contados hay que volver a contarlos.',
+    );
+  }
 
   async function saveLane() {
     if (points.length !== 2 || !newName.trim() || projectId === null) return;
@@ -234,6 +298,7 @@ export default function Calibrar() {
     setDrawKind('linea');
     setWarnings([]);
     setHint(null);
+    setTramoDe(null);
   }
 
   const awaiting = (jobs ?? []).filter((j) => j.status === 'awaiting_calibration');
@@ -370,29 +435,128 @@ export default function Calibrar() {
 
             <div className="lane-list">
               {lanes?.map((lane, i) => (
-                <div className="lane-item" key={lane.id}>
-                  <span className="lane-swatch" style={{ background: laneColor(i) }} />
-                  <input
-                    className="lane-name-input"
-                    defaultValue={lane.name}
-                    aria-label={`Nombre del carril ${lane.name}`}
-                    onBlur={(e) => {
-                      const name = e.target.value.trim();
-                      if (name && name !== lane.name) renameLane.mutate({ laneId: lane.id, name });
-                    }}
-                  />
-                  <IconButton
-                    label={`Eliminar el carril ${lane.name}`}
-                    tone="danger"
-                    onClick={() => setToDelete(lane)}
-                  >
-                    <IconClose />
-                  </IconButton>
+                <div className="lane-block" key={lane.id}>
+                  <div className="lane-item">
+                    <span className="lane-swatch" style={{ background: laneColor(i) }} />
+                    <input
+                      className="lane-name-input"
+                      defaultValue={lane.name}
+                      aria-label={`Nombre del carril ${lane.name}`}
+                      onBlur={(e) => {
+                        const name = e.target.value.trim();
+                        if (name && name !== lane.name) renameLane.mutate({ laneId: lane.id, name });
+                      }}
+                    />
+                    <IconButton
+                      label={`Eliminar el carril ${lane.name}`}
+                      tone="danger"
+                      onClick={() => setToDelete(lane)}
+                    >
+                      <IconClose />
+                    </IconButton>
+                  </div>
+                  {/* Velocidad: una segunda línea y la distancia medida
+                      entre las dos, como las mangueras del contador de ejes. */}
+                  <div className="lane-tramo">
+                    {lane.tramo ? (
+                      <>
+                        <span>Mide velocidad · tramo de {lane.tramo.distancia_m} m</span>
+                        <button
+                          type="button"
+                          className="tramo-accion"
+                          disabled={points.length > 0}
+                          onClick={() => corregirDistancia(lane)}
+                        >
+                          Corregir distancia
+                        </button>
+                        <button
+                          type="button"
+                          className="tramo-accion"
+                          disabled={!segment || fuente === 'procesado' || points.length > 0}
+                          onClick={() => iniciarTramo(lane)}
+                        >
+                          Mover la línea
+                        </button>
+                        <button
+                          type="button"
+                          className="tramo-accion"
+                          disabled={setTramo.isPending}
+                          onClick={() => setTramo.mutate({ laneId: lane.id, tramo: null })}
+                        >
+                          Quitar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="tramo-accion"
+                        disabled={!segment || fuente === 'procesado' || points.length > 0}
+                        onClick={() => iniciarTramo(lane)}
+                      >
+                        Medir velocidad en este carril
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
 
-            {drawKind === 'zona' ? (
+            {tramoDe ? (
+              points.length === 2 ? (
+                <>
+                  <div className="new-lane-form rise">
+                    <TextField
+                      label="Distancia entre las dos líneas (m)"
+                      ref={distanciaRef}
+                      value={distancia}
+                      inputMode="decimal"
+                      placeholder="15"
+                      onChange={(e) => setDistancia(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void saveTramo();
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="primary"
+                      onClick={() => void saveTramo()}
+                      disabled={setTramo.isPending || !distanciaValida}
+                    >
+                      Guardar tramo
+                    </Button>
+                  </div>
+                  {/* La distancia es lo único que no se ve en el video y lo
+                      que más pesa: el contador de ejes ote-pte de Juárez la
+                      tenía mal capturada y reportó 93 km/h en una avenida
+                      urbana. Se dice cómo medirla. */}
+                  <p className="sc-info" style={{ marginTop: 'var(--space-2)' }}>
+                    Mídela en el pavimento, en el sentido en que circulan los vehículos: con cinta en
+                    campo, o con la regla de un mapa satelital entre dos marcas que se vean en el video
+                    (juntas del pavimento, rayas, postes). Si está mal, todas las velocidades salen mal
+                    en la misma proporción.
+                  </p>
+                  <Button block onClick={cancelarDibujo} style={{ marginTop: 'var(--space-2)' }}>
+                    Cancelar
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="sc-info">
+                    Tramo de <strong>{tramoDe.name}</strong>: marca{' '}
+                    {points.length === 0 ? 'el primer punto' : 'el segundo punto'} de la segunda
+                    línea, a unos 10 o 20 m de la de conteo. Trázala sobre una marca que cruce la
+                    calzada de lado a lado (raya de alto, orilla del paso peatonal, junta del
+                    pavimento), y la de conteo igual: una línea trazada a ojo no sigue la
+                    perspectiva y cada carril queda con otra distancia.
+                  </p>
+                  <Button block onClick={cancelarDibujo}>
+                    Cancelar
+                  </Button>
+                </>
+              )
+            ) : drawKind === 'zona' ? (
               <>
                 <p className="sc-info">
                   {points.length < 3

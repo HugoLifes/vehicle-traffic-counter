@@ -134,6 +134,103 @@ function Metrics({ m }: { m: ProjectMetrics }) {
   );
 }
 
+/* --- Velocidad del carril ------------------------------------------------ */
+
+/**
+ * Velocidad de punto del carril, como la entrega un contador de ejes.
+ *
+ * El percentil 85 va primero porque es la cifra con que se fija un límite:
+ * la velocidad que no rebasa el 85 % de los conductores. La media sola
+ * esconde a los que van rápido.
+ */
+function Velocidad({ lane }: { lane: LaneMetrics }) {
+  const v = lane.velocidad;
+  if (!lane.tramo || !v) return null;
+  const filas = lane.intervals.filter((iv) => iv.velocidad && iv.velocidad.n > 0);
+  const kmh = (x: number | null | undefined) => (x == null ? '—' : x.toFixed(1));
+
+  return (
+    <Card className="chart-card">
+      <h3>Velocidad</h3>
+      <p className="chart-sub">
+        Tiempo que tarda cada vehículo en recorrer el tramo de {lane.tramo.distancia_m} m entre
+        las dos líneas. Solo en las horas que se pueden medir.
+        {v.n === 0 &&
+          lane.control_tramo?.estado !== 'revisar' &&
+          ' Todavía no hay vehículos medidos: los videos se contaron antes de dibujar el tramo y hay que volver a contarlos.'}
+      </p>
+      {lane.control_tramo?.estado === 'revisar' && (
+        /* Antes que las cifras: si la distancia está mal, todas lo están. */
+        <Notice tone="warning" title="Revisa la distancia del tramo">
+          Con {lane.tramo.distancia_m} m, los automóviles de este carril medirían{' '}
+          {lane.control_tramo.alto_auto_m} m de alto, y un automóvil mide entre 1.4 y 1.8 m. Una
+          distancia mal medida cambia todas las velocidades en la misma proporción.
+        </Notice>
+      )}
+      {v.n > 0 && (
+        <>
+          <div className="summary-row">
+            <Pill>
+              Percentil 85 <span className="value">{kmh(v.p85)} km/h</span>
+            </Pill>
+            <Pill>
+              Media <span className="value">{kmh(v.media)} km/h</span>
+            </Pill>
+            <Pill>
+              Mediana <span className="value">{kmh(v.p50)} km/h</span>
+            </Pill>
+            <Pill>{plural(v.n, 'vehículo medido', 'vehículos medidos')}</Pill>
+          </div>
+          {lane.control_tramo?.estado === 'coherente' && (
+            <p className="chart-sub" style={{ marginTop: 'var(--space-3)' }}>
+              Control de la distancia: con {lane.tramo.distancia_m} m, los automóviles de este
+              carril miden {lane.control_tramo.alto_auto_m} m de alto, lo normal para un automóvil.
+            </p>
+          )}
+          <details className="disclosure">
+            <summary>Ver la velocidad por intervalo</summary>
+            <div className="table-scroll">
+              <table className="data-table">
+                <caption className="visually-hidden">
+                  Velocidad por intervalo del carril {lane.lane_name}, en km/h.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Intervalo</th>
+                    <th scope="col" className="num">
+                      Medidos
+                    </th>
+                    <th scope="col" className="num">
+                      Media
+                    </th>
+                    <th scope="col" className="num">
+                      P50
+                    </th>
+                    <th scope="col" className="num">
+                      P85
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((iv) => (
+                    <tr key={iv.start}>
+                      <td>{intervalLabel(iv.start, iv.end)}</td>
+                      <td className="num">{iv.velocidad?.n}</td>
+                      <td className="num">{kmh(iv.velocidad?.media)}</td>
+                      <td className="num">{kmh(iv.velocidad?.p50)}</td>
+                      <td className="num">{kmh(iv.velocidad?.p85)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /* --- Reporte por carril -------------------------------------------------- */
 
 function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinutes: number }) {
@@ -192,6 +289,8 @@ function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinu
           <CompositionChart composition={lane.composition} total={lane.total} />
         </Card>
       )}
+
+      <Velocidad lane={lane} />
 
       <details className="disclosure">
         <summary>Ver la tabla de cifras exactas</summary>

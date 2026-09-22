@@ -18,7 +18,7 @@ import { avisar } from './avisos';
 import { navegarA } from './navegar';
 import { errorMessage } from './api';
 import { plural } from './format';
-import type { Point, ProjectCreate } from './types';
+import type { Point, ProjectCreate, Tramo } from './types';
 
 /** La cola y la cámara se miran en vivo; 3 s es el ritmo del backend. */
 const LIVE_MS = 3000;
@@ -235,6 +235,28 @@ export function useRenameLane(projectId: number) {
       exito: (_d, v) => ({ titulo: 'Carril renombrado', detalle: v.name }),
       fallo: 'No se pudo renombrar el carril',
       alTerminar: () => qc.invalidateQueries({ queryKey: keys.lanes(projectId) }),
+    }),
+  });
+}
+
+export function useSetTramo(projectId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    ...conAviso({
+      mutationFn: ({ laneId, tramo }: { laneId: number; tramo: Tramo | null }) =>
+        api.setLaneTramo(laneId, tramo),
+      exito: (_d, v) =>
+        v.tramo
+          ? { titulo: 'Tramo de velocidad guardado', detalle: `${v.tramo.distancia_m} m` }
+          : { titulo: 'Tramo de velocidad quitado' },
+      fallo: 'No se pudo guardar el tramo de velocidad',
+      alTerminar: () => {
+        qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
+        // Una distancia corregida cambia las velocidades del reporte sin
+        // volver a contar, y mover la línea deja los conteos desactualizados.
+        qc.invalidateQueries({ queryKey: ['metrics', projectId] });
+        qc.invalidateQueries({ queryKey: ['calibration-status', projectId] });
+      },
     }),
   });
 }

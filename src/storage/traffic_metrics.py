@@ -121,6 +121,11 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
             # (1.8 puntos del aforo manual) pero el conteo absoluto va corto
             # (0.84x), asi que se usan los porcentajes y no las cifras.
             "nivel_clasificacion": lane.get("nivel_clasificacion"),
+            # Resumen de velocidad del carril entero; None si la línea no
+            # tiene tramo. Cada intervalo trae el suyo en "velocidad".
+            "tramo": lane.get("tramo"),
+            "control_tramo": lane.get("control_tramo"),
+            "velocidad": lane.get("velocidad"),
             "peak_hour": _peak_hour(intervals, report["interval_minutes"]),
             "intervals": intervals,
         })

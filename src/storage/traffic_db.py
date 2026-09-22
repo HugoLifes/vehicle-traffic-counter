@@ -175,6 +175,18 @@ def init_schema():
     # Nulo = cuenta todo lo que la cruce, como antes.
     _ensure_column(conn, "lane_configs", "zone_id", "INTEGER")
 
+    # Tramo de velocidad de la línea: una segunda línea y la distancia en el
+    # pavimento entre las dos, como las dos mangueras del contador de ejes.
+    # JSON {"linea": [[x, y], [x, y]], "distancia_m": 15.0}; nulo = la línea
+    # solo cuenta.
+    _ensure_column(conn, "lane_configs", "tramo_json", "TEXT")
+    # Segundos que tardó el vehículo en recorrer el tramo de su línea. Se
+    # guarda el TIEMPO y no la velocidad: la velocidad sale de la distancia
+    # vigente al reportar, así que corregir una distancia mal capturada
+    # corrige todo sin volver a contar. Nulo cuando la línea no tiene tramo o
+    # el rastro no atravesó las dos líneas.
+    _ensure_column(conn, "crossings", "tiempo_tramo_s", "REAL")
+
     # Aforo direccional: un renglón por vehículo con su acceso de origen y
     # de destino. Va en tabla aparte y no en `crossings` porque no es un
     # cruce de línea: se decide al cerrar el video, cuando ya se pudieron
@@ -428,14 +440,17 @@ def create_lane(
     line_type: str,
     points: List[List[float]],
     project_id: Optional[int] = None,
-    zone_id: Optional[int] = None
+    zone_id: Optional[int] = None,
+    tramo: Optional[Dict] = None
 ) -> int:
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO lane_configs
-               (camera_source, project_id, name, line_type, points_json, zone_id)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (camera_source, project_id, name, line_type, json.dumps(points), zone_id)
+               (camera_source, project_id, name, line_type, points_json, zone_id,
+                tramo_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (camera_source, project_id, name, line_type, json.dumps(points), zone_id,
+         json.dumps(tramo) if tramo else None)
     )
     conn.commit()
     return cur.lastrowid
@@ -463,6 +478,8 @@ def list_lanes(camera_source: Optional[str] = None, active_only: bool = True,
     for row in rows:
         lane = dict(row)
         lane["points"] = json.loads(lane.pop("points_json"))
+        tramo = lane.pop("tramo_json", None)
+        lane["tramo"] = json.loads(tramo) if tramo else None
         lanes.append(lane)
     return lanes
 
@@ -470,9 +487,24 @@ def list_lanes(camera_source: Optional[str] = None, active_only: bool = True,
 def update_lane(lane_id: int, name: Optional[str] = None,
                  line_type: Optional[str] = None,
                  points: Optional[List[List[float]]] = None,
-                 zone_id: Optional[int] = None):
+                 zone_id: Optional[int] = None,
+                 tramo: Optional[Dict] = None,
+                 quitar_tramo: bool = False):
     conn = get_connection()
     fields, params = [], []
+    # Corregir solo la distancia del tramo no toca la geometría: la base
+    # guarda el tiempo de paso y la velocidad se recalcula al reportar, así
+    # que los videos ya contados siguen vigentes. Mover la línea sí obliga a
+    # volver a contar.
+    solo_distancia = False
+    if tramo is not None:
+        previo = conn.execute("SELECT tramo_json FROM lane_configs WHERE id = ?",
+                              (lane_id,)).fetchone()
+        previo = json.loads(previo[0]) if previo and previo[0] else None
+        solo_distancia = bool(previo) and previo.get("linea") == tramo.get("linea")
+    if tramo is not None or quitar_tramo:
+        fields.append("tramo_json = ?")
+        params.append(json.dumps(tramo) if tramo else None)
     if name is not None:
         fields.append("name = ?")
         params.append(name)
@@ -490,7 +522,9 @@ def update_lane(lane_id: int, name: Optional[str] = None,
         params.append(zone_id or None)
     if not fields:
         return
-    fields.append("updated_at = datetime('now')")
+    geometria = [f for f in fields if not f.startswith("name")]
+    if not (solo_distancia and len(geometria) == 1):
+        fields.append("updated_at = datetime('now')")
     params.append(lane_id)
     conn.execute(f"UPDATE lane_configs SET {', '.join(fields)} WHERE id = ?", params)
     conn.commit()
@@ -810,6 +844,26 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
     conn.commit()
 
 
+def set_crossing_times(job_id: int, tiempos) -> int:
+    """Pone el tiempo de paso por el tramo a los cruces de un video:
+    [(lane_id, track_id, segundos)].
+
+    Se guarda al cerrar el video y no en el momento del cruce porque la
+    segunda línea del tramo puede estar DESPUÉS de la de conteo: cuando el
+    vehículo cuenta todavía no se sabe su velocidad.
+    """
+    if not tiempos:
+        return 0
+    conn = get_connection()
+    cur = conn.executemany(
+        "UPDATE crossings SET tiempo_tramo_s = ? "
+        "WHERE job_id = ? AND lane_id = ? AND track_id = ?",
+        [(round(s, 4), job_id, lane_id, track_id)
+         for lane_id, track_id, s in tiempos])
+    conn.commit()
+    return cur.rowcount
+
+
 def delete_crossings_for_job(job_id: int) -> int:
     """
     Borra los cruces registrados por un video. Se llama antes de volver a
@@ -1064,7 +1118,8 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
 
     # 3. Traer todos los cruces del rango y clasificarlos en su cajón
     rows = conn.execute(
-        f"""SELECT lane_id, direction, vehicle_type, bbox_height, confidence, timestamp FROM crossings
+        f"""SELECT lane_id, direction, vehicle_type, bbox_height, confidence, timestamp,
+                   tiempo_tramo_s FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
@@ -1136,10 +1191,13 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
     }
     umbrales = {k: v[1] for k, v in mejor.items()}
 
+    from src.engine.velocidad import control_distancia, kmh_de, resumen as resumen_velocidad
+
     result_lanes = []
     for lane in lanes:
         umbral = umbrales[lane["id"]]  # solo para informar; se clasifica por hora
         interval_map = {b: {"in": 0, "out": 0, "total": 0, "by_vehicle_type": {}} for b in buckets}
+        velocidades = {b: [] for b in buckets}
         for row in rows:
             if row["lane_id"] != lane["id"]:
                 continue
@@ -1157,6 +1215,12 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
             clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora)
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
+            # La velocidad solo en las horas medibles: de noche el vehículo
+            # es una estela de luz y su rastro no dice a qué velocidad iba.
+            if lane.get("tramo") and _hora(row) in horas_medibles:
+                kmh = kmh_de(lane["tramo"]["distancia_m"], row["tiempo_tramo_s"])
+                if kmh is not None:
+                    velocidades[buckets[idx]].append(kmh)
 
         result_lanes.append({
             "lane_id": lane["id"],
@@ -1165,17 +1229,36 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
             # este carril es una medición o un "no se puede".
             "umbral_pesado_px": round(umbral, 1) if umbral else None,
             "nivel_clasificacion": mejor[lane["id"]][0],
+            "tramo": lane.get("tramo"),
+            # El automóvil como regla: con la distancia capturada, ¿cuánto
+            # medirían de alto los automóviles? Delata una distancia mal
+            # medida, que de otro modo escala todas las velocidades sin avisar.
+            "control_tramo": control_distancia(
+                [f["bbox_height"] for f in rows
+                 if f["lane_id"] == lane["id"] and f["vehicle_type"] == "car"
+                 and _hora(f) in horas_medibles],
+                lane["points"], lane["tramo"]["linea"], lane["tramo"]["distancia_m"],
+            ) if lane.get("tramo") else None,
+            "velocidad": _resumen_redondeado(
+                resumen_velocidad([v for b in buckets for v in velocidades[b]])
+            ) if lane.get("tramo") else None,
             "intervals": [
                 {
                     "start": b.strftime("%Y-%m-%d %H:%M:%S"),
                     "end": (b + delta).strftime("%Y-%m-%d %H:%M:%S"),
-                    **interval_map[b]
+                    **interval_map[b],
+                    **({"velocidad": _resumen_redondeado(resumen_velocidad(velocidades[b]))}
+                       if lane.get("tramo") else {}),
                 }
                 for b in buckets
             ]
         })
 
     return {"lanes": result_lanes, "interval_minutes": interval_minutes}
+
+
+def _resumen_redondeado(r: Dict) -> Dict:
+    return {k: (round(v, 1) if isinstance(v, float) else v) for k, v in r.items()}
 
 
 # --- Registro del proyecto ------------------------------------------------

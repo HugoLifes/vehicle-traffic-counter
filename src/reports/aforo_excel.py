@@ -418,6 +418,133 @@ def _hoja_metodo(wb: Workbook, d: Dict):
                    end_row=len(filas) + 6, end_column=2)
 
 
+def _hoja_velocidad(wb: Workbook, project_id: int, d: Dict) -> int:
+    """
+    Velocidad de punto por cuarto de hora y por sentido, como el reporte del
+    contador de ejes: vehículos medidos, media, mediana y percentil 85.
+
+    El percentil 15 NO se entrega. Contra el contador de ejes de Juárez la
+    mediana y el percentil 85 salieron a 1-2 km/h, pero el reparto sale más
+    ancho que el real (12 % bajo 32 km/h contra 4 %): la cola lenta no
+    aguanta, y una cifra que no aguanta es peor que ninguna.
+
+    El percentil 85 es la cifra que usa la ingeniería de tránsito para fijar
+    límites. Se deja en blanco donde el conteo no es medible, por la misma
+    razón que en las otras hojas.
+    """
+    from src.engine.velocidad import kmh_de, resumen
+
+    conn = traffic_db.get_connection()
+    tramos = [l for l in traffic_db.list_lanes(project_id=project_id) if l.get("tramo")]
+    distancia = {l["id"]: l["tramo"]["distancia_m"] for l in tramos}
+    filas = conn.execute("""
+        SELECT c.timestamp AS ts, c.tiempo_tramo_s AS s, c.lane_id AS lane,
+               COALESCE(z.name, l.name) AS sentido
+        FROM crossings c
+        JOIN lane_configs l ON l.id = c.lane_id
+        LEFT JOIN zones z ON z.id = c.zone_id
+        WHERE l.project_id = ? AND l.active = 1 AND c.tiempo_tramo_s IS NOT NULL
+    """, (project_id,)).fetchall()
+    if not filas or not tramos:
+        return 0
+
+    por_cuarto = defaultdict(lambda: defaultdict(list))
+    por_hora = defaultdict(lambda: defaultdict(list))
+    todos = defaultdict(list)
+    for f in filas:
+        try:
+            t = datetime.strptime(f["ts"], "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError):
+            continue
+        if (t.weekday(), t.hour) in d["no_medibles"]:
+            continue
+        v = kmh_de(distancia.get(f["lane"]), f["s"])
+        if v is None:
+            continue
+        s = f["sentido"] or "SIN SENTIDO"
+        inicio = t.replace(minute=(t.minute // 15) * 15, second=0)
+        por_cuarto[s][inicio].append(v)
+        por_hora[s][t.replace(minute=0, second=0)].append(v)
+        todos[s].append(v)
+    if not todos:
+        return 0
+
+    ws = wb.create_sheet("VELOCIDAD")
+    ws.sheet_view.showGridLines = False
+    controles = {l["lane_id"]: l.get("control_tramo")
+                 for l in traffic_db.get_interval_counts(project_id, 60)["lanes"]}
+
+    col = 1
+    fila_max = 6
+    for sentido in sorted(todos):
+        _celda(ws, 1, col, "VELOCIDAD DE PUNTO", _TITULO, borde=False)
+        _celda(ws, 2, col, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
+        _celda(ws, 2, col + 1, d["proyecto"]["name"], _NORMAL, alineacion=_IZQ, borde=False)
+        _celda(ws, 4, col, f"KM/H — {sentido.upper()}", _SUBTITULO, _AZUL)
+        ws.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 4)
+        for i, cab in enumerate(("HORA", "VEHICULOS", "MEDIA", "P50", "P85")):
+            _celda(ws, 5, col + i, cab, _CABECERA, _GRIS)
+
+        fila = 6
+        for hora in sorted(por_hora[sentido]):
+            cuartos = sorted(k for k in por_cuarto[sentido]
+                             if k.replace(minute=0) == hora)
+            for q in cuartos:
+                r = resumen(por_cuarto[sentido][q])
+                fin = q.minute + 15
+                _celda(ws, fila, col, f"{q:%H:%M}-{(q.hour + fin // 60) % 24:02d}:{fin % 60:02d}")
+                for i, k in enumerate(("n", "media", "p50", "p85"), start=1):
+                    _celda(ws, fila, col + i, round(r[k], 1) if k != "n" else r[k])
+                fila += 1
+            r = resumen(por_hora[sentido][hora])
+            _celda(ws, fila, col, f"{hora:%H}:00-{(hora.hour + 1) % 24:02d}:00", _CABECERA, _GRIS)
+            for i, k in enumerate(("n", "media", "p50", "p85"), start=1):
+                _celda(ws, fila, col + i, round(r[k], 1) if k != "n" else r[k], _CABECERA, _GRIS)
+            fila += 1
+
+        r = resumen(todos[sentido])
+        _celda(ws, fila + 1, col, "TODO EL AFORO", _CABECERA, _AZUL)
+        for i, k in enumerate(("n", "media", "p50", "p85"), start=1):
+            _celda(ws, fila + 1, col + i, round(r[k], 1) if k != "n" else r[k], _CABECERA, _AZUL)
+        fila_max = max(fila_max, fila + 1)
+
+        ws.column_dimensions[get_column_letter(col)].width = 13
+        for i in range(1, 5):
+            ws.column_dimensions[get_column_letter(col + i)].width = 10
+        col += 7
+
+    # De dónde sale cada velocidad. La distancia va escrita con su valor:
+    # un error ahí escala TODAS las velocidades por el mismo factor sin dar
+    # ningún aviso, que es justo lo que le pasó al contador de ejes ote-pte
+    # de Juárez (93 km/h de media en una avenida urbana).
+    fila = fila_max + 3
+    notas = [
+        "Método: tiempo que tarda cada vehículo en recorrer un tramo de distancia "
+        "conocida entre dos líneas, como las dos mangueras de un contador de ejes.",
+    ] + [
+        f"Tramo de '{l['name']}': {l['tramo']['distancia_m']:g} m medidos en el pavimento."
+        + _nota_control(controles.get(l["id"]))
+        for l in tramos
+    ] + [
+        "Una distancia mal medida cambia todas las velocidades en la misma proporción. "
+        "Verifíquela antes de usar estas cifras para fijar un límite.",
+    ]
+    for i, n in enumerate(notas):
+        c = ws.cell(fila + i, 1, n)
+        c.font = Font(size=9, italic=True)
+    return sum(len(v) for v in todos.values())
+
+
+def _nota_control(c: Optional[Dict]) -> str:
+    if not c or c.get("alto_auto_m") is None:
+        return ""
+    if c["estado"] == "revisar":
+        return (f" ATENCIÓN: con esa distancia los automóviles medirían {c['alto_auto_m']} m "
+                "de alto (lo normal es 1.4 a 1.8 m). Revise la distancia antes de usar estas "
+                "velocidades.")
+    return f" Control: con esa distancia los automóviles miden {c['alto_auto_m']} m de alto."
+
+
 _CLASE_OD = {"car": "Automóvil", "motorcycle": "Motocicleta", "bus": "Autobús",
              "truck": "Camión o camioneta"}
 
@@ -587,6 +714,7 @@ def generar(project_id: int, ruta: str) -> Dict:
     if d["sentidos"]:
         _hoja_totales(wb, d)
         _hoja_cuartos(wb, d)
+    _hoja_velocidad(wb, project_id, d)
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
     if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:
         raise ValueError(

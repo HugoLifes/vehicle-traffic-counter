@@ -27,6 +27,7 @@ from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
 from src.engine.lanes import build_lane_counters
+from src.engine.velocidad import MedidorVelocidad
 from src.engine.origen_destino import AforoDireccional
 from src.engine.rastreo_bytetrack import RastreadorBytetrack
 from src.engine.zones import (band_from_zones, draw_zones, filter_detections,
@@ -231,6 +232,17 @@ class VideoJobProcessor:
             # atribuir cada cruce a su calzada.
             zonas = load_zones(job.get('project_id'))
 
+            # Velocidad: solo en las líneas que tienen tramo (una segunda
+            # línea y la distancia medida entre las dos). La línea de conteo
+            # es la primera manguera; la del tramo, la segunda.
+            medidores = {}
+            for lane_id, meta in lane_meta.items():
+                tramo = meta.get('tramo')
+                if tramo and tramo.get('distancia_m'):
+                    medidores[lane_id] = MedidorVelocidad(
+                        meta['points'], tramo['linea'], tramo['distancia_m'], fps)
+            velocidades = []
+
             # Aforo direccional: se activa solo si hay dos accesos o más. Un
             # proyecto puede tener líneas, accesos o ambos.
             direccional = AforoDireccional(zonas, fps)
@@ -359,6 +371,11 @@ class VideoJobProcessor:
                         vistos = tracks
 
                     crossings = counter.update(vistos)
+                    if lane_id in medidores:
+                        # Ve exactamente lo mismo que el contador: los
+                        # vehículos de la calzada atada a la línea.
+                        for m in medidores[lane_id].observar(frame_count, vistos):
+                            velocidades.append((lane_id, m['track_id'], m['segundos']))
                     for crossing in crossings['in'] + crossings['out']:
                         track = next(
                             (t for t in vistos if t['id'] == crossing['track_id']),
@@ -433,6 +450,16 @@ class VideoJobProcessor:
                 traffic_db.update_video_job(
                     job_id, output_video_path=str(final_path), total_frames=frame_count
                 )
+                if medidores:
+                    # Al final y no en el cruce: si la segunda línea está
+                    # después de la de conteo, cuando el vehículo cuenta
+                    # todavía no se sabe su velocidad.
+                    con_velocidad = traffic_db.set_crossing_times(job_id, velocidades)
+                    descartados = sum(m.descartados for m in medidores.values())
+                    logging.info(
+                        f"Velocidad de {job['original_name']}: {con_velocidad} cruces medidos, "
+                        f"{descartados} descartados por imposibles"
+                    )
                 if direccional.activo:
                     # Se decide al final y no en vivo: solo con todos los
                     # rastros del video a la vista se pueden unir los que

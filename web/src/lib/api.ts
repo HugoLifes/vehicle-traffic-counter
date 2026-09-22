@@ -32,6 +32,7 @@ import type {
   EventoProyecto,
   FichaCamara,
   FuenteVideo,
+  Tramo,
 } from './types';
 
 export class ApiError extends Error {
@@ -127,6 +128,14 @@ export const renameLane = (laneId: number, name: string) =>
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
+  });
+
+/* null quita el tramo: la línea vuelve a solo contar. */
+export const setLaneTramo = (laneId: number, tramo: Tramo | null) =>
+  request<Lane>(`/api/lanes/${laneId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(tramo ? { tramo } : { quitar_tramo: true }),
   });
 
 export const deleteLane = (laneId: number) =>
