@@ -220,6 +220,11 @@ def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
         detector.set_detection_band(None)
         medidas = medir_imagen(job["stored_path"], detector)
         medidas.pop("_ejemplo", None)
+        # Un archivo que no se deja leer no es un encuadre malo: calificarlo
+        # daba "no sirve, puede estar de noche o desenfocado".
+        if medidas.get("error"):
+            raise HTTPException(422, "No se pudo leer el video (¿archivo dañado o formato "
+                                     "no soportado?). No es un veredicto sobre el encuadre.")
         imagen = calificar(medidas, direccional=direccional)
 
         medidas_rastreo = None

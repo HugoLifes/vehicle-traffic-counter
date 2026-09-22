@@ -65,6 +65,12 @@ def main():
                           cfg.get('input_size', 1280), 'auto')
     det.set_detection_band(None)
     m = medir_imagen(a.video, det, a.muestras)
+    # Un video que no abre no es un encuadre malo. Antes salía "NO SIRVE
+    # (0/100), puede estar de noche o desenfocado": pasó con 30 videos de AI
+    # City cuya ruta llevaba un retorno de carro invisible de la lista.
+    if m.get('error'):
+        sys.exit(f'No se pudo leer el video {a.video!r}: {m["error"]}. '
+                 'Revisa la ruta; no es un veredicto sobre el encuadre.')
     m.pop('_ejemplo', None)
     imagen = calificar(m, direccional=a.direccional)
 
