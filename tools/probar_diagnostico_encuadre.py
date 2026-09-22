@@ -78,6 +78,15 @@ CASOS = [
           brillo=145, nitidez=2611, detecciones_por_cuadro=12.7),
      dict(rastros=63, concentracion=66, borde=28, partidos_pct=13),
      'ambar', 'FALLÓ y el diagnóstico no lo ve: el puente tapa dos accesos'),
+
+    # Medido solo dentro de la ROI del reto (--zona). Con el cuadro completo
+    # salía rojo: el alto bajaba a 26 px por el lote de la agencia y la
+    # dispersión de extremos reprobaba sola.
+    ('AI City cam_5 (ojo de pez, cruce de 4 brazos)',
+     dict(alto_mediana=35, alto_p25=29, pct_bajo_20px=1, confianza=0.64,
+          brillo=122, nitidez=944, detecciones_por_cuadro=16.7),
+     dict(rastros=115, concentracion=44, borde=26, partidos_pct=0),
+     'ambar', 'sirvió: 0.95x y 9 de 12 movimientos con GEH < 5 contra la referencia humana'),
 ]
 
 

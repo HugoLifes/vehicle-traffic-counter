@@ -1154,6 +1154,27 @@ en un segundo: cada uno conserva su color y **ningún video que no salga
 "bueno" se queda sin un aviso concreto.** Sirve para tocar umbrales sin
 volver a gastar horas de proceso.
 
+**Puesto a prueba en 20 cámaras ajenas (AI City, 31 grabaciones, 22-sep-2026)**,
+todas elegidas por el reto para contar movimientos: **15 salían "no
+recomendable"**, incluida cam_5, cuyo direccional dio 0.95× contra la
+referencia humana. Dos defectos, medidos:
+
+1. **Calificaba todo el cuadro.** Más de la mitad de las detecciones caían en
+   estacionamientos y calles que no se cuentan. Alto mediano en el cuadro
+   contra dentro de la región de conteo: cam_5 26 → 35 px, cam_4 24 → 41,
+   cam_10 23 → 106. Ahora, con zonas dibujadas, mide solo dentro de ellas
+   (la API usa las del proyecto; la herramienta acepta `--zona`, también el
+   formato ROI de AI City). Sin zonas mide todo y lo dice (`region`).
+2. **La concentración en 6 celdas castiga cualquier cruce grande**: muchos
+   carriles y la fila del semáforo reparten los extremos aunque el vehículo
+   se vea completo. Sola ya no reprueba (tope ámbar); sigue reprobando lo
+   fatal, casi nada en la orilla (Glorieta, 1 %).
+
+Con los dos arreglos: 0 rojos, 22 regular, 9 bueno; los rojos de nuestros
+casos malos se conservan y cam_5 entró como noveno caso de la regresión.
+Ojo con el ojo de pez: la "orilla" es la del círculo, no la del rectángulo,
+y la medida de borde sale baja aunque el vehículo sí entre por ahí.
+
 **No corre si hay videos en la cola.** Dos trabajos de GPU a la vez dan
 `NvMapMemAllocInternalTagged error 12` y dejan cuadros sin detección. Pasó
 dos veces, la segunda por lanzar el diagnóstico durante el recuento de
