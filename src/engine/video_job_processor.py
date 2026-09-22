@@ -160,7 +160,20 @@ class VideoJobProcessor:
                 continue
             if job_id is None:
                 continue
-            self._process_job(job_id)
+            try:
+                self._process_job(job_id)
+            except Exception as e:
+                # Un fallo de un video NO puede llevarse la cola entera. Pasó
+                # al subir 741 videos de un aforo: la base quedó bloqueada
+                # unos segundos por las inserciones de la subida, el borrado
+                # de cruces previos falló con "database is locked" y la
+                # excepción mató el hilo. Los 741 quedaron en cola, sin nadie
+                # que los procesara y sin ningún aviso en la interfaz.
+                logging.exception(f"Error procesando el video {job_id}; sigue la cola")
+                try:
+                    traffic_db.update_video_job(job_id, status='error', error=str(e)[:300])
+                except Exception:
+                    logging.exception(f"Tampoco se pudo marcar el video {job_id} como fallido")
 
     def _process_job(self, job_id: int):
         job = traffic_db.get_video_job(job_id)

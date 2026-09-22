@@ -42,7 +42,11 @@ def get_connection() -> sqlite3.Connection:
     """
     if not hasattr(_local, "conn"):
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        # timeout alto a propósito: con la cola escribiendo cruces y la API
+        # insertando una subida de cientos de videos, el valor por omisión (5 s)
+        # se agota y SQLite lanza "database is locked". Una vez eso mató el
+        # hilo de la cola y dejó 741 videos sin procesar.
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=60.0)
         conn.execute("PRAGMA journal_mode=WAL")
         # SQLite declara las claves foráneas pero NO las aplica salvo que
         # se le pida explícitamente, y por conexión. Sin esto, un borrado
