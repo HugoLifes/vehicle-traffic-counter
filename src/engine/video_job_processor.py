@@ -35,6 +35,15 @@ from src.engine.zones import (band_from_zones, draw_zones, filter_detections,
 from src.visualizer import Visualizer
 
 
+# Ancho máximo del video anotado. El de entrada puede ser de 2560x1440 (la
+# cámara frontal de Cd. Juárez), y escribir y recodificar eso cuesta más que
+# detectar: 4 min de proceso por cada minuto de video, contra 1 min al
+# acotarlo. El anotado es para MIRARLO —revisar líneas, zonas y cruces—, y a
+# 1280 de ancho se revisa igual. La detección sigue usando el cuadro
+# completo, así que el conteo no cambia.
+ANCHO_MAXIMO_ANOTADO = 1280
+
+
 def _transcode_to_h264(raw_path: Path, final_path: Path):
     """
     cv2.VideoWriter con el códec 'mp4v' escribe un archivo .mp4 válido,
@@ -311,11 +320,14 @@ class VideoJobProcessor:
             # navegador.
             raw_path = OUTPUT_DIR / f"{job_id}_raw.mp4"
             final_path = OUTPUT_DIR / f"{job_id}_annotated.mp4"
+            escala_salida = min(1.0, ANCHO_MAXIMO_ANOTADO / frame_width)
+            salida_w = int(frame_width * escala_salida) // 2 * 2
+            salida_h = int(frame_height * escala_salida) // 2 * 2
             writer = cv2.VideoWriter(
                 str(raw_path),
                 cv2.VideoWriter_fourcc(*'mp4v'),
                 fps,
-                (frame_width, frame_height)
+                (salida_w, salida_h)
             )
             visualizer = Visualizer(config=self.config.get('visualizer', {}))
 
@@ -429,6 +441,9 @@ class VideoJobProcessor:
                 # los vehículos.
                 annotated = visualizer.draw_lane_summary(annotated, resumen)
 
+                if escala_salida < 1.0:
+                    annotated = cv2.resize(annotated, (salida_w, salida_h),
+                                           interpolation=cv2.INTER_AREA)
                 writer.write(annotated)
 
                 # Publicar el cuadro para el visor en vivo. Solo se guarda
