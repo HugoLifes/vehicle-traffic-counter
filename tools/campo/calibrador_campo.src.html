@@ -1,0 +1,717 @@
+<title>Calibrador de campo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@400;600&display=swap">
+<style>
+  /*
+    Calibrador de campo: se usa parado junto a la vía, en el celular, antes
+    de dejar grabando la cámara un día entero. Misma identidad que la
+    plataforma (Overpass, que desciende de la tipografía de los letreros de
+    carretera, y el azul de señalética vial), para que se lea como parte del
+    mismo sistema. Los umbrales de píxeles son los MEDIDOS en los aforos de
+    la empresa contra conteo manual, no valores de catálogo.
+  */
+  :root {
+    --ground: #f2f5f8;
+    --panel: #ffffff;
+    --panel-2: #e9eef3;
+    --line: #d7dfe6;
+    --line-strong: #7d8b9c;
+    --ink: #10161d;
+    --ink-2: #4d5967;
+    --muted: #5f6b7a;
+    --accent: #1d54b3;
+    --accent-strong: #123f8c;
+    --accent-soft: #e3ebfa;
+    --accent-ink: #ffffff;
+    --good: #136c3f;
+    --good-soft: #e2f5eb;
+    --ok: #3f7f1f;
+    --ok-soft: #eaf5df;
+    --warn: #8a5409;
+    --warn-soft: #faedd9;
+    --bad: #c22c3d;
+    --bad-soft: #fbe2e5;
+    --focus: #1d54b3;
+    --shadow: 0 1px 2px rgba(16, 24, 32, 0.06), 0 4px 14px rgba(16, 24, 32, 0.06);
+    --font: "Overpass", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "Overpass Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d1218; --panel: #151c24; --panel-2: #1d2630; --line: #2a3542;
+      --line-strong: #6f7e90; --ink: #e8eef5; --ink-2: #b6c2cf; --muted: #95a3b3;
+      --accent: #7aa7ff; --accent-strong: #a6c3ff; --accent-soft: #1b2a44; --accent-ink: #08101d;
+      --good: #57cf90; --good-soft: #12301f; --ok: #9bd46a; --ok-soft: #1f2e14;
+      --warn: #e7ae55; --warn-soft: #36270f; --bad: #ff808b; --bad-soft: #3d1a1f;
+      --focus: #7aa7ff; --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0d1218; --panel: #151c24; --panel-2: #1d2630; --line: #2a3542;
+    --line-strong: #6f7e90; --ink: #e8eef5; --ink-2: #b6c2cf; --muted: #95a3b3;
+    --accent: #7aa7ff; --accent-strong: #a6c3ff; --accent-soft: #1b2a44; --accent-ink: #08101d;
+    --good: #57cf90; --good-soft: #12301f; --ok: #9bd46a; --ok-soft: #1f2e14;
+    --warn: #e7ae55; --warn-soft: #36270f; --bad: #ff808b; --bad-soft: #3d1a1f;
+    --focus: #7aa7ff; --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 15px/1.5 var(--font);
+    padding-inline: 16px;
+    padding-block: 18px 40px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 18px; }
+
+  header.top { display: grid; gap: 4px; }
+  .eyebrow {
+    font: 600 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 { font: 800 clamp(24px, 5vw, 32px)/1.1 var(--font); margin: 0; text-wrap: balance; }
+  .lead { margin: 0; color: var(--ink-2); max-width: 62ch; }
+
+  /* Selector de herramienta: tres pestañas, como las pestañas de la plataforma */
+  .tabs {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+    background: var(--panel-2); padding: 4px; border-radius: 10px;
+  }
+  .tabs button {
+    font: 600 14px/1.2 var(--font); color: var(--ink-2); background: transparent;
+    border: 0; border-radius: 7px; padding: 10px 6px; cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+  .tabs button:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+  .seg label:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .panel { display: grid; gap: 16px; }
+  .cols { display: grid; gap: 16px; }
+  @media (min-width: 900px) { .cols { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); align-items: start; } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 14px; }
+  .card.lift { box-shadow: var(--shadow); }
+  h2 { font: 800 17px/1.25 var(--font); margin: 0; }
+  h3 { font: 600 13px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; }
+  p { margin: 0; }
+  .note { color: var(--muted); font-size: 13px; }
+
+  /* Formularios */
+  .fields { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .field { display: grid; gap: 5px; }
+  .field label { font: 600 13px/1.2 var(--font); color: var(--ink-2); }
+  .field .hint { font-size: 12px; color: var(--muted); }
+  input[type="number"], select {
+    font: 400 16px/1.2 var(--mono); color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 10px; width: 100%;
+  }
+  .unit { position: relative; }
+  .unit input { padding-right: 34px; }
+  .unit span { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font: 400 13px var(--mono); color: var(--muted); pointer-events: none; }
+
+  /* Lecturas */
+  .readout { display: grid; gap: 10px; }
+  .lane {
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline;
+    padding: 12px 14px; border-radius: 10px; background: var(--panel-2);
+  }
+  .lane .name { font: 600 14px/1.3 var(--font); }
+  .lane .px { font: 600 26px/1 var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+  .lane .px small { font-size: 13px; color: var(--muted); font-weight: 400; }
+  .lane .meta { grid-column: 1 / -1; font-size: 13px; color: var(--ink-2); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font: 600 12px/1 var(--mono);
+    text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 8px; border-radius: 999px; width: fit-content;
+  }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .c-holgura { color: var(--good); background: var(--good-soft); }
+  .c-bueno { color: var(--ok); background: var(--ok-soft); }
+  .c-regular { color: var(--warn); background: var(--warn-soft); }
+  .c-malo { color: var(--bad); background: var(--bad-soft); }
+
+  /* La regla de píxeles: la escala que decide todo, con sus umbrales medidos */
+  .ruler svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .ruler .band-malo { fill: var(--bad-soft); }
+  .ruler .band-regular { fill: var(--warn-soft); }
+  .ruler .band-bueno { fill: var(--ok-soft); }
+  .ruler .band-holgura { fill: var(--good-soft); }
+  .ruler .tick { stroke: var(--line-strong); stroke-width: 1; }
+  .ruler .tlabel { fill: var(--muted); font: 400 10px var(--mono); }
+  .ruler .blabel { fill: var(--ink-2); font: 600 10px var(--font); }
+  .ruler .mark { stroke: var(--ink); stroke-width: 2; }
+  .ruler .mlabel { fill: var(--ink); font: 600 10px var(--mono); }
+
+  .facts { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .fact { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; }
+  .fact b { display: block; font: 600 18px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+  .fact span { font-size: 12.5px; color: var(--muted); }
+
+  .advice { display: grid; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--line-strong); }
+  .advice p { font-size: 14px; }
+
+  /* Foto */
+  .stage { position: relative; background: #0a0e14; border-radius: 10px; overflow: hidden; touch-action: none; }
+  .stage canvas { display: block; width: 100%; height: auto; cursor: crosshair; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .btn {
+    font: 600 14px/1 var(--font); border-radius: 8px; padding: 11px 14px; cursor: pointer;
+    border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink);
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--accent); padding-inline: 6px; }
+  .filebtn { position: relative; overflow: hidden; }
+  .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .measures { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .measures li { display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); }
+  .measures .n { font: 600 12px var(--mono); color: var(--muted); }
+  .measures .v { font: 600 17px var(--mono); font-variant-numeric: tabular-nums; }
+  .measures button { border: 0; background: transparent; color: var(--muted); font: 600 18px/1 var(--font); cursor: pointer; padding: 4px 6px; }
+  .stats { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .stat { padding: 10px 12px; border-radius: 10px; background: var(--panel-2); display: grid; gap: 4px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font: 600 18px var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* Lista */
+  .checklist { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .item { display: grid; gap: 8px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+  .item .q { font: 600 15px/1.35 var(--font); }
+  .item .why { font-size: 13px; color: var(--muted); }
+  .seg { display: inline-grid; grid-auto-flow: column; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 8px; width: fit-content; }
+  .seg label { position: relative; font: 600 13px/1 var(--font); padding: 8px 11px; border-radius: 6px; color: var(--ink-2); cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+  .seg label:has(input:checked) { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+  .seg label.si:has(input:checked) { color: var(--good); }
+  .seg label.no:has(input:checked) { color: var(--bad); }
+  .progress { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  .summary {
+    font: 400 13px/1.55 var(--mono); white-space: pre-wrap; background: var(--panel-2);
+    border-radius: 10px; padding: 12px 14px; margin: 0; overflow-x: auto; color: var(--ink);
+  }
+  footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 6px; }
+  @media (prefers-reduced-motion: no-preference) { .tabs button { transition: background 0.15s, color 0.15s; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">Aforo vehicular · antes de grabar</span>
+    <h1>Calibrador de campo</h1>
+    <p class="lead">Para decidir en la vía si una cámara va a dar un buen aforo, antes de dejarla grabando un día entero. Lo que decide todo es qué tan grande se ve un vehículo en la imagen: la escala de abajo está medida en los aforos de la empresa contra conteo manual.</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Herramientas">
+    <button role="tab" id="tab-planear" aria-controls="p-planear" aria-selected="true">Planear</button>
+    <button role="tab" id="tab-foto" aria-controls="p-foto" aria-selected="false">Medir foto</button>
+    <button role="tab" id="tab-lista" aria-controls="p-lista" aria-selected="false">Lista</button>
+  </nav>
+
+  <!-- 1. Planear: sin video, con la cinta métrica y la ficha de la cámara -->
+  <section class="panel" id="p-planear" role="tabpanel" aria-labelledby="tab-planear">
+    <div class="cols">
+      <div class="card">
+        <h2>La cámara y la vía</h2>
+        <p class="note">Mide la altura de montaje y la distancia, en el suelo, desde el pie del poste hasta el centro de cada carril donde se va a contar.</p>
+        <div class="fields">
+          <div class="field">
+            <label for="res">Resolución de grabación</label>
+            <select id="res">
+              <option value="640x360">640×360</option>
+              <option value="1280x720" selected>1280×720 (720p)</option>
+              <option value="1920x1080">1920×1080 (1080p)</option>
+              <option value="2560x1440">2560×1440 (4 MP)</option>
+              <option value="3840x2160">3840×2160 (4K)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="lente">Lente</label>
+            <select id="lente">
+              <option value="100" selected>2.8 mm · ~100°</option>
+              <option value="85">3.6 mm · ~85°</option>
+              <option value="80">4 mm · ~80°</option>
+              <option value="55">6 mm · ~55°</option>
+              <option value="42">8 mm · ~42°</option>
+              <option value="28">12 mm · ~28°</option>
+              <option value="otro">Otro ángulo…</option>
+            </select>
+            <span class="hint">Ángulo de visión horizontal; el exacto viene en la ficha de la cámara.</span>
+          </div>
+          <div class="field" id="campo-angulo" hidden>
+            <label for="angulo">Ángulo horizontal</label>
+            <div class="unit"><input type="number" id="angulo" min="10" max="170" step="1" value="85"><span>°</span></div>
+          </div>
+          <div class="field">
+            <label for="altura">Altura de la cámara</label>
+            <div class="unit"><input type="number" id="altura" min="1" max="40" step="0.5" value="5"><span>m</span></div>
+          </div>
+          <div class="field">
+            <label for="dcerca">Carril más cercano</label>
+            <div class="unit"><input type="number" id="dcerca" min="1" max="300" step="1" value="12"><span>m</span></div>
+          </div>
+          <div class="field">
+            <label for="dlejos">Carril más lejano</label>
+            <div class="unit"><input type="number" id="dlejos" min="1" max="300" step="1" value="35"><span>m</span></div>
+          </div>
+        </div>
+        <p class="note">Estimación de cámara estenopeica para un automóvil de 1.5 m de alto y 1.8 m de ancho que cruza la imagen. Sirve para decidir dónde poner la cámara; la cifra que manda es la que se mide en la foto real (pestaña <b>Medir foto</b>).</p>
+      </div>
+
+      <div class="card lift" aria-live="polite">
+        <h2>Qué tan grande se va a ver un automóvil</h2>
+        <div class="readout" id="plan-lanes"></div>
+        <div class="ruler" id="plan-ruler"></div>
+        <div class="facts" id="plan-facts"></div>
+        <div class="advice" id="plan-advice"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Medir foto: la imagen real de la cámara ya montada -->
+  <section class="panel" id="p-foto" role="tabpanel" aria-labelledby="tab-foto" hidden>
+    <div class="cols">
+      <div class="card">
+        <h2>La imagen de la cámara</h2>
+        <p class="note">Usa una captura de la propia cámara (desde su app o su grabación), no una foto de la pantalla: la resolución y la nitidez tienen que ser las del video. Toca el <b>techo</b> de un vehículo y luego el punto donde su llanta <b>toca el piso</b>, justo donde se va a contar. Los extremos se pueden arrastrar para afinar.</p>
+        <div class="toolbar">
+          <span class="btn primary filebtn">Cargar imagen<input type="file" id="archivo" accept="image/*" aria-label="Cargar una imagen de la cámara"></span>
+          <button class="btn" id="deshacer" type="button">Borrar medidas</button>
+          <span class="note" id="origen">Ejemplo: cámara del aforo de Cd. Juárez, 15:08</span>
+        </div>
+        <div class="stage" id="stage"><canvas id="lienzo" width="640" height="360" aria-label="Imagen de la cámara; toca dos puntos para medir un vehículo"></canvas></div>
+      </div>
+
+      <div class="card lift" aria-live="polite">
+        <h2>Lo que mide la foto</h2>
+        <div class="stats" id="foto-stats"></div>
+        <h3>Vehículos medidos</h3>
+        <ul class="measures" id="medidas"></ul>
+        <div class="ruler" id="foto-ruler"></div>
+        <div class="advice" id="foto-advice"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Lista: lo que costó un aforo cada vez que se olvidó -->
+  <section class="panel" id="p-lista" role="tabpanel" aria-labelledby="tab-lista" hidden>
+    <div class="card">
+      <div class="progress">
+        <h2 id="lista-titulo">Revisión en campo</h2>
+        <span class="chip c-regular" id="lista-estado">0 de 0</span>
+      </div>
+      <p class="note">Cada punto viene de un aforo real que salió mal por olvidarlo. Marca lo que aplica y copia el resumen para mandarlo junto con el minuto de prueba.</p>
+      <ul class="checklist" id="lista"></ul>
+    </div>
+    <div class="card">
+      <h2>Resumen para mandar</h2>
+      <pre class="summary" id="resumen"></pre>
+      <div class="toolbar">
+        <button class="btn primary" id="copiar" type="button">Copiar resumen</button>
+        <span class="note" id="copiado" role="status"></span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Escala medida en los aforos de la empresa: calzada cercana de Cd. Juárez (36 a 41 px) dio 1.00× del conteo manual; calzada del fondo (14 a 17 px) dio 0.90× de día y 0.72× en la hora de más tránsito, sin poder separar pesados. El detector trabaja con holgura desde unos 40 px.</p>
+    <p>Nada de lo que se captura aquí sale de este teléfono: la imagen se analiza en el propio navegador.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- Umbrales medidos (src/engine/diagnostico_encuadre.py y CLAUDE.md) --
+  var UMBRALES = [
+    { hasta: 20, clase: 'malo', nombre: 'No recomendable',
+      que: 'Se pierde el 10 % o más y no se separan pesados de livianos; con tránsito denso cae más (0.72× medido).' },
+    { hasta: 33, clase: 'regular', nombre: 'Regular',
+      que: 'Alcanza para contar, pero el desglose por tipo de vehículo queda corto.' },
+    { hasta: 40, clase: 'bueno', nombre: 'Bueno',
+      que: 'Cuenta bien: con 33 px el aforo dio 0.96 a 0.99× del conteo manual.' },
+    { hasta: Infinity, clase: 'holgura', nombre: 'Con holgura',
+      que: 'El detector trabaja cómodo: cuenta y separa livianos de pesados.' }
+  ];
+  function veredicto(px) {
+    for (var i = 0; i < UMBRALES.length; i++) if (px < UMBRALES[i].hasta) return UMBRALES[i];
+    return UMBRALES[UMBRALES.length - 1];
+  }
+  function chip(v) { return '<span class="chip c-' + v.clase + '">' + v.nombre + '</span>'; }
+  function fmt(n, d) { return n.toLocaleString('es-MX', { maximumFractionDigits: d || 0, minimumFractionDigits: d || 0 }); }
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---- Memoria del teléfono (opcional: si el navegador no deja, se trabaja igual)
+  function leer(clave, porOmision) {
+    try { var v = localStorage.getItem('calib.' + clave); return v === null ? porOmision : JSON.parse(v); }
+    catch (e) { return porOmision; }
+  }
+  function guardar(clave, valor) { try { localStorage.setItem('calib.' + clave, JSON.stringify(valor)); } catch (e) { /* sin memoria */ } }
+
+  // ---- Pestañas ------------------------------------------------------------
+  var tabs = ['planear', 'foto', 'lista'];
+  function mostrar(nombre) {
+    tabs.forEach(function (t) {
+      var sel = t === nombre;
+      $('tab-' + t).setAttribute('aria-selected', sel ? 'true' : 'false');
+      $('p-' + t).hidden = !sel;
+    });
+    guardar('pestana', nombre);
+    if (nombre === 'foto') dibujar();
+    if (nombre === 'lista') resumen();
+  }
+  tabs.forEach(function (t) { $('tab-' + t).addEventListener('click', function () { mostrar(t); }); });
+
+  // ---- La regla de píxeles -------------------------------------------------
+  function regla(contenedor, marcas) {
+    var W = 600, max = 60, x = function (px) { return 8 + Math.min(px, max) / max * (W - 16); };
+    var bandas = [[0, 20, 'malo'], [20, 33, 'regular'], [33, 40, 'bueno'], [40, max, 'holgura']];
+    var s = '<svg viewBox="0 0 ' + W + ' 86" role="img" aria-label="Escala de alto del vehículo en píxeles">';
+    bandas.forEach(function (b) {
+      s += '<rect class="band-' + b[2] + '" x="' + x(b[0]) + '" y="30" width="' + (x(b[1]) - x(b[0])) + '" height="18" rx="2"></rect>';
+    });
+    s += '<text class="blabel" x="' + (x(0) + 4) + '" y="43">No recomendable</text>';
+    s += '<text class="blabel" x="' + (x(20) + 4) + '" y="43">Regular</text>';
+    s += '<text class="blabel" x="' + (x(33) + 3) + '" y="43">Bueno</text>';
+    s += '<text class="blabel" x="' + (x(40) + 4) + '" y="43">Con holgura</text>';
+    [0, 10, 20, 33, 40, 50, 60].forEach(function (t) {
+      s += '<line class="tick" x1="' + x(t) + '" x2="' + x(t) + '" y1="48" y2="54"></line>';
+      s += '<text class="tlabel" x="' + x(t) + '" y="66" text-anchor="middle">' + (t === 60 ? '60+' : t) + '</text>';
+    });
+    s += '<text class="tlabel" x="' + (W - 8) + '" y="80" text-anchor="end">alto del vehículo, en píxeles</text>';
+    // Marcas escalonadas para que dos lecturas cercanas no se encimen.
+    marcas.forEach(function (m, i) {
+      var mx = x(m.px), y = i % 2 === 0 ? 14 : 4;
+      s += '<line class="mark" x1="' + mx + '" x2="' + mx + '" y1="' + (y + 8) + '" y2="48"></line>';
+      var ancla = mx > W - 60 ? 'end' : (mx < 60 ? 'start' : 'middle');
+      s += '<text class="mlabel" x="' + mx + '" y="' + (y + 5) + '" text-anchor="' + ancla + '">' + m.etiqueta + '</text>';
+    });
+    contenedor.innerHTML = s + '</svg>';
+  }
+
+  // ---- 1. Planear ------------------------------------------------------------
+  var campos = ['res', 'lente', 'angulo', 'altura', 'dcerca', 'dlejos'];
+  var guardado = leer('plan', null);
+  if (guardado) campos.forEach(function (c) { if (guardado[c] !== undefined) $(c).value = guardado[c]; });
+
+  function angulo() {
+    var l = $('lente').value;
+    $('campo-angulo').hidden = l !== 'otro';
+    return l === 'otro' ? Math.max(10, Math.min(170, +$('angulo').value || 85)) : +l;
+  }
+  // Alto en píxeles de un automóvil (1.5 m de alto, 1.8 m de ancho) que cruza
+  // la imagen a una distancia horizontal D, con la cámara a altura h: su alto
+  // se ve de frente (cos θ) y su techo desde arriba (sen θ).
+  function altoPx(W, hfov, h, D) {
+    var f = (W / 2) / Math.tan(hfov * Math.PI / 360);
+    var d = Math.hypot(D, h), th = Math.atan2(h, D);
+    return f * (1.5 * Math.cos(th) + 1.8 * Math.sin(th)) / d;
+  }
+  function distanciaMax(W, hfov, h, objetivo) {
+    var lo = 0.5, hi = 1000;
+    if (altoPx(W, hfov, h, hi) >= objetivo) return hi;
+    for (var i = 0; i < 60; i++) { var m = (lo + hi) / 2; if (altoPx(W, hfov, h, m) >= objetivo) lo = m; else hi = m; }
+    return lo;
+  }
+  var RES = ['640x360', '1280x720', '1920x1080', '2560x1440', '3840x2160'];
+  var HFOV = [100, 85, 80, 55, 42, 28];
+
+  function planear() {
+    var res = $('res').value.split('x').map(Number), W = res[0];
+    var a = angulo(), h = Math.max(0.5, +$('altura').value || 6);
+    var dc = Math.max(0.5, +$('dcerca').value || 10), dl = Math.max(dc, +$('dlejos').value || dc);
+    var pc = altoPx(W, a, h, dc), pl = altoPx(W, a, h, dl);
+    var vc = veredicto(pc), vl = veredicto(pl);
+    var angC = Math.atan2(h, dc) * 180 / Math.PI, angL = Math.atan2(h, dl) * 180 / Math.PI;
+
+    $('plan-lanes').innerHTML = [
+      ['Carril más cercano', dc, pc, vc, angC],
+      ['Carril más lejano', dl, pl, vl, angL]
+    ].map(function (c) {
+      return '<div class="lane"><span class="name">' + c[0] + ' · ' + fmt(c[1]) + ' m</span>' +
+        '<span class="px">' + fmt(c[2]) + '<small> px</small></span>' +
+        '<span class="meta">' + chip(c[3]) + ' ' + c[3].que + ' Se ve desde ' + fmt(c[4]) + '° de altura.</span></div>';
+    }).join('');
+
+    regla($('plan-ruler'), [{ px: pc, etiqueta: 'cercano ' + fmt(pc) }, { px: pl, etiqueta: 'lejano ' + fmt(pl) }]);
+
+    var d33 = distanciaMax(W, a, h, 33), d40 = distanciaMax(W, a, h, 40);
+    var ancho = 2 * dl * Math.tan(a * Math.PI / 360);
+    $('plan-facts').innerHTML =
+      '<div class="fact"><b>' + fmt(d40) + ' m</b><span>hasta donde un auto se ve con holgura (40 px)</span></div>' +
+      '<div class="fact"><b>' + fmt(d33) + ' m</b><span>hasta donde todavía se ve bien (33 px)</span></div>' +
+      '<div class="fact"><b>' + fmt(ancho) + ' m</b><span>de calle que cabe a lo ancho a la distancia del carril lejano</span></div>';
+
+    // Qué cambiar para que el carril lejano llegue a "bueno", en el orden en
+    // que cuesta menos: acercar la cámara, cerrar el lente, subir resolución.
+    var consejos = [];
+    if (pl >= 33) {
+      consejos.push('<p><b>Este montaje da buen aforo en los dos carriles.</b> Confírmalo midiendo un vehículo real en la pestaña Medir foto.</p>');
+    } else {
+      consejos.push('<p><b>El carril lejano queda corto.</b> Opciones para llevarlo a 33 px o más:</p>');
+      if (d33 > 1) consejos.push('<p>· Poner la cámara a no más de <b>' + fmt(d33) + ' m</b> de ese carril (hoy está a ' + fmt(dl) + ' m).</p>');
+      var lente = HFOV.filter(function (x) { return x < a && altoPx(W, x, h, dl) >= 33; })[0];
+      if (lente) {
+        var an = 2 * dl * Math.tan(lente * Math.PI / 360);
+        consejos.push('<p>· Un lente más cerrado, de ~' + lente + '°: el auto lejano mediría ' + fmt(altoPx(W, lente, h, dl)) + ' px, pero a esa distancia solo caben ' + fmt(an) + ' m de calle a lo ancho.</p>');
+      }
+      var r = RES.filter(function (x) { var w = +x.split('x')[0]; return w > W && altoPx(w, a, h, dl) >= 33; })[0];
+      if (r) consejos.push('<p>· Grabar a <b>' + r.replace('x', '×') + '</b>: el auto lejano mediría ' + fmt(altoPx(+r.split('x')[0], a, h, dl)) + ' px. Con bitrate de 4 Mb/s o más, o el compresor se come el detalle.</p>');
+      if (!lente && !r) consejos.push('<p>· Con este carril tan lejos ninguna cámara común alcanza: conviene una segunda cámara del otro lado de la vía.</p>');
+    }
+    if (angL < 8) consejos.push('<p class="note">La cámara ve el carril lejano casi al ras (' + fmt(angL) + '°): con la vía llena, un vehículo tapa al de atrás. Subirla ayuda más que cualquier ajuste.</p>');
+    $('plan-advice').innerHTML = consejos.join('');
+
+    var v = {}; campos.forEach(function (c) { v[c] = $(c).value; }); guardar('plan', v);
+    ultimoPlan = { res: $('res').value.replace('x', '×'), a: a, h: h, dc: dc, dl: dl, pc: pc, pl: pl, vc: vc, vl: vl };
+  }
+  var ultimoPlan = null;
+  campos.forEach(function (c) { $(c).addEventListener('input', planear); $(c).addEventListener('change', planear); });
+
+  // ---- 2. Medir foto -----------------------------------------------------------
+  var lienzo = $('lienzo'), ctx = lienzo.getContext('2d');
+  var img = new Image(), medidas = [], pendiente = null, arrastre = null, cursor = null, esEjemplo = true;
+  var AMARILLO = '#ffd400';
+
+  function cargarImagen(src, ejemplo, nombre) {
+    var nueva = new Image();
+    nueva.onload = function () {
+      img = nueva; esEjemplo = ejemplo;
+      lienzo.width = img.naturalWidth; lienzo.height = img.naturalHeight;
+      medidas = ejemplo ? [
+        // Medidas reales de este cuadro (detector de producción): cercana y fondo.
+        { a: [328, 172.6], b: [328, 204.6] },
+        { a: [520, 171.3], b: [520, 187.8] }
+      ] : [];
+      pendiente = null;
+      $('origen').textContent = ejemplo ? 'Ejemplo: cámara del aforo de Cd. Juárez, 15:08' :
+        (nombre || 'Imagen cargada') + ' · ' + img.naturalWidth + '×' + img.naturalHeight;
+      analizar();
+      dibujar();
+    };
+    nueva.onerror = function () { $('origen').textContent = 'Esa imagen no se pudo abrir. Prueba con un JPG o PNG.'; };
+    nueva.src = src;
+  }
+
+  $('archivo').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var lector = new FileReader();
+    lector.onload = function () { cargarImagen(lector.result, false, f.name); };
+    lector.readAsDataURL(f);
+  });
+  $('deshacer').addEventListener('click', function () { medidas = []; pendiente = null; dibujar(); informe(); });
+
+  function aImagen(ev) {
+    var r = lienzo.getBoundingClientRect();
+    return [(ev.clientX - r.left) * lienzo.width / r.width, (ev.clientY - r.top) * lienzo.height / r.height];
+  }
+  function escala() { var r = lienzo.getBoundingClientRect(); return lienzo.width / Math.max(1, r.width); }
+
+  lienzo.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    lienzo.setPointerCapture(ev.pointerId);
+    var p = aImagen(ev), tol = 18 * escala();
+    // ¿Toca un extremo existente? Entonces se arrastra.
+    for (var i = medidas.length - 1; i >= 0; i--) {
+      ['a', 'b'].forEach(function (k) {
+        if (!arrastre && Math.hypot(medidas[i][k][0] - p[0], medidas[i][k][1] - p[1]) < tol) arrastre = { i: i, k: k };
+      });
+    }
+    cursor = p;
+    if (!arrastre) {
+      if (!pendiente) pendiente = p;
+      else { medidas.push({ a: pendiente, b: p }); pendiente = null; informe(); }
+    }
+    dibujar();
+  });
+  lienzo.addEventListener('pointermove', function (ev) {
+    if (!arrastre && !(ev.buttons || ev.pointerType === 'touch')) return;
+    cursor = aImagen(ev);
+    if (arrastre) { medidas[arrastre.i][arrastre.k] = cursor; informe(); }
+    dibujar();
+  });
+  function soltar() { arrastre = null; cursor = null; dibujar(); }
+  lienzo.addEventListener('pointerup', soltar);
+  lienzo.addEventListener('pointercancel', soltar);
+
+  function altoDe(m) { return Math.abs(m.b[1] - m.a[1]); }
+
+  function dibujar() {
+    if (!img.naturalWidth) return;
+    ctx.drawImage(img, 0, 0);
+    var k = escala(), grosor = Math.max(2, 2.2 * k), fuente = Math.max(12, 13 * k);
+    medidas.forEach(function (m, i) {
+      var x = (m.a[0] + m.b[0]) / 2;
+      ctx.lineWidth = grosor + 2.5; ctx.strokeStyle = '#10161d';
+      ctx.beginPath(); ctx.moveTo(x, m.a[1]); ctx.lineTo(x, m.b[1]); ctx.stroke();
+      ctx.lineWidth = grosor; ctx.strokeStyle = AMARILLO;
+      ctx.beginPath(); ctx.moveTo(x, m.a[1]); ctx.lineTo(x, m.b[1]); ctx.stroke();
+      [m.a, m.b].forEach(function (p) {
+        ctx.fillStyle = AMARILLO; ctx.strokeStyle = '#10161d'; ctx.lineWidth = 1.5 * k;
+        ctx.beginPath(); ctx.arc(x, p[1], 4.5 * k, 0, 7); ctx.fill(); ctx.stroke();
+      });
+      var t = (i + 1) + ' · ' + fmt(altoDe(m)) + ' px';
+      ctx.font = '600 ' + fuente + 'px "Overpass Mono", monospace';
+      var w = ctx.measureText(t).width, top = Math.min(m.a[1], m.b[1]);
+      ctx.fillStyle = 'rgba(16,22,29,0.85)';
+      ctx.fillRect(x + 6 * k, top - fuente * 0.2, w + 8 * k, fuente * 1.35);
+      ctx.fillStyle = AMARILLO; ctx.fillText(t, x + 10 * k, top + fuente * 0.85);
+    });
+    if (pendiente) {
+      ctx.fillStyle = AMARILLO; ctx.strokeStyle = '#10161d'; ctx.lineWidth = 1.5 * k;
+      ctx.beginPath(); ctx.arc(pendiente[0], pendiente[1], 5 * k, 0, 7); ctx.fill(); ctx.stroke();
+    }
+    // Lupa: con el dedo encima no se ve lo que se toca.
+    if (cursor) {
+      var R = 70 * k, z = 3, cx = R + 10 * k, cy = R + 10 * k;
+      if (cursor[0] < 2.5 * R && cursor[1] < 2.5 * R) cx = lienzo.width - R - 10 * k;
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
+      // Recorte dentro de la imagen: Safari no dibuja nada si se sale.
+      var sw = Math.min(2 * R / z, img.naturalWidth), sh = Math.min(2 * R / z, img.naturalHeight);
+      var sx = Math.max(0, Math.min(img.naturalWidth - sw, cursor[0] - sw / 2));
+      var sy = Math.max(0, Math.min(img.naturalHeight - sh, cursor[1] - sh / 2));
+      ctx.drawImage(img, sx, sy, sw, sh, cx - R, cy - R, 2 * R, 2 * R);
+      ctx.strokeStyle = AMARILLO; ctx.lineWidth = 1.5 * k;
+      ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+      ctx.restore();
+      ctx.lineWidth = 3 * k; ctx.strokeStyle = '#ffffff'; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+    }
+  }
+
+  // Nitidez = varianza del laplaciano, la misma medida que usa la plataforma.
+  var foto = null;
+  function analizar() {
+    var maxW = 1920, s = Math.min(1, maxW / img.naturalWidth);
+    var w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
+    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    var g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+    var d = g.getImageData(0, 0, w, h).data, n = w * h, Y = new Float32Array(n), suma = 0, suma2 = 0;
+    for (var i = 0; i < n; i++) { var v = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]; Y[i] = v; suma += v; suma2 += v * v; }
+    var media = suma / n, desv = Math.sqrt(Math.max(0, suma2 / n - media * media));
+    var ls = 0, ls2 = 0, m = 0;
+    for (var yy = 1; yy < h - 1; yy++) for (var xx = 1; xx < w - 1; xx++) {
+      var j = yy * w + xx, L = Y[j - 1] + Y[j + 1] + Y[j - w] + Y[j + w] - 4 * Y[j];
+      ls += L; ls2 += L * L; m++;
+    }
+    var lm = ls / m;
+    foto = { w: img.naturalWidth, h: img.naturalHeight, brillo: media, contraste: desv, nitidez: ls2 / m - lm * lm, reducida: s < 1 };
+    informe();
+  }
+
+  function informe() {
+    if (!foto) return;
+    var avisos = [];
+    var resChip = foto.w >= 1920 ? 'holgura' : foto.w >= 1280 ? 'bueno' : 'malo';
+    var brChip = foto.brillo >= 150 ? 'malo' : foto.brillo > 135 ? 'regular' : 'bueno';
+    var niChip = foto.nitidez < 1000 ? 'malo' : foto.nitidez < 2400 ? 'regular' : 'bueno';
+    function st(k, v, clase, texto) {
+      return '<div class="stat"><span class="k">' + k + '</span><span class="v">' + v + '</span><span class="chip c-' + clase + '">' + texto + '</span></div>';
+    }
+    $('foto-stats').innerHTML =
+      st('Resolución', foto.w + '×' + foto.h, resChip, resChip === 'malo' ? 'baja' : resChip === 'bueno' ? 'mínima' : 'recomendada') +
+      st('Brillo medio', fmt(foto.brillo), brChip, brChip === 'malo' ? 'quemada' : brChip === 'regular' ? 'muy clara' : 'bien') +
+      st('Nitidez', fmt(foto.nitidez), niChip, niChip === 'malo' ? 'borrosa' : niChip === 'regular' ? 'justa' : 'bien');
+
+    if (resChip === 'malo') avisos.push('<p><b>Resolución baja.</b> Graba a 1280×720 como mínimo; lo recomendado es 1920×1080 con 4 Mb/s o más.</p>');
+    if (brChip === 'malo') avisos.push('<p><b>Imagen quemada</b> (brillo ' + fmt(foto.brillo) + '). Es lo que pasa de noche con obturador lento: cada vehículo sale como una estela. Fuerza obturador rápido y graba 10 minutos de prueba de noche.</p>');
+    else if (brChip === 'regular') avisos.push('<p><b>Imagen muy clara</b> (brillo ' + fmt(foto.brillo) + '): pasando de 150 el conteo se desploma. Baja la exposición.</p>');
+    if (niChip === 'malo') avisos.push('<p><b>Imagen borrosa</b> (' + fmt(foto.nitidez) + '). Revisa el enfoque y limpia el lente.</p>');
+    else if (niChip === 'regular') avisos.push('<p><b>Nitidez justa</b> (' + fmt(foto.nitidez) + '): los videos que cuentan bien andan entre 2 400 y 4 700.</p>');
+
+    var lista = medidas.map(function (m, i) {
+      var px = altoDe(m), v = veredicto(px);
+      return '<li><span class="n">' + (i + 1) + '</span><span class="v">' + fmt(px) + ' px</span>' + chip(v) +
+        '<button type="button" data-i="' + i + '" aria-label="Quitar la medida ' + (i + 1) + '">×</button></li>';
+    });
+    $('medidas').innerHTML = lista.length ? lista.join('') :
+      '<li><span class="n">—</span><span class="note">Toca el techo y la llanta de un vehículo en la imagen.</span><span></span><span></span></li>';
+    Array.prototype.forEach.call($('medidas').querySelectorAll('button[data-i]'), function (b) {
+      b.addEventListener('click', function () { medidas.splice(+b.dataset.i, 1); dibujar(); informe(); });
+    });
+    regla($('foto-ruler'), medidas.map(function (m, i) { return { px: altoDe(m), etiqueta: '#' + (i + 1) + ' ' + fmt(altoDe(m)) }; }));
+
+    if (medidas.length) {
+      var menor = Math.min.apply(null, medidas.map(altoDe)), v = veredicto(menor);
+      avisos.unshift('<p><b>El vehículo más chico mide ' + fmt(menor) + ' px:</b> ' + v.nombre.toLowerCase() + '. ' + v.que + '</p>');
+      if (menor < 33) avisos.push('<p>Para subirlo: acerca la cámara, usa un lente más cerrado o graba a más resolución (pestaña Planear calcula cuánto).</p>');
+    }
+    if (esEjemplo) avisos.push('<p class="note">Este es el ejemplo de Cd. Juárez: en la calzada del fondo el auto mide 16 px, y por eso esa calzada contó 0.90× en lugar de 1.00×. Carga tu propia imagen para medirla.</p>');
+    if (foto.reducida) avisos.push('<p class="note">La nitidez se midió sobre la imagen reducida a 1920 de ancho.</p>');
+    $('foto-advice').innerHTML = avisos.join('') || '<p>La imagen se ve bien. Mide un vehículo en el punto de conteo para confirmar.</p>';
+    if (!$('p-lista').hidden) resumen();
+  }
+
+  // ---- 3. Lista --------------------------------------------------------------
+  var PUNTOS = [
+    ['tam', 'Un vehículo en el punto de conteo mide 33 px o más', 'Es lo que más pesa en el resultado. Mídelo en la pestaña Medir foto.'],
+    ['res', 'La cámara graba a 1280×720 o más, con bitrate de 4 Mb/s o más', 'A 640×360 los vehículos del fondo miden 10 a 21 px y no se separan pesados.'],
+    ['nada', 'Nada entre la cámara y la vía: letreros, postes, ramas', 'En Altozano un letrero de peatones partía casi todos los recorridos.'],
+    ['carcasa', 'La carcasa, el visor y los cables quedan fuera de la imagen', 'En Fraccionamientos la carcasa tapaba cerca de un tercio de la imagen.'],
+    ['accesos', 'Aforo direccional: todos los accesos se ven completos, con margen', 'Si un acceso queda fuera, sus movimientos no se pueden contar y nadie se entera.'],
+    ['puente', 'Si hay puente o paso a desnivel: dos cámaras, una a cada lado', 'En Blvd. Independencia el puente tapaba dos accesos: 2 de 15 movimientos aceptables.'],
+    ['fija', 'La cámara queda fija: sin zoom ni movimiento automático', 'Las zonas se dibujan una vez; si la cámara se mueve, el conteo se descalabra sin avisar.'],
+    ['alta', 'La cámara está alta y lo más de frente posible a la vía', 'Con la vía llena los vehículos se tapan: la exactitud bajó de 0.99× a 0.91× en hora pico.'],
+    ['noche', 'De noche: obturador rápido o infrarrojo, probado con 10 minutos de noche', 'Con obturador lento la noche no se mide: 0.03× del conteo real en Cd. Juárez.'],
+    ['hora', 'Fecha y hora visibles en la imagen, y la hora en el nombre del archivo', 'La plataforma ubica cada vehículo en su cuarto de hora con esa hora.'],
+    ['inicio', 'El inicio de la grabación no tiene el lente tapado', 'Un video de Blvd. Independencia empezaba tapado por la ropa del instalador.'],
+    ['prueba', 'Se grabó un minuto de prueba y se pasó por "Revisar encuadre"', 'Un minuto dice si sirve antes de gastar un día de grabación y horas de proceso.']
+  ];
+  var marcas = leer('lista', {});
+
+  function pintarLista() {
+    $('lista').innerHTML = PUNTOS.map(function (p) {
+      var v = marcas[p[0]] || '';
+      function op(val, texto, cls) {
+        return '<label class="' + cls + '"><input type="radio" name="p-' + p[0] + '" id="p-' + p[0] + '-' + val + '" value="' + val + '"' + (v === val ? ' checked' : '') + '>' + texto + '</label>';
+      }
+      return '<li class="item"><span class="q">' + p[1] + '</span><span class="why">' + p[2] + '</span>' +
+        '<span class="seg" role="radiogroup" aria-label="' + p[1] + '">' + op('si', 'Sí', 'si') + op('no', 'No', 'no') + op('na', 'No aplica', 'na') + '</span></li>';
+    }).join('');
+    Array.prototype.forEach.call($('lista').querySelectorAll('input[type="radio"]'), function (r) {
+      r.addEventListener('change', function () { marcas[r.name.slice(2)] = r.value; guardar('lista', marcas); resumen(); });
+    });
+  }
+
+  function resumen() {
+    var aplica = PUNTOS.filter(function (p) { return marcas[p[0]] !== 'na'; });
+    var si = aplica.filter(function (p) { return marcas[p[0]] === 'si'; });
+    var no = aplica.filter(function (p) { return marcas[p[0]] === 'no'; });
+    var faltan = aplica.length - si.length - no.length;
+    var estado = $('lista-estado');
+    estado.textContent = si.length + ' de ' + aplica.length + ' cumplidos';
+    estado.className = 'chip ' + (no.length ? 'c-malo' : faltan ? 'c-regular' : 'c-holgura');
+
+    var l = ['Calibrador de campo · ' + new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })];
+    if (ultimoPlan) {
+      l.push('', 'Planeación: ' + ultimoPlan.res + ', lente ~' + ultimoPlan.a + '°, cámara a ' + fmt(ultimoPlan.h, 1) + ' m');
+      l.push('  carril cercano ' + fmt(ultimoPlan.dc) + ' m → ' + fmt(ultimoPlan.pc) + ' px (' + ultimoPlan.vc.nombre.toLowerCase() + ')');
+      l.push('  carril lejano ' + fmt(ultimoPlan.dl) + ' m → ' + fmt(ultimoPlan.pl) + ' px (' + ultimoPlan.vl.nombre.toLowerCase() + ')');
+    }
+    if (foto && !esEjemplo) {
+      l.push('', 'Foto: ' + foto.w + '×' + foto.h + ', brillo ' + fmt(foto.brillo) + ', nitidez ' + fmt(foto.nitidez));
+      if (medidas.length) l.push('  vehículos medidos: ' + medidas.map(function (m) { return fmt(altoDe(m)) + ' px'; }).join(', '));
+    }
+    l.push('', 'Revisión: ' + si.length + ' de ' + aplica.length + ' cumplidos' + (faltan ? ', ' + faltan + ' sin revisar' : ''));
+    no.forEach(function (p) { l.push('  ✗ ' + p[1]); });
+    $('resumen').textContent = l.join('\n');
+  }
+
+  $('copiar').addEventListener('click', function () {
+    var texto = $('resumen').textContent;
+    function hecho(ok) { $('copiado').textContent = ok ? 'Copiado. Pégalo en el mensaje.' : 'No se pudo copiar: selecciona el texto y cópialo a mano.'; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(function () { hecho(true); }, function () { hecho(false); });
+    } else { hecho(false); }
+  });
+
+  // ---- Arranque ----------------------------------------------------------------
+  planear();
+  pintarLista();
+  resumen();
+  cargarImagen('__EJEMPLO__', true);
+  window.addEventListener('resize', dibujar);
+  var p0 = leer('pestana', 'planear');
+  if (tabs.indexOf(p0) >= 0) mostrar(p0);
+})();
+</script>
