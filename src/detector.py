@@ -69,7 +69,7 @@ class VehicleDetector:
         # rastros y la línea lo cuenta dos veces. Medido en la cámara nueva
         # de Cd. Juárez. Comparar entre clases lo elimina; el valor se lee de
         # configs/platform.yaml.
-        self.nms_agnostico = (config or {}).get('nms_agnostico', True)
+        self.nms_agnostico = (config or {}).get('nms_agnostico', False)
         self.input_size = input_size
         self.use_tensorrt = use_tensorrt
         self.half_precision = half_precision

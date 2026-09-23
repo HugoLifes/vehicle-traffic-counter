@@ -184,6 +184,22 @@ def init_schema():
     # JSON {"linea": [[x, y], [x, y]], "distancia_m": 15.0}; nulo = la línea
     # solo cuenta.
     _ensure_column(conn, "lane_configs", "tramo_json", "TEXT")
+
+    # Filtro de cajas repetidas ENTRE clases (agnostic NMS), por proyecto.
+    #
+    # El de YOLO compara solo dentro de cada clase, así que un mismo vehículo
+    # detectado a la vez como 'car' y como 'truck' deja dos cajas con IoU de
+    # 0.97 y la línea lo cuenta dos veces. Comparar entre clases lo arregla…
+    # pero en material donde el vehículo mide 15 px y las cajas se encinan,
+    # borra vehículos DISTINTOS. Medido:
+    #
+    #   cámara nueva (2560x1440, vehículo 150 px): 476 cajas repetidas -> 0,
+    #       y los cruces de un minuto pasan de 34 a 32 (los duplicados).
+    #   cámara vieja (640x360, vehículo 15-40 px): la calzada del fondo baja
+    #       de 226 a 210 cruces, y esa ya iba corta contra el conteo manual.
+    #
+    # Por eso es por proyecto y por omisión queda apagado, como siempre.
+    _ensure_column(conn, "projects", "nms_agnostico", "INTEGER DEFAULT 0")
     # Segundos que tardó el vehículo en recorrer el tramo de su línea. Se
     # guarda el TIEMPO y no la velocidad: la velocidad sale de la distancia
     # vigente al reportar, así que corregir una distancia mal capturada
@@ -321,12 +337,15 @@ def _migrate_labels_to_projects(conn):
 
 def create_project(name: str, description: Optional[str] = None,
                     latitude: Optional[float] = None, longitude: Optional[float] = None,
-                    address: Optional[str] = None, interval_minutes: int = 15) -> int:
+                    address: Optional[str] = None, interval_minutes: int = 15,
+                    nms_agnostico: bool = False) -> int:
     conn = get_connection()
     cur = conn.execute(
-        """INSERT INTO projects (name, description, latitude, longitude, address, interval_minutes)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (name, description, latitude, longitude, address, interval_minutes)
+        """INSERT INTO projects (name, description, latitude, longitude, address,
+                                 interval_minutes, nms_agnostico)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (name, description, latitude, longitude, address, interval_minutes,
+         1 if nms_agnostico else 0)
     )
     conn.commit()
     return cur.lastrowid

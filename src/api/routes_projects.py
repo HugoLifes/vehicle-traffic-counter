@@ -31,6 +31,10 @@ class ProjectCreate(BaseModel):
     longitude: Optional[float] = None
     address: Optional[str] = None
     interval_minutes: int = 15
+    # Comparar las cajas repetidas ENTRE clases. Conviene con vehículos
+    # grandes (quita el mismo vehículo detectado como 'car' y como 'truck');
+    # con vehículos chicos borra vehículos distintos. Ver traffic_db.
+    nms_agnostico: bool = False
 
 
 class CopyCalibration(BaseModel):

@@ -229,6 +229,12 @@ class VideoJobProcessor:
         umbral_restaurar = None
         try:
             detector = self._get_detector()
+            # El filtro de cajas repetidas entre clases es del PROYECTO, no
+            # del detector: el mismo modelo sirve a aforos con vehículos de
+            # 15 px y de 150 px, y lo que ayuda en uno borra vehículos en el
+            # otro.
+            proyecto = traffic_db.get_project(job.get('project_id')) or {}
+            detector.nms_agnostico = bool(proyecto.get('nms_agnostico'))
             tracker = VehicleTracker(
                 max_age=self.config.get('tracker', {}).get('max_age', 30),
                 min_hits=self.config.get('tracker', {}).get('min_hits', 3),
