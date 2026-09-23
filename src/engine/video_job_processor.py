@@ -435,6 +435,11 @@ class VideoJobProcessor:
                         alto_caja = (
                             int(track['bbox'][3] - track['bbox'][1]) if track else None
                         )
+                        # De frente el ancho es el ancho real del vehículo, y
+                        # con el alto da la silueta que separa troca de auto.
+                        ancho_caja = (
+                            int(track['bbox'][2] - track['bbox'][0]) if track else None
+                        )
                         # En qué calzada ocurrió. Es lo que separa los dos
                         # sentidos cuando la misma línea cruza las dos.
                         zone_id = (
@@ -454,7 +459,8 @@ class VideoJobProcessor:
                                 timestamp=crossing_timestamp,
                                 job_id=job_id,
                                 zone_id=zone_id,
-                                bbox_height=alto_caja
+                                bbox_height=alto_caja,
+                                bbox_width=ancho_caja
                             )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
@@ -536,7 +542,9 @@ class VideoJobProcessor:
                                 timestamp=hora,
                                 job_id=job_id,
                                 zone_id=lane_meta[lane_id].get('zone_id'),
-                                bbox_height=int(c['alto'])
+                                bbox_height=int(c['alto']),
+                                bbox_width=(int(c['ancho'])
+                                            if c.get('ancho') else None)
                             )
                     # La velocidad se midió por rastro; si el vehículo venía
                     # en pedazos, se le atribuye al que quedó como su cruce.

@@ -116,6 +116,12 @@ def init_schema():
     # de noche —lo que da la cámara actual— eso ya está pasando. Guardarlo
     # en cada cruce convierte esa medición puntual en un dato continuo.
     _ensure_column(conn, "crossings", "bbox_height", "INTEGER")
+    # Ancho de la caja en el cruce. Con la cámara de lado no decía nada del
+    # tamaño real (un tractocamión visto de perfil es larguísimo y un autobús
+    # también), pero DE FRENTE el ancho es el ancho del vehículo: 1.8 m un
+    # sedán, 2.0 una pickup, 2.5 un camión. Junto con el alto da la silueta,
+    # que es lo que separa una troca de un automóvil.
+    _ensure_column(conn, "crossings", "bbox_width", "INTEGER")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS video_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -839,7 +845,8 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
                      timestamp: Optional[str] = None,
                      job_id: Optional[int] = None,
                      zone_id: Optional[int] = None,
-                     bbox_height: Optional[int] = None):
+                     bbox_height: Optional[int] = None,
+                     bbox_width: Optional[int] = None):
     """
     timestamp: hora REAL del cruce en formato ISO ('YYYY-MM-DD HH:MM:SS').
     En la cámara en vivo se omite (usa la hora del reloj del sistema).
@@ -860,18 +867,19 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
                                       confidence, timestamp, job_id, zone_id,
-                                      bbox_height)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                      bbox_height, bbox_width)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (lane_id, track_id, direction, vehicle_type, confidence, timestamp,
-             job_id, zone_id, bbox_height)
+             job_id, zone_id, bbox_height, bbox_width)
         )
     else:
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
-                                      confidence, job_id, zone_id, bbox_height)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                      confidence, job_id, zone_id, bbox_height,
+                                      bbox_width)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (lane_id, track_id, direction, vehicle_type, confidence, job_id,
-             zone_id, bbox_height)
+             zone_id, bbox_height, bbox_width)
         )
     conn.commit()
 
@@ -1150,8 +1158,8 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
 
     # 3. Traer todos los cruces del rango y clasificarlos en su cajón
     rows = conn.execute(
-        f"""SELECT lane_id, direction, vehicle_type, bbox_height, confidence, timestamp,
-                   tiempo_tramo_s FROM crossings
+        f"""SELECT lane_id, direction, vehicle_type, bbox_height, bbox_width,
+                   confidence, timestamp, tiempo_tramo_s FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
