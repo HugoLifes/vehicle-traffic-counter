@@ -63,6 +63,13 @@ class VehicleDetector:
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
         self.iou_threshold = iou_threshold
+        # El filtro de cajas repetidas (NMS) de YOLO compara SOLO dentro de
+        # cada clase. Un mismo vehículo detectado a la vez como 'car' y como
+        # 'truck' deja dos cajas con IoU de 0.97, el rastreador hace dos
+        # rastros y la línea lo cuenta dos veces. Medido en la cámara nueva
+        # de Cd. Juárez. Comparar entre clases lo elimina; el valor se lee de
+        # configs/platform.yaml.
+        self.nms_agnostico = (config or {}).get('nms_agnostico', True)
         self.input_size = input_size
         self.use_tensorrt = use_tensorrt
         self.half_precision = half_precision
@@ -251,6 +258,7 @@ class VehicleDetector:
                 conf=self.confidence_threshold,
                 iou=self.iou_threshold,
                 imgsz=self.input_size,
+                agnostic_nms=self.nms_agnostico,
                 verbose=False,
                 device=self.device,
                 **self._opciones_precision()
@@ -321,6 +329,7 @@ class VehicleDetector:
                 conf=self.confidence_threshold,
                 iou=self.iou_threshold,
                 imgsz=self.input_size,
+                agnostic_nms=self.nms_agnostico,
                 verbose=False,
                 device=self.device,
                 **self._opciones_precision()
