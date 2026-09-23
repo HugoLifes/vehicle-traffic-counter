@@ -1192,7 +1192,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
     # justo la condición que hace comparable el alto en píxeles.
     from src.engine.clasificacion import (CONFIANZA_MINIMA, MEDIDO, ESTIMADO,
                                           NO_RESOLUBLE, clasificar,
-                                          nivel_de_calzada)
+                                          nivel_de_calzada, perfil_de_calzada)
 
     # Dos preguntas distintas, y mezclarlas fue un error que costo una
     # version:
@@ -1247,6 +1247,24 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
     }
     umbrales = {k: v[1] for k, v in mejor.items()}
 
+    # Perfil del carril: tamaño y silueta de SU automovil. Es lo que decide
+    # si ademas de liviano/pesado se pueden separar MOTO y AUTOBUS. Va por
+    # carril y no por proyecto, igual que el umbral, porque cada carril
+    # cuenta sobre una linea fija —a distancia fija de la camara— y esa es
+    # justo la condicion que hace comparables el alto y la silueta.
+    #
+    # Se calcula solo con las horas medibles: de noche la etiqueta de COCO
+    # no significa nada y el automovil sale deformado por el barrido.
+    perfiles = {
+        lane["id"]: perfil_de_calzada([
+            {"vehicle_type": f["vehicle_type"], "bbox_height": f["bbox_height"],
+             "bbox_width": f["bbox_width"]}
+            for f in rows
+            if f["lane_id"] == lane["id"] and _hora(f) in horas_medibles
+        ])
+        for lane in lanes
+    }
+
     from src.engine.velocidad import control_distancia, kmh_de, resumen as resumen_velocidad
 
     result_lanes = []
@@ -1268,7 +1286,9 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
             # Cada cruce se clasifica con el umbral de SU hora.
             u_hora = niveles.get((lane["id"], row["timestamp"][11:13]),
                                  (NO_RESOLUBLE, None))[1]
-            clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora)
+            clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora,
+                               ancho=row["bbox_width"],
+                               perfil=perfiles.get(lane["id"]))
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
             # La velocidad solo en las horas medibles: de noche el vehículo

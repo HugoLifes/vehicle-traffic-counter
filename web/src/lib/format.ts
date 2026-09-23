@@ -15,11 +15,20 @@ import type { EngineStatus, JobStatus } from './types';
    manual contó 417. Ahora el backend entrega A / PESADO / SIN_RESOLVER,
    verificado vehículo por vehículo contra el conteo manual.
 
+   Donde el vehículo se ve grande (automóvil de 100 px o más, medido en
+   la cámara frontal) el backend separa además MOTO / B / C. Verificado
+   recorte por recorte: 15 de 15 —5 trocas, 6 camiones, 4 autobuses—. Con
+   la cámara vieja, de 15 px, sigue entregando A / PESADO y nada más: ahí
+   el autobús medía 65-90 px y no se distinguía del camión.
+
    Las clases de COCO siguen aquí porque la cámara en vivo todavía las
    emite sin pasar por la traducción. */
 export const VEHICLE_LABEL: Record<string, string> = {
   A: 'Liviano (A)',
   PESADO: 'Pesado',
+  MOTO: 'Motocicleta',
+  B: 'Autobús (B)',
+  C: 'Camión (C)',
   SIN_RESOLVER: 'Sin clasificar',
   car: 'Automóvil',
   truck: 'Camión o camioneta',
@@ -30,6 +39,9 @@ export const VEHICLE_LABEL: Record<string, string> = {
 export const VEHICLE_LABEL_PLURAL: Record<string, string> = {
   A: 'livianos',
   PESADO: 'pesados',
+  MOTO: 'motocicletas',
+  B: 'autobuses',
+  C: 'camiones',
   SIN_RESOLVER: 'sin clasificar',
   car: 'automóviles',
   truck: 'camiones o camionetas',

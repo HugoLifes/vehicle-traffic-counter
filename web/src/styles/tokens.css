@@ -86,6 +86,9 @@
      porque la camara en vivo aun las emite. */
   --veh-A: #1d54b3;
   --veh-PESADO: #9a5a12;
+  --veh-MOTO: #0d6b72;
+  --veh-B: #6b34a1;
+  --veh-C: #9a5a12;
   --veh-SIN_RESOLVER: #6b7280;
   --veh-car: #1d54b3;
   --veh-truck: #9a5a12;
@@ -182,6 +185,9 @@
 
     --veh-A: #7aa9f0;
     --veh-PESADO: #e0913c;
+    --veh-MOTO: #3fc2cd;
+    --veh-B: #b98ae8;
+    --veh-C: #e0913c;
     --veh-SIN_RESOLVER: #9aa3b2;
     --veh-car: #7aa9f0;
     --veh-truck: #e0913c;
@@ -233,6 +239,9 @@
 
   --veh-A: #7aa9f0;
   --veh-PESADO: #e0913c;
+  --veh-MOTO: #3fc2cd;
+  --veh-B: #b98ae8;
+  --veh-C: #e0913c;
   --veh-SIN_RESOLVER: #9aa3b2;
   --veh-car: #7aa9f0;
   --veh-truck: #e0913c;

@@ -207,6 +207,7 @@ se podía contestar de otro modo:
 | `hoja_cruces.py` | El cuadro exacto de cada cruce contado, para cazar dobles conteos uno por uno |
 | `probar_rastreador.py` | Regresión sin GPU de los tres defectos que causaron conteos dobles o partidos |
 | `unir_segmentos.py` | Pegar los segmentos de un minuto en tramos, comprobando que no se corran las horas |
+| `probar_clasificacion.py` | Regresión sin GPU de las clases, con los vehículos reales ya verificados a ojo |
 
 ---
 
@@ -985,6 +986,52 @@ error en el log**. En este material ya hay un archivo cortado (el de las
 12:25). Por eso la herramienta solo pega minutos consecutivos, exige que
 cada parte dure lo que dice, y **comprueba la duración del tramo contra la
 suma de sus partes**, descartándolo si no cuadra. Nunca borra los originales.
+
+### Cuatro clases con la cámara frontal, y una que NO se puede
+
+Con el automóvil a 123–126 px (contra 15–41 px de la cámara vieja) se midió
+qué se puede separar de verdad. Sobre **10 146 cruces**, el alto de cada
+vehículo como múltiplo del automóvil mediano de su calzada:
+
+| razón del alto | hacia la cámara | alejándose |
+|---|---|---|
+| 0.50–0.80 | **120 motos**, 23 autos | **101 motos**, 2 autos |
+| 0.80–1.40 | 4 230 autos + 35 `truck` | 4 118 autos + 330 `truck` |
+| 1.40–1.60 | 38 autos + 21 `truck` | 15 autos + 39 `truck` |
+| 1.60 o más | 3 autos + **289 pesados** | 0 autos + **298 pesados** |
+
+**Entre automóvil y troca NO hay valle, y por eso no se separan.** La clase
+`car` de COCO ya trae SUV, crossovers y minivans, que miden lo mismo que una
+pickup: los automóviles se extienden de 0.80 a 1.40 sin ningún hueco donde
+poner un umbral. Es un límite de la taxonomía de COCO, no de la cámara, y
+poner ahí un corte sería inventar una cifra. En la clasificación SCT la
+pickup es **A** de todos modos, así que el entregable no lo necesita.
+
+**Lo que sí se puede, verificado mirando los recortes (15 de 15):**
+
+| clase | cómo se decide | verificado |
+|---|---|---|
+| `MOTO` | `motorcycle` de COCO **y** silueta angosta | 221 motos; el corte rechaza 1 de 133 falsa |
+| `A` | todo lo demás bajo el umbral de pesado | 5 trocas de 5 (RAM, GMC, F-150…) |
+| `B` autobús | `bus` de COCO | 4 de 4, a 0.93 de confianza y 240–257 px |
+| `C` camión | sobre el umbral de pesado | 6 de 6 (Freightliner, International, volteo Scania…) |
+
+El **autobús aparte es nuevo**: con la cámara vieja medía 65–90 px y YOLO no
+lo separaba del camión, y estaba documentado como imposible. A 245 px sí.
+
+**La moto la distingue el ANCHO, no el alto.** Una moto es angosta: razón
+ancho/alto de **0.68–0.81** contra **1.37–1.69** del automóvil. El corte va
+como fracción de la silueta del automóvil **de esa misma calzada**
+(`MOTO_RAZON = 0.7`), no en un número fijo, porque la razón depende del
+ángulo: el mismo automóvil da 1.69 en una calzada y 1.37 en la otra.
+
+**Las clases finas sólo salen donde están medidas.** `ALTO_FINO = 100` px de
+automóvil mediano — que es donde se verificaron, no un número elegido. Entre
+25 y 100 px no está probado, y se prefiere no dar la clase a darla mal: una
+clase equivocada cambia el entregable. Con la cámara vieja el sistema sigue
+entregando `A` / `PESADO` exactamente como antes, y eso está en la
+regresión (`tools/probar_clasificacion.py`, 30 casos con los vehículos
+reales de las hojas).
 
 ### El video anotado cuesta 25 % del tiempo y más disco que el original
 

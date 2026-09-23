@@ -36,6 +36,14 @@ def main():
     ap.add_argument('--clase', default=None,
                     help='solo los cruces de esta clase (car, truck, bus, motorcycle)')
     ap.add_argument('--maximo', type=int, default=None, help='tope de recortes')
+    # Para mirar UN grupo de la silueta. `silueta_clases.py` dice dónde se
+    # parten los `truck` en dos poblaciones (la troca y el camión de
+    # verdad); esto recorta sólo las de un lado del corte, que es la única
+    # forma de comprobar que el corte separa lo que se cree.
+    ap.add_argument('--alto-min', type=float, default=None,
+                    help='solo cruces con la caja de al menos este alto')
+    ap.add_argument('--alto-max', type=float, default=None,
+                    help='solo cruces con la caja de a lo más este alto')
     ap.add_argument('--alto-banda', type=int, default=400,
                     help='píxeles arriba y abajo de la línea que se recortan')
     # Con la camara de 2560x1440 el recorte de un carril entero mide mas de
@@ -60,12 +68,19 @@ def main():
     inicio = dt.datetime.fromisoformat(job['video_start_time'])
     fps = job.get('fps') or 20.0
     conn = traffic_db.get_connection()
-    consulta = ("""SELECT timestamp, track_id, direction, vehicle_type, bbox_height, confidence
+    consulta = ("""SELECT timestamp, track_id, direction, vehicle_type,
+                          bbox_height, bbox_width, confidence
                    FROM crossings WHERE job_id = ? AND lane_id = ?""")
     parametros = [a.job, a.carril]
     if a.clase:
         consulta += ' AND vehicle_type = ?'
         parametros.append(a.clase)
+    if a.alto_min is not None:
+        consulta += ' AND bbox_height >= ?'
+        parametros.append(a.alto_min)
+    if a.alto_max is not None:
+        consulta += ' AND bbox_height <= ?'
+        parametros.append(a.alto_max)
     filas = conn.execute(consulta + ' ORDER BY timestamp', parametros).fetchall()
     if a.maximo:
         filas = filas[:a.maximo]
@@ -90,7 +105,8 @@ def main():
         y0 = max(0, int(y_linea - a.alto_banda / 2))
         y1 = min(img.shape[0], int(y_linea + a.alto_banda / 2))
         r = cv2.resize(img[y0:y1, int(x0):int(min(x1, img.shape[1]))], (ancho_r, alto_r))
-        cv2.putText(r, f"{n / fps:.1f}s {f['vehicle_type']} {f['bbox_height'] or 0}px "
+        cv2.putText(r, f"{n / fps:.1f}s {f['vehicle_type']} "
+                       f"{f['bbox_height'] or 0}x{f['bbox_width'] or 0}px "
                        f"{f['confidence'] or 0:.2f}", (5, 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
         y_rel = int((y_linea - y0) / (y1 - y0) * alto_r)

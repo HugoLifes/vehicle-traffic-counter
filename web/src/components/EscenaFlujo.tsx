@@ -105,6 +105,9 @@ export function EscenaFlujo({ lanes }: Props) {
         marca: leerColor('--border-strong', '#7d8b9c'),
         A: leerColor('--veh-A', '#1d54b3'),
         PESADO: leerColor('--veh-PESADO', '#9a5a12'),
+        MOTO: leerColor('--veh-MOTO', '#0d6b72'),
+        B: leerColor('--veh-B', '#6b34a1'),
+        C: leerColor('--veh-C', '#9a5a12'),
         SIN_RESOLVER: leerColor('--veh-SIN_RESOLVER', '#6b7280'),
         car: leerColor('--veh-car', '#1d54b3'),
         truck: leerColor('--veh-truck', '#9a5a12'),
@@ -130,18 +133,20 @@ export function EscenaFlujo({ lanes }: Props) {
           return malla;
         };
 
-        // PESADO es la categoría que llega hoy; cubre autobús y camión, que
-        // el sistema no separa a esta distancia. Se dibuja con silueta de
-        // camión porque es la más reconocible de las dos.
-        if (tipo === 'bus') {
+        /* PESADO cubre autobús y camión juntos, y llega de las cámaras
+           donde el vehículo se ve pequeño y no se pueden separar; se dibuja
+           con silueta de camión porque es la más reconocible de las dos.
+           Donde el vehículo se ve grande llegan B y C por separado, y cada
+           uno tiene la suya. */
+        if (tipo === 'bus' || tipo === 'B') {
           g.add(caja(1.5, 1.5, 4.6, 0.95));
           g.add(caja(1.52, 0.45, 4.0, 1.35, matOscuro)); // franja de ventanas
-        } else if (tipo === 'truck' || tipo === 'PESADO') {
+        } else if (tipo === 'truck' || tipo === 'PESADO' || tipo === 'C') {
           g.add(caja(1.5, 1.2, 1.5, 0.85)); // cabina
           const cama = caja(1.6, 1.5, 3.0, 1.0, matOscuro);
           cama.position.z = 2.2;
           g.add(cama);
-        } else if (tipo === 'motorcycle') {
+        } else if (tipo === 'motorcycle' || tipo === 'MOTO') {
           g.add(caja(0.45, 0.5, 1.5, 0.6));
         } else {
           g.add(caja(1.4, 0.65, 3.4, 0.55)); // carrocería
