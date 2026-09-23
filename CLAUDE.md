@@ -819,6 +819,47 @@ son vehículos de verdad juntos (revisados a ojo). Contra el lazo virtual el
 sistema queda entre 1.03 y 1.06, y el lazo pierde motos y junta vehículos
 pegados, así que esa diferencia es su límite, no necesariamente el nuestro.
 
+### Contar por instante o por trayectoria: medido, dan lo mismo
+
+`src/engine/conteo_trayectoria.py` cuenta al cerrar el video sobre el
+recorrido completo —une los pedazos del mismo rastro y cada vehículo cuenta
+una vez por línea—, que es la práctica aceptada para que un cambio de
+identidad sobre la línea no cuente dos veces. Es la misma idea que subió el
+direccional de Altozano de 0.74× a 0.99×.
+
+Medido con `tools/comparar_metodo_conteo.py`, que corre los dos métodos
+sobre la MISMA detección:
+
+| minutos | instante | trayectoria | lazo virtual |
+|---|---|---|---|
+| 6 de mediodía tranquilos | 144 | **144** | — |
+| 11:55, el más cargado (32 vehículos en un minuto) | 32 | **32** | 27 |
+| 22:30, de noche | 12 | **12** | 12 |
+
+**Con el detector ya corregido no hay rastros partidos que arreglar**, así
+que los dos métodos coinciden y no vale la pena volver a contar el aforo
+entero para cambiar de método. Queda como propiedad del proyecto
+(`projects.conteo_trayectoria`, apagada) para una cámara donde el rastro sí
+se parta. Sus umbrales de unión son propios —0.5 s de hueco y 0.8 altos de
+caja, contra 1 s y 2 altos del direccional— porque con los del direccional
+**dos vehículos que se siguen a medio segundo se fusionan en uno**; está en
+la regresión `tools/probar_conteo_trayectoria.py`.
+
+### La noche SÍ se puede contar con esta cámara
+
+Lo que con la cámara vieja era 0.03× del tránsito real. Minuto de las 22:30,
+contado y revisado vehículo por vehículo con `hoja_cruces.py`:
+
+- **12 vehículos, los 12 reales y distintos** (4 hacia la cámara, 8
+  alejándose). Instante, trayectoria y lazo virtual coinciden en los tres.
+- El vehículo mide **116–144 px** en la línea y el detector lo ve con
+  **0.63–0.89** de confianza, aunque en la imagen sea una mancha de luces.
+
+El obturador sigue siendo lento (el vehículo sale barrido), pero a esta
+resolución y con el encuadre de frente la caja es lo bastante grande para
+contar. Es el cambio más valioso del aforo nuevo: recupera las horas que
+antes se declaraban no medibles.
+
 **Sin conteo manual de campo no hay razón que reportar.** Lo verificable hoy
 es que no sobrecuenta (38 cruces revisados uno por uno, todos vehículos
 distintos y reales) y que el tamaño del vehículo en la línea pasó de 14-41 px
