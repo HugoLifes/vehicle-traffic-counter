@@ -191,6 +191,9 @@ se podía contestar de otro modo:
 | `velocidad_contra_tubo.py` | Velocidad por tramo sobre recorridos ya extraídos, contra el contador de ejes, con horas de calibración y de prueba |
 | `probar_camara_en_vivo.py` | Si una cámara en vivo (RTSP, HTTP, HLS) sirve y el equipo alcanza su ritmo, sin guardar video |
 | `revisar_escena.py` | Qué videos de una entrega miran de verdad a la vía y cuáles son de instalación |
+| `barrido_linea.py` | Referencia sin detector: apila la franja de la línea cuadro a cuadro y marca encima los cruces contados |
+| `hoja_cruces.py` | El cuadro exacto de cada cruce contado, para cazar dobles conteos uno por uno |
+| `probar_rastreador.py` | Regresión sin GPU de los tres defectos que causaron conteos dobles o partidos |
 
 ---
 
@@ -780,6 +783,47 @@ entrega nueva:
 - **El brillo alto de mediodía no es sobreexposición.** Sobre la vía da 158
   con contraste 28; la noche mala de la cámara vieja daba 168–177 con
   contraste **70**. El diagnóstico ya distingue los dos casos.
+
+### Cómo se verifica un aforo sin conteo manual de campo
+
+Del 19-sep-2026 no hay aforo de campo, así que la referencia se fabrica del
+propio video y **sin usar el detector**: `tools/barrido_linea.py` apila la
+franja de píxeles que cae sobre la línea de conteo, cuadro a cuadro. Cada
+vehículo que cruza deja una raya, y los cruces del sistema se marcan encima:
+mancha sin marca es un vehículo no contado, marca sin mancha es un conteo de
+más. Un lazo virtual (resta del fondo sobre esa misma imagen) cuenta las
+rayas solo para **tamizar** qué minutos hay que mirar.
+
+Lo que sí adjudica es `tools/hoja_cruces.py`: el recorte del cuadro exacto de
+cada cruce. Así se vio, vehículo por vehículo, que una pickup salía dos veces
+con los rastros 5802 y 5814 en el mismo segundo.
+
+**Tres defectos encontrados así, en orden de tamaño:**
+
+1. **El detector entregaba dos cajas del mismo vehículo** (IoU 0.97), una
+   como `car` y otra como `truck`: el filtro de repetidas de YOLO compara
+   solo dentro de cada clase. Ver `projects.nms_agnostico` — **es por
+   proyecto**, porque en el material viejo (vehículo de 15 px, cajas que se
+   enciman) comparar entre clases borra vehículos distintos.
+2. **El rastreador creaba dos rastros de una misma detección** cuando su
+   mejor emparejamiento quedaba bajo el umbral de IoU: entraba dos veces a
+   la lista de "sin pareja".
+3. **El antiduplicado del contador estaba en 6 px fijos**, medidos sobre
+   640×360. Con 2560×1440 el vehículo mide 150 px y sus cajas duplicadas
+   quedan a 20-40 px. Ahora es el mayor entre 6 px y 0.2 altos de caja; sobre
+   el aforo viejo ya validado cambia como mucho 2 cruces por video (−0.36 %).
+
+Resultado medido sobre los mismos minutos: los pares de cruces separados por
+menos de 0.6 s en el mismo carril bajan de **10.7 % a 6.0 %**, y lo que queda
+son vehículos de verdad juntos (revisados a ojo). Contra el lazo virtual el
+sistema queda entre 1.03 y 1.06, y el lazo pierde motos y junta vehículos
+pegados, así que esa diferencia es su límite, no necesariamente el nuestro.
+
+**Sin conteo manual de campo no hay razón que reportar.** Lo verificable hoy
+es que no sobrecuenta (38 cruces revisados uno por uno, todos vehículos
+distintos y reales) y que el tamaño del vehículo en la línea pasó de 14-41 px
+a 115-150 px. Para dar una razón hace falta que la empresa cuente a mano unos
+cuartos de hora de este video.
 
 **Cuánto tarda** (Orin Nano, cuadro de 2560×1440 con la franja de la vía):
 49 ms detectar + 22 dibujar + 15 escribir + 14 rastrear + 13 leer = ~150 ms

@@ -85,7 +85,24 @@ def contar_rayas(barrido):
         x, y, w, h, area = stats[i]
         if area >= MIN_AREA and h >= MIN_ALTO and w >= MIN_DURACION:
             manchas.append((y, x, h, w))
-    return sorted(manchas, key=lambda m: m[1]), mascara
+    manchas.sort(key=lambda m: m[1])
+
+    # Un mismo vehículo puede dejar DOS manchas (el parabrisas claro parte la
+    # silueta, o la sombra se separa del cuerpo). Las que se solapan en el
+    # tiempo son el mismo vehículo: medido en un minuto con 16 vehículos
+    # reales, sin unir salían 18.
+    unidas = []
+    for (y, x, h, w) in manchas:
+        if unidas:
+            py, px, ph, pw = unidas[-1]
+            solape = min(px + pw, x + w) - max(px, x)
+            if solape > 0.5 * min(pw, w):
+                y0, y1 = min(py, y), max(py + ph, y + h)
+                x0, x1 = min(px, x), max(px + pw, x + w)
+                unidas[-1] = (y0, x0, y1 - y0, x1 - x0)
+                continue
+        unidas.append((y, x, h, w))
+    return unidas, mascara
 
 
 def cruces_del_video(job_id, carril=None):
