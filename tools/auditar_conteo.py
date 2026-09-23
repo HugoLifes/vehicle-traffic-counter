@@ -50,6 +50,12 @@ from src.storage import traffic_db                                 # noqa: E402
 # píxeles. Lo bastante para que sean posiciones distintas del rastro y lo
 # bastante poco para que no haya salidas de la vía entre ellas.
 DESPLAZAMIENTO = 60
+MARGEN_S = 3.0
+
+# Segundos que se ignoran al principio y al final del video. Un vehículo que
+# cruza la línea en el último segundo NO alcanza a cruzar la de más adelante
+# porque el archivo se acaba: contarlo como pérdida ensucia la medida. En un
+# aforo continuo ese vehículo lo cuenta el minuto siguiente.
 
 
 def videos_contados(proyecto):
@@ -134,6 +140,10 @@ def auditar_consistencia(proyecto, muestra):
                     frame_shape=(alto, ancho))
                 contadores[(c['id'], nombre)] = cont
         vistos = defaultdict(set)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 20.0
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+        margen = int(MARGEN_S * fps)
+        cuadro = 0
         while True:
             ok, f = cap.read()
             if not ok:
@@ -145,8 +155,10 @@ def auditar_consistencia(proyecto, muestra):
                            if not zona or zone_for_bbox(zonas, tr['bbox']) == zona]
                 for nombre in ('antes', 'linea', 'despues'):
                     r = contadores[(c['id'], nombre)].update(propios)
-                    for cr in r['in'] + r['out']:
-                        vistos[(c['id'], nombre)].add(cr['track_id'])
+                    if margen <= cuadro <= (total - margen if total else 10 ** 9):
+                        for cr in r['in'] + r['out']:
+                            vistos[(c['id'], nombre)].add(cr['track_id'])
+            cuadro += 1
         cap.release()
 
         fila = {'video': job['original_name'], 'hora': (job['video_start_time'] or '')[11:13]}
