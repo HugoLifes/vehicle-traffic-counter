@@ -102,6 +102,17 @@ punto por el que pasa cualquier trabajo.
 **Reprocesar duplicaba los conteos.** `crossings.job_id` permite borrar los
 cruces previos de un video antes de volver a contarlo.
 
+**La clase del vehículo se congelaba en el primer cuadro.** `Track` fijaba
+`class_name` al crear el rastro y no lo tocaba nunca. Un vehículo que entra
+al cuadro como una rebanada se detecta un instante como `motorcycle`, y así
+se reportaba aunque el detector dijera `car` con 0.90 durante cien cuadros.
+Medido en la cámara frontal: **113 de 709 cruces de una calzada salieron como
+motocicleta**, con 162 px de alto medio —más grandes que los automóviles—, y
+al mirarlos con `hoja_cruces.py --clase motorcycle` eran minivans, sedanes,
+un tractocamión y una pipa. Eso ensucia la composición vehicular entera, que
+es un entregable. Ahora cada detección vota pesada por su confianza y gana la
+más apoyada; está en `tools/probar_rastreador.py`.
+
 **Un video que fallaba se llevaba la cola entera.** Al subir los 741 videos
 del aforo frontal, las inserciones de la subida dejaron la base bloqueada
 unos segundos, el borrado de cruces previos falló con `database is locked` y
@@ -1656,6 +1667,16 @@ imagen; editar el archivo en el host no cambia lo que corre:
 
 ```bash
 git pull && docker compose -f docker-compose.jetson.yml up -d --build
+```
+
+**Cada reconstrucción deja la imagen anterior colgada, y son 18 GB.** El
+disco del Jetson llegó al **100 %** con 53 imágenes (371 GB, 340 de basura) y
+entonces `up -d --build` **falla en silencio**: la salida dice "Building" y
+el contenedor sigue con el código viejo, así que un arreglo parece desplegado
+y no lo está. Después de reconstruir:
+
+```bash
+docker image prune -f && docker builder prune -f
 ```
 
 Comandos de operación:
