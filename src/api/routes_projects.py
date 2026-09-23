@@ -35,6 +35,9 @@ class ProjectCreate(BaseModel):
     # grandes (quita el mismo vehículo detectado como 'car' y como 'truck');
     # con vehículos chicos borra vehículos distintos. Ver traffic_db.
     nms_agnostico: bool = False
+    # Contar por trayectoria (un vehículo, un conteo por línea) en vez de por
+    # instante. Ver src/engine/conteo_trayectoria.py.
+    conteo_trayectoria: bool = False
 
 
 class CopyCalibration(BaseModel):

@@ -12,6 +12,7 @@ ver el resultado de procesar algo que ya era suyo.
 """
 
 import logging
+from collections import Counter
 import queue
 import subprocess
 import threading
@@ -26,12 +27,13 @@ import imageio_ffmpeg
 from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
+from src.engine import conteo_trayectoria
 from src.engine.lanes import build_lane_counters
 from src.engine.velocidad import MedidorVelocidad
 from src.engine.origen_destino import AforoDireccional
 from src.engine.rastreo_bytetrack import RastreadorBytetrack
 from src.engine.zones import (band_from_zones, draw_zones, filter_detections,
-                              load_zones, zone_for_bbox)
+                              load_zones, zone_for_bbox, zone_for_point)
 from src.visualizer import Visualizer
 
 
@@ -263,6 +265,14 @@ class VideoJobProcessor:
             # Velocidad: solo en las líneas que tienen tramo (una segunda
             # línea y la distancia medida entre las dos). La línea de conteo
             # es la primera manguera; la del tramo, la segunda.
+            # Conteo por trayectoria: se guarda el recorrido de cada rastro y
+            # se decide al cerrar el video, para que un rastro partido o un
+            # cambio de identidad sobre la línea no cuente dos veces.
+            por_trayectoria = bool(proyecto.get('conteo_trayectoria'))
+            recorridos = {}
+            clases_rastro = {}
+            confianzas_rastro = {}
+
             medidores = {}
             for lane_id, meta in lane_meta.items():
                 tramo = meta.get('tramo')
@@ -369,6 +379,13 @@ class VideoJobProcessor:
                 detections = filter_detections(zonas, detections)
                 det_en_zona += len(detections)
                 tracks = tracker.update(detections)
+                if por_trayectoria:
+                    for tr in tracks:
+                        x1, y1, x2, y2 = tr['bbox']
+                        recorridos.setdefault(tr['id'], []).append(
+                            (frame_count, x1, y1, x2, y2))
+                        clases_rastro.setdefault(tr['id'], Counter())[tr['class_name']] += 1
+                        confianzas_rastro.setdefault(tr['id'], []).append(tr['confidence'])
                 direccional.observar(frame_count,
                                      tracks_od if rastreador_od is not None else tracks)
 
@@ -424,17 +441,21 @@ class VideoJobProcessor:
                             zone_for_bbox(zonas, track['bbox'])
                             if track and zonas else None
                         )
-                        traffic_db.record_crossing(
-                            lane_id=lane_id,
-                            track_id=crossing['track_id'],
-                            direction=crossing['direction'],
-                            vehicle_type=crossing['vehicle_type'],
-                            confidence=confidence,
-                            timestamp=crossing_timestamp,
-                            job_id=job_id,
-                            zone_id=zone_id,
-                            bbox_height=alto_caja
-                        )
+                        # Con conteo por trayectoria el panel del video sigue
+                        # mostrando el conteo en vivo, pero lo que se GUARDA
+                        # se decide al final, sobre los recorridos completos.
+                        if not por_trayectoria:
+                            traffic_db.record_crossing(
+                                lane_id=lane_id,
+                                track_id=crossing['track_id'],
+                                direction=crossing['direction'],
+                                vehicle_type=crossing['vehicle_type'],
+                                confidence=confidence,
+                                timestamp=crossing_timestamp,
+                                job_id=job_id,
+                                zone_id=zone_id,
+                                bbox_height=alto_caja
+                            )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
                     line_coords = lane_meta[lane_id]["points"]
@@ -484,6 +505,48 @@ class VideoJobProcessor:
                 traffic_db.update_video_job(
                     job_id, output_video_path=str(final_path), total_frames=frame_count
                 )
+                if por_trayectoria:
+                    lineas = [{'id': lid, 'puntos': meta['points'],
+                               'zone_id': meta.get('zone_id')}
+                              for lid, meta in lane_meta.items()]
+                    cruces = conteo_trayectoria.contar(
+                        recorridos, lineas, fps,
+                        (lambda x, y: zone_for_point(zonas, x, y)) if zonas else None)
+                    de_pedazo_a_vehiculo = {}
+                    for lane_id, lista in cruces.items():
+                        for c in lista:
+                            for pedazo in c['ids']:
+                                de_pedazo_a_vehiculo[(lane_id, pedazo)] = c['track_id']
+                            clases = Counter()
+                            confianzas = []
+                            for pedazo in c['ids']:
+                                clases.update(clases_rastro.get(pedazo, {}))
+                                confianzas += confianzas_rastro.get(pedazo, [])
+                            hora = None
+                            if video_start_time is not None:
+                                hora = (video_start_time + timedelta(
+                                    seconds=c['cuadro'] / fps)).strftime("%Y-%m-%d %H:%M:%S")
+                            traffic_db.record_crossing(
+                                lane_id=lane_id,
+                                track_id=c['track_id'],
+                                direction=c['direccion'],
+                                vehicle_type=(clases.most_common(1)[0][0] if clases else 'car'),
+                                confidence=(sum(confianzas) / len(confianzas)
+                                            if confianzas else None),
+                                timestamp=hora,
+                                job_id=job_id,
+                                zone_id=lane_meta[lane_id].get('zone_id'),
+                                bbox_height=int(c['alto'])
+                            )
+                    # La velocidad se midió por rastro; si el vehículo venía
+                    # en pedazos, se le atribuye al que quedó como su cruce.
+                    velocidades = [(lane_id, de_pedazo_a_vehiculo.get((lane_id, tid), tid), s)
+                                   for lane_id, tid, s in velocidades]
+                    logging.info(
+                        f"Conteo por trayectoria de {job['original_name']}: "
+                        + ", ".join(f"{lane_meta[l]['name']} {len(v)}"
+                                    for l, v in cruces.items()))
+
                 if medidores:
                     # Al final y no en el cruce: si la segunda línea está
                     # después de la de conteo, cuando el vehículo cuenta

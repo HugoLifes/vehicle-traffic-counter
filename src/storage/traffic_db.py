@@ -200,6 +200,14 @@ def init_schema():
     #
     # Por eso es por proyecto y por omisión queda apagado, como siempre.
     _ensure_column(conn, "projects", "nms_agnostico", "INTEGER DEFAULT 0")
+
+    # Contar por TRAYECTORIA en vez de por instante (ver
+    # src/engine/conteo_trayectoria.py): cada vehículo cuenta una sola vez
+    # por línea, con los pedazos de su rastro ya unidos. Es la práctica
+    # aceptada para que un cambio de identidad sobre la línea no cuente dos
+    # veces. Por proyecto y apagado por omisión: los aforos ya validados
+    # contra conteo manual se contaron por instante.
+    _ensure_column(conn, "projects", "conteo_trayectoria", "INTEGER DEFAULT 0")
     # Segundos que tardó el vehículo en recorrer el tramo de su línea. Se
     # guarda el TIEMPO y no la velocidad: la velocidad sale de la distancia
     # vigente al reportar, así que corregir una distancia mal capturada
@@ -338,14 +346,15 @@ def _migrate_labels_to_projects(conn):
 def create_project(name: str, description: Optional[str] = None,
                     latitude: Optional[float] = None, longitude: Optional[float] = None,
                     address: Optional[str] = None, interval_minutes: int = 15,
-                    nms_agnostico: bool = False) -> int:
+                    nms_agnostico: bool = False,
+                    conteo_trayectoria: bool = False) -> int:
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO projects (name, description, latitude, longitude, address,
-                                 interval_minutes, nms_agnostico)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                 interval_minutes, nms_agnostico, conteo_trayectoria)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (name, description, latitude, longitude, address, interval_minutes,
-         1 if nms_agnostico else 0)
+         1 if nms_agnostico else 0, 1 if conteo_trayectoria else 0)
     )
     conn.commit()
     return cur.lastrowid
