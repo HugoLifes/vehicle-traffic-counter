@@ -38,6 +38,11 @@ class ProjectCreate(BaseModel):
     # Contar por trayectoria (un vehículo, un conteo por línea) en vez de por
     # instante. Ver src/engine/conteo_trayectoria.py.
     conteo_trayectoria: bool = False
+    # Guardar el video anotado. Cuesta ~25 % del tiempo de proceso y mas
+    # disco que el material original (medido: 31.3 MB por minuto contra 16
+    # del archivo de la camara). Se deja encendido por omision porque es
+    # como se revisa un aforo nuevo; en un dia entero ya calibrado, apagarlo.
+    video_anotado: bool = True
 
 
 class CopyCalibration(BaseModel):
@@ -51,6 +56,9 @@ class ProjectUpdate(BaseModel):
     longitude: Optional[float] = None
     address: Optional[str] = None
     interval_minutes: Optional[int] = None
+    nms_agnostico: Optional[bool] = None
+    conteo_trayectoria: Optional[bool] = None
+    video_anotado: Optional[bool] = None
 
 
 @router.get("")
@@ -75,6 +83,13 @@ def create_project(project: ProjectCreate):
         longitude=project.longitude,
         address=project.address,
         interval_minutes=project.interval_minutes,
+        # Estas tres NO se pasaban: el modelo las aceptaba y se perdian en
+        # silencio, asi que un proyecto creado por la API salia siempre con
+        # los valores por omision. Es la trampa de los valores que existen
+        # pero no se leen, otra vez.
+        nms_agnostico=project.nms_agnostico,
+        conteo_trayectoria=project.conteo_trayectoria,
+        video_anotado=project.video_anotado,
     )
     traffic_db.log_event(project_id, "proyecto", "Se creó la intersección", name)
     return traffic_db.get_project(project_id)

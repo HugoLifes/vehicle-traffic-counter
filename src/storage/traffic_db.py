@@ -213,6 +213,13 @@ def init_schema():
     # aceptada para que un cambio de identidad sobre la línea no cuente dos
     # veces. Por proyecto y apagado por omisión: los aforos ya validados
     # contra conteo manual se contaron por instante.
+    # Escribir el video anotado cuesta ~25 % del tiempo de proceso (dibujar
+    # 22 ms + escribir 15 de los ~150 ms por cuadro) MAS una pasada entera de
+    # ffmpeg al final, y ocupa mas disco que el material original: medido en
+    # el aforo frontal, 31.3 MB por minuto de video contra 16 del archivo de
+    # la camara. Con 730 videos son 23 GB. Vale la pena para revisar un
+    # aforo; no para un dia entero ya calibrado.
+    _ensure_column(conn, "projects", "video_anotado", "INTEGER NOT NULL DEFAULT 1")
     _ensure_column(conn, "projects", "conteo_trayectoria", "INTEGER DEFAULT 0")
     # Segundos que tardó el vehículo en recorrer el tramo de su línea. Se
     # guarda el TIEMPO y no la velocidad: la velocidad sale de la distancia
@@ -353,14 +360,17 @@ def create_project(name: str, description: Optional[str] = None,
                     latitude: Optional[float] = None, longitude: Optional[float] = None,
                     address: Optional[str] = None, interval_minutes: int = 15,
                     nms_agnostico: bool = False,
-                    conteo_trayectoria: bool = False) -> int:
+                    conteo_trayectoria: bool = False,
+                    video_anotado: bool = True) -> int:
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO projects (name, description, latitude, longitude, address,
-                                 interval_minutes, nms_agnostico, conteo_trayectoria)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                 interval_minutes, nms_agnostico, conteo_trayectoria,
+                                 video_anotado)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (name, description, latitude, longitude, address, interval_minutes,
-         1 if nms_agnostico else 0, 1 if conteo_trayectoria else 0)
+         1 if nms_agnostico else 0, 1 if conteo_trayectoria else 0,
+         1 if video_anotado else 0)
     )
     conn.commit()
     return cur.lastrowid
@@ -395,7 +405,13 @@ def get_project(project_id: int) -> Optional[Dict]:
 
 
 def update_project(project_id: int, **fields):
-    allowed = {"name", "description", "latitude", "longitude", "address", "interval_minutes"}
+    # Las banderas del motor tambien se cambian aqui. Antes solo se podian
+    # fijar al CREAR el proyecto, asi que un aforo ya subido no se podia
+    # corregir sin rehacerlo: es la misma trampa de los valores que existen
+    # pero no se leen, del otro lado.
+    allowed = {"name", "description", "latitude", "longitude", "address",
+               "interval_minutes", "nms_agnostico", "conteo_trayectoria",
+               "video_anotado"}
     fields = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not fields:
         return

@@ -339,12 +339,19 @@ class VideoJobProcessor:
             escala_salida = min(1.0, ANCHO_MAXIMO_ANOTADO / frame_width)
             salida_w = int(frame_width * escala_salida) // 2 * 2
             salida_h = int(frame_height * escala_salida) // 2 * 2
+            # Guardar el video anotado es opcional POR PROYECTO. Apagado, el
+            # visor en vivo sigue funcionando (se dibuja un cuadro por
+            # segundo) pero no se escribe archivo ni se transcodea.
+            guardar_anotado = proyecto.get('video_anotado', 1) in (1, True, None)
             writer = cv2.VideoWriter(
                 str(raw_path),
                 cv2.VideoWriter_fourcc(*'mp4v'),
                 fps,
                 (salida_w, salida_h)
-            )
+            ) if guardar_anotado else None
+            # Cada cuantos cuadros se dibuja cuando no se guarda video. Uno
+            # por segundo alcanza para que el visor en vivo muestre algo.
+            cada_para_vivo = max(1, int(fps))
             visualizer = Visualizer(config=self.config.get('visualizer', {}))
 
             traffic_db.update_video_job(job_id, total_frames=total_frames, fps=fps)
@@ -400,7 +407,11 @@ class VideoJobProcessor:
                     ).strftime("%Y-%m-%d %H:%M:%S")
 
                 # Las zonas van debajo de las cajas para que no las tapen.
-                annotated = visualizer.draw_tracks(draw_zones(frame, zonas), tracks)
+                # Sin video que guardar solo se dibuja de vez en cuando, para
+                # el visor en vivo: dibujar cuesta 22 ms por cuadro.
+                dibujar = guardar_anotado or frame_count % cada_para_vivo == 0
+                annotated = (visualizer.draw_tracks(draw_zones(frame, zonas), tracks)
+                             if dibujar else frame)
 
                 resumen = []
                 for idx, (lane_id, counter) in enumerate(lane_counters.items()):
@@ -474,17 +485,19 @@ class VideoJobProcessor:
                 # los vehículos.
                 annotated = visualizer.draw_lane_summary(annotated, resumen)
 
-                if escala_salida < 1.0:
+                if dibujar and escala_salida < 1.0:
                     annotated = cv2.resize(annotated, (salida_w, salida_h),
                                            interpolation=cv2.INTER_AREA)
-                writer.write(annotated)
+                if writer is not None:
+                    writer.write(annotated)
 
                 # Publicar el cuadro para el visor en vivo. Solo se guarda
                 # en memoria (una referencia), no se escribe a disco: el
                 # costo por cuadro es despreciable frente a la inferencia.
-                with self._live_lock:
-                    self._live_frame = annotated
-                    self._live_job_id = job_id
+                if dibujar:
+                    with self._live_lock:
+                        self._live_frame = annotated
+                        self._live_job_id = job_id
                 frame_count += 1
                 if time.time() - last_progress_update > 1.0:
                     traffic_db.update_video_job(job_id, processed_frames=frame_count)
@@ -492,7 +505,8 @@ class VideoJobProcessor:
 
             traffic_db.update_video_job(job_id, processed_frames=frame_count)
 
-            writer.release()
+            if writer is not None:
+                writer.release()
             writer = None  # ya liberado, que el finally no lo vuelva a tocar
 
             if self._stop_event.is_set():
@@ -501,7 +515,8 @@ class VideoJobProcessor:
                 traffic_db.update_video_job(job_id, status='queued')
                 raw_path.unlink(missing_ok=True)
             else:
-                _transcode_to_h264(raw_path, final_path)
+                if guardar_anotado:
+                    _transcode_to_h264(raw_path, final_path)
                 raw_path.unlink(missing_ok=True)
                 # El total declarado en la metadata del contenedor no siempre
                 # coincide con los cuadros realmente decodificables (en los
@@ -509,7 +524,8 @@ class VideoJobProcessor:
                 # corrige con el conteo real, si no la barra de progreso se
                 # queda clavada y parece que el proceso quedó a medias.
                 traffic_db.update_video_job(
-                    job_id, output_video_path=str(final_path), total_frames=frame_count
+                    job_id, total_frames=frame_count,
+                    **({'output_video_path': str(final_path)} if guardar_anotado else {})
                 )
                 if por_trayectoria:
                     lineas = [{'id': lid, 'puntos': meta['points'],
