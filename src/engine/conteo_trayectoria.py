@@ -139,20 +139,20 @@ def contar(rastros: Dict[int, List[Tuple]], lineas: List[Dict], fps: float,
         abajo por qué está apagado por omisión.
 
     Devuelve
-    {lane_id: [{'track_id', 'ids', 'cuadro', 'direccion', 'alto', 'ancho'}]},
-    con un cruce como mucho por vehículo y línea.
+    {lane_id: [{'track_id', 'ids', 'cuadro', 'direccion', 'alto', 'caja'}]},
+    con un cruce como mucho por vehículo y línea. `caja` es (x1, y1, x2, y2)
+    en el cuadro del cruce, o None si ese cuadro no está en ningún pedazo.
     """
-    objetos, cajas, anchos = [], {}, {}
+    objetos, cajas = [], {}
     for tid, secuencia in rastros.items():
         if len(secuencia) < 2:
             continue
         puntos = [(c, (x1 + x2) / 2.0, y2, y2 - y1) for (c, x1, y1, x2, y2) in secuencia]
         cajas[tid] = {c: (x1, y1, x2, y2) for (c, x1, y1, x2, y2) in secuencia}
-        # El ancho va aparte y no dentro del punto: `unir_pedazos` y
+        # La caja va aparte y no dentro del punto: `unir_pedazos` y
         # `se_movio` desempacan la tupla de 5 que comparten con el aforo
-        # direccional, y alargarla los rompe.
-        for (c, x1, _y1, x2, _y2) in secuencia:
-            anchos[(tid, c)] = x2 - x1
+        # direccional, y alargarla los rompe. Se guarda entera —no solo el
+        # ancho— porque con la esquina se puede RECORTAR el vehiculo.
         r = Rastro(tid)
         # El acceso va en None: aquí no hay zonas de origen y destino, y
         # `unir_pedazos` entonces trata a todos los pedazos como candidatos,
@@ -195,9 +195,9 @@ def contar(rastros: Dict[int, List[Tuple]], lineas: List[Dict], fps: float,
                     'direccion': _direccion((x0, y0), (x1, y1), a, b),
                     'alto': h1,
                     # El cuadro del cruce es de UN pedazo de la cadena; se
-                    # busca en cuál para sacar su ancho.
-                    'ancho': next((anchos[(i, c1)] for i in ids
-                                   if (i, c1) in anchos), None),
+                    # busca en cuál para sacar su caja.
+                    'caja': next((cajas[i][c1] for i in ids
+                                  if c1 in cajas.get(i, {})), None),
                 })
                 break        # un vehículo, un conteo por línea
     for lane_id in salida:

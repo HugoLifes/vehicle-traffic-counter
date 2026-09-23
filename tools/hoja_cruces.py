@@ -69,7 +69,8 @@ def main():
     fps = job.get('fps') or 20.0
     conn = traffic_db.get_connection()
     consulta = ("""SELECT timestamp, track_id, direction, vehicle_type,
-                          bbox_height, bbox_width, confidence
+                          bbox_height, bbox_width, bbox_x, bbox_y, cuadro,
+                          confidence
                    FROM crossings WHERE job_id = ? AND lane_id = ?""")
     parametros = [a.job, a.carril]
     if a.clase:
@@ -97,7 +98,14 @@ def main():
     alto_r = max(40, int(ancho_r * a.alto_banda / max(1.0, min(x1, 10 ** 6) - x0)))
     recortes = []
     for f in filas:
-        n = int((dt.datetime.fromisoformat(f['timestamp']) - inicio).total_seconds() * fps)
+        # El numero de cuadro es exacto; el timestamp solo llega al segundo,
+        # y a 20 cuadros por segundo eso deja 20 cuadros de margen. Con la
+        # camara de 2560x1440 el vehiculo recorre cientos de pixeles en ese
+        # tiempo y el recorte salia vacio. Se usa el cuadro cuando esta.
+        if f['cuadro'] is not None:
+            n = int(f['cuadro'])
+        else:
+            n = int((dt.datetime.fromisoformat(f['timestamp']) - inicio).total_seconds() * fps)
         cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, n))
         ok, img = cap.read()
         if not ok:

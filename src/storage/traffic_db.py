@@ -122,6 +122,20 @@ def init_schema():
     # sedán, 2.0 una pickup, 2.5 un camión. Junto con el alto da la silueta,
     # que es lo que separa una troca de un automóvil.
     _ensure_column(conn, "crossings", "bbox_width", "INTEGER")
+    # Esquina superior izquierda de la caja en el cruce. Con el alto y el
+    # ancho define la caja entera, y eso permite dos cosas que sin ella no
+    # se pueden: RECORTAR el vehiculo (para revisarlo, y para armar un
+    # conjunto de entrenamiento con material de la camara real) y ponerle
+    # al recorte el cuadro exacto. Sin esto, la hoja de cruces solo sabe la
+    # hora al segundo, y a 2560x1440 el vehiculo ya se movio mucho en un
+    # segundo.
+    _ensure_column(conn, "crossings", "bbox_x", "INTEGER")
+    _ensure_column(conn, "crossings", "bbox_y", "INTEGER")
+    # Numero de cuadro del cruce dentro de su video. `timestamp` solo llega
+    # al segundo, y a 20 cuadros por segundo eso son 20 cuadros de margen:
+    # en la camara de 2560x1440 el vehiculo recorre cientos de pixeles en
+    # ese tiempo y el recorte cae donde ya no esta.
+    _ensure_column(conn, "crossings", "cuadro", "INTEGER")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS video_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -862,7 +876,10 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
                      job_id: Optional[int] = None,
                      zone_id: Optional[int] = None,
                      bbox_height: Optional[int] = None,
-                     bbox_width: Optional[int] = None):
+                     bbox_width: Optional[int] = None,
+                     bbox_x: Optional[int] = None,
+                     bbox_y: Optional[int] = None,
+                     cuadro: Optional[int] = None):
     """
     timestamp: hora REAL del cruce en formato ISO ('YYYY-MM-DD HH:MM:SS').
     En la cámara en vivo se omite (usa la hora del reloj del sistema).
@@ -883,19 +900,20 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
                                       confidence, timestamp, job_id, zone_id,
-                                      bbox_height, bbox_width)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                      bbox_height, bbox_width, bbox_x, bbox_y,
+                                      cuadro)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (lane_id, track_id, direction, vehicle_type, confidence, timestamp,
-             job_id, zone_id, bbox_height, bbox_width)
+             job_id, zone_id, bbox_height, bbox_width, bbox_x, bbox_y, cuadro)
         )
     else:
         conn.execute(
             """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
                                       confidence, job_id, zone_id, bbox_height,
-                                      bbox_width)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                      bbox_width, bbox_x, bbox_y, cuadro)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (lane_id, track_id, direction, vehicle_type, confidence, job_id,
-             zone_id, bbox_height, bbox_width)
+             zone_id, bbox_height, bbox_width, bbox_x, bbox_y, cuadro)
         )
     conn.commit()
 

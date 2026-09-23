@@ -96,24 +96,29 @@ def main():
         print('MAL  los dos sentidos se registran igual')
         fallos += 1
 
-    # El cruce tiene que traer el ANCHO de la caja, y el del cuadro en que
-    # cruzó. De frente el ancho es el ancho real del vehículo y es lo que
-    # separa una troca de un automóvil; si se pierde, la clasificación se
-    # queda sin la mitad de la silueta y nadie se entera.
+    # El cruce tiene que traer la CAJA del cuadro en que cruzó. Del ancho
+    # sale la silueta, que es lo que separa una troca de un automóvil; de la
+    # esquina sale el recorte del vehículo. Si se pierde, la clasificación
+    # se queda sin la mitad de la silueta y nadie se entera.
     #
     # Se prueba con el rastro PARTIDO porque ahí está la trampa: el cuadro
     # del cruce pertenece a uno solo de los pedazos de la cadena.
     partido = contar({7: [caja(i, 800, 860 + i * 25, ancho=220) for i in range(4)],
                       9: [caja(i, 800, 860 + i * 25, ancho=310) for i in range(5, 10)]},
                      LINEA, FPS)[1]
-    ancho = partido[0]['ancho'] if partido else None
+    c = partido[0]['caja'] if partido else None
+    ancho = (c[2] - c[0]) if c else None
     if ancho != 310:
         print(f'MAL  el ancho del cruce salió {ancho} y el del pedazo que '
               f'cruzó es 310')
         fallos += 1
+    elif c[0] != 800 - 310 / 2:
+        print(f'MAL  la esquina de la caja salió en x={c[0]} y el vehículo '
+              f'va por x=800')
+        fallos += 1
     else:
-        print(f"ok  ancho de la caja en el cruce        {ancho:.0f} px "
-              f"(del pedazo que cruzó)")
+        print(f"ok  caja del cruce                    {ancho:.0f} px de ancho "
+              f"en x={c[0]:.0f} (del pedazo que cruzó)")
 
     print()
     print(f'{len(CASOS)} casos, {fallos} fallos')

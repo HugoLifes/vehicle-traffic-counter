@@ -448,9 +448,14 @@ class VideoJobProcessor:
                         )
                         # De frente el ancho es el ancho real del vehículo, y
                         # con el alto da la silueta que separa troca de auto.
+                        # La esquina se guarda para poder RECORTAR después el
+                        # vehículo: revisarlo a ojo, o armar un conjunto de
+                        # entrenamiento con material de la cámara real.
                         ancho_caja = (
                             int(track['bbox'][2] - track['bbox'][0]) if track else None
                         )
+                        x_caja = int(track['bbox'][0]) if track else None
+                        y_caja = int(track['bbox'][1]) if track else None
                         # En qué calzada ocurrió. Es lo que separa los dos
                         # sentidos cuando la misma línea cruza las dos.
                         zone_id = (
@@ -471,7 +476,10 @@ class VideoJobProcessor:
                                 job_id=job_id,
                                 zone_id=zone_id,
                                 bbox_height=alto_caja,
-                                bbox_width=ancho_caja
+                                bbox_width=ancho_caja,
+                                bbox_x=x_caja,
+                                bbox_y=y_caja,
+                                cuadro=frame_count
                             )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
@@ -567,8 +575,11 @@ class VideoJobProcessor:
                                 job_id=job_id,
                                 zone_id=lane_meta[lane_id].get('zone_id'),
                                 bbox_height=int(c['alto']),
-                                bbox_width=(int(c['ancho'])
-                                            if c.get('ancho') else None)
+                                bbox_width=(int(c['caja'][2] - c['caja'][0])
+                                            if c.get('caja') else None),
+                                bbox_x=(int(c['caja'][0]) if c.get('caja') else None),
+                                bbox_y=(int(c['caja'][1]) if c.get('caja') else None),
+                                cuadro=c['cuadro']
                             )
                     # La velocidad se midió por rastro; si el vehículo venía
                     # en pedazos, se le atribuye al que quedó como su cruce.
