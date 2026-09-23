@@ -146,16 +146,30 @@ def clasificar_calzada(cruces: list[dict]) -> tuple[dict[str, int], Optional[flo
 
 
 def exactitud_declarable(nivel: str) -> str:
-    """Que se puede escribir en un informe sobre este desglose."""
+    """Que se puede escribir en un informe sobre este desglose.
+
+    Las cifras que cita son las de la CALIBRACION —Cd. Juarez, camara
+    lateral, contra el conteo manual de la empresa— y no son la exactitud
+    del aforo que se este mirando. El nivel dice que la calzada da para
+    clasificar; no dice que este aforo se haya contrastado con nada.
+
+    Se nombra la fuente a proposito: el multiplo 1.58 se midio con esa
+    camara y nadie ha comprobado que viaje a otra. Antes de entregar un
+    desglose de una camara nueva, `tools/silueta_clases.py`.
+    """
     if nivel == MEDIDO:
-        return ("Desglose liviano/pesado MEDIDO. Contrastado contra aforo "
-                "manual: composicion a 0.1 puntos, livianos 0.98x y pesados "
-                "1.09x sobre datos no usados para calibrar.")
+        return ("Desglose liviano/pesado MEDIDO: en esta calzada el vehiculo "
+                "se ve con holgura y el umbral se calcula sobre sus propios "
+                "automoviles. La regla se calibro en Cd. Juarez (camara "
+                "lateral) contra aforo manual: composicion a 0.1 puntos, "
+                "livianos 0.98x y pesados 1.09x sobre datos no usados para "
+                "calibrar.")
     if nivel == ESTIMADO:
-        return ("Desglose liviano/pesado ESTIMADO. La proporcion sale a 1.8 "
-                "puntos del aforo manual, pero el conteo absoluto de esta "
-                "calzada va corto (0.84x): usar los porcentajes, no las "
-                "cifras. No se separa autobus de camion.")
+        return ("Desglose liviano/pesado ESTIMADO: usar los porcentajes, no "
+                "las cifras. En la calzada donde se calibro (Cd. Juarez, "
+                "camara lateral) la proporcion salia a 1.8 puntos del aforo "
+                "manual con el conteo absoluto corto (0.84x). No se separa "
+                "autobus de camion.")
     return ("Sin desglose por tipo: el vehiculo se ve demasiado pequeno en "
             "esta calzada, o las condiciones de luz no permiten "
             "identificarlo.")

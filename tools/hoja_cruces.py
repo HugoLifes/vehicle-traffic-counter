@@ -38,6 +38,11 @@ def main():
     ap.add_argument('--maximo', type=int, default=None, help='tope de recortes')
     ap.add_argument('--alto-banda', type=int, default=400,
                     help='píxeles arriba y abajo de la línea que se recortan')
+    # Con la camara de 2560x1440 el recorte de un carril entero mide mas de
+    # 1000 px y al encogerlo a 390 no se distingue una moto de un peaton:
+    # asi se dio por buena una hoja donde no se veia nada.
+    ap.add_argument('--celda', type=int, default=390,
+                    help='ancho en px de cada recorte de la hoja')
     ap.add_argument('--salida', required=True)
     a = ap.parse_args()
 
@@ -70,7 +75,11 @@ def main():
     cap = cv2.VideoCapture(job['stored_path'])
     if not cap.isOpened():
         sys.exit(f"No se pudo abrir {job['stored_path']}")
-    ancho_r, alto_r = 390, 165
+    # El alto de la celda sigue la proporcion del recorte, para no deformar
+    # al vehiculo: una caja estirada cambia justo la razon ancho/alto que
+    # sirve para distinguir una moto de un automovil.
+    ancho_r = a.celda
+    alto_r = max(40, int(ancho_r * a.alto_banda / max(1.0, min(x1, 10 ** 6) - x0)))
     recortes = []
     for f in filas:
         n = int((dt.datetime.fromisoformat(f['timestamp']) - inicio).total_seconds() * fps)
