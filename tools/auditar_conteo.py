@@ -34,7 +34,12 @@ from collections import defaultdict
 import cv2
 import numpy as np
 
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# La raíz del repo es el directorio de trabajo cuando ahí está src/ (en el
+# Jetson las herramientas se copian a data/ y se corren desde /app); si no,
+# la carpeta padre de tools/.
+from pathlib import Path                                           # noqa: E402
+RAIZ = str(Path.cwd()) if (Path.cwd() / 'src').is_dir() else os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 sys.path.insert(0, os.path.join(RAIZ, 'tools'))
 
