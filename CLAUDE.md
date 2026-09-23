@@ -1909,8 +1909,22 @@ docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular   python3 to
 Y como el contenedor corre como root, lo que escribe queda con dueño root:
 para borrarlo desde el host hace falta `sudo`.
 
-Al cambiar código hay que **reconstruir**, porque `COPY . .` lo hornea en la
-imagen; editar el archivo en el host no cambia lo que corre:
+**Un cambio de Python ya NO necesita reconstruir.** `src/` y `tools/` se
+montan desde el host de solo lectura, así que lo que corre es el checkout:
+
+```bash
+git pull && docker compose -f docker-compose.jetson.yml up -d
+```
+
+Eso tarda segundos. Antes iba todo horneado con el argumento de que así no
+se desincroniza — y la experiencia dijo lo contrario: reconstruir aquí tarda
+una o dos horas (42 GB compitiendo con la cola por CPU) y **`up -d --build`
+falla en silencio**. Pasó dos veces el mismo día, una por el disco lleno y
+otra por una caída de red, y las dos veces el contenedor siguió con código
+viejo pareciendo sano. Montado se comprueba con un `git log`.
+
+**El frontend sí se construye dentro de la imagen**, así que un cambio de
+interfaz (`web/`) sigue necesitando reconstruir:
 
 ```bash
 git pull && docker compose -f docker-compose.jetson.yml up -d --build

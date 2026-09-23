@@ -31,13 +31,32 @@ services:
       - "8080:8080"
 
     volumes:
-      # Solo se monta lo que debe persistir entre reinicios del
-      # contenedor — el código de la app va horneado en la imagen
-      # (COPY . . en el Dockerfile), no como volumen, para evitar que
-      # quede desincronizado de lo que realmente se construyó.
+      # Lo que debe persistir entre reinicios del contenedor.
       - ./models:/app/models
       - ./data:/app/data
       - ./configs:/app/configs
+
+      # El código de Python se monta desde el host, de SOLO LECTURA.
+      #
+      # Antes iba únicamente horneado en la imagen (`COPY . .`), con el
+      # argumento de que así no se desincroniza de lo que se construyó. La
+      # experiencia dijo lo contrario: en este equipo reconstruir tarda una
+      # o dos horas —la imagen pesa 42 GB y compite con la cola por CPU— y
+      # `up -d --build` **falla en silencio**. Pasó dos veces el mismo día,
+      # una por el disco lleno y otra por una caída de red: las dos veces el
+      # contenedor siguió corriendo código viejo mientras todo parecía bien.
+      #
+      # Montado, lo que corre ES el checkout del host, y se comprueba con un
+      # `git log`. Desplegar un cambio de Python pasa de dos horas a:
+      #
+      #     git pull && docker compose -f docker-compose.jetson.yml up -d
+      #
+      # El `COPY . .` del Dockerfile se conserva para que la imagen siga
+      # sirviendo por sí sola si alguien la corre sin estos montajes.
+      # El frontend (`web/dist`) SÍ se construye dentro de la imagen, así
+      # que un cambio de interfaz sigue necesitando reconstruir.
+      - ./src:/app/src:ro
+      - ./tools:/app/tools:ro
 
     # Passthrough de cámara USB (descomentar si usas webcam en vez de
     # cámara IP por RTSP — una cámara IP no necesita esto, solo red).
