@@ -72,6 +72,26 @@ def un_rastro_por_vehiculo():
     return len(encima)
 
 
+def la_clase_la_decide_el_rastro_entero():
+    """La clase del vehículo sale del voto de todas sus detecciones, no de la
+    primera.
+
+    Un vehículo que entra al cuadro como una rebanada se detecta un instante
+    como motocicleta; si esa clase se queda fija, se reporta como moto aunque
+    el detector diga automóvil con 0.90 durante cien cuadros. Pasó en la
+    cámara frontal de Cd. Juárez: 113 de 709 cruces de una calzada salieron
+    como motocicleta y eran minivans, sedanes y hasta una pipa.
+    """
+    trk = VehicleTracker(max_age=30, min_hits=1, iou_threshold=0.3)
+    primera = deteccion(300, 300, clase=3, conf=0.55)
+    primera['class_name'] = 'motorcycle'
+    trk.update([primera])
+    for i in range(1, 12):
+        d = deteccion(300 + 6 * i, 300, clase=2, conf=0.9)
+        trk.update([d])
+    return trk.tracks[0].class_name
+
+
 def sin_doble_conteo_en_camara_grande():
     """Dos cajas del mismo vehículo, como las que deja un rastro partido, no
     cuentan dos veces en una cámara donde el vehículo mide 150 px."""
@@ -107,6 +127,12 @@ def main():
         print('MAL  una detección sin pareja creó más de un rastro')
         fallos += 1
 
+    clase = la_clase_la_decide_el_rastro_entero()
+    print(f'Clase tras 11 cuadros de automóvil y 1 de moto: {clase}')
+    if clase != 'car':
+        print('MAL  la clase se quedó con la del primer cuadro')
+        fallos += 1
+
     n = sin_doble_conteo_en_camara_grande()
     print(f'Dos cajas del mismo vehículo a 150 px: {n} conteo(s)')
     if n != 1:
@@ -114,7 +140,7 @@ def main():
         fallos += 1
 
     print()
-    print(f'3 casos, {fallos} fallos')
+    print(f'4 casos, {fallos} fallos')
     return 1 if fallos else 0
 
 

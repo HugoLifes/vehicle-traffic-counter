@@ -51,6 +51,18 @@ class Track:
         self.class_id = class_id
         self.class_name = class_name
         self.confidence = confidence
+
+        # La clase se decide por VOTO de todas las detecciones del rastro,
+        # pesado por confianza, no por la primera.
+        #
+        # Antes quedaba fija en la del primer cuadro y no se tocaba nunca.
+        # Un vehículo que entra al cuadro como una rebanada se detecta un
+        # instante como 'motorcycle', y así se reportaba aunque después el
+        # detector dijera 'car' con 0.90 durante cien cuadros. Medido en la
+        # cámara frontal de Cd. Juárez: 113 de 709 cruces de una calzada
+        # salieron como motocicleta, y al mirarlos eran minivans, sedanes,
+        # un tractocamión y una pipa.
+        self.votos_clase = {class_name: (confidence, class_id)}
         
         # Estado
         self.age = 0  # Frames desde creación
@@ -160,9 +172,15 @@ class Track:
         self,
         bbox: List[float],
         confidence: float,
-        frame_number: int
+        frame_number: int,
+        class_name: str = None,
+        class_id: int = None
     ):
-        """Actualizar track con nueva detección"""
+        """Actualizar track con nueva detección.
+
+        `class_name` entra al voto de clase del rastro; sin él la clase se
+        queda como estaba (así siguen funcionando las llamadas viejas).
+        """
         # Actualizar Kalman Filter
         x1, y1, x2, y2 = bbox
         cx = (x1 + x2) / 2
@@ -176,6 +194,12 @@ class Track:
         # Actualizar información
         self.bbox = bbox
         self.confidence = confidence
+        if class_name is not None:
+            peso, _ = self.votos_clase.get(class_name, (0.0, class_id))
+            self.votos_clase[class_name] = (peso + confidence, class_id)
+            ganadora, (_, id_ganadora) = max(self.votos_clase.items(),
+                                             key=lambda kv: kv[1][0])
+            self.class_name, self.class_id = ganadora, id_ganadora
         self.hits += 1
         self.age += 1
         self.miss_streak = 0
@@ -414,7 +438,9 @@ class VehicleTracker:
             track.update(
                 bbox=detection['bbox'],
                 confidence=detection['confidence'],
-                frame_number=self.frame_count
+                frame_number=self.frame_count,
+                class_name=detection.get('class_name'),
+                class_id=detection.get('class_id')
             )
         
         # 3. Marcar tracks sin match como missed

@@ -33,6 +33,9 @@ def main():
     ap.add_argument('--job', type=int, required=True)
     ap.add_argument('--carril', type=int, required=True, help='id del carril (lane_configs)')
     ap.add_argument('--columnas', type=int, default=3)
+    ap.add_argument('--clase', default=None,
+                    help='solo los cruces de esta clase (car, truck, bus, motorcycle)')
+    ap.add_argument('--maximo', type=int, default=None, help='tope de recortes')
     ap.add_argument('--alto-banda', type=int, default=400,
                     help='píxeles arriba y abajo de la línea que se recortan')
     ap.add_argument('--salida', required=True)
@@ -52,10 +55,15 @@ def main():
     inicio = dt.datetime.fromisoformat(job['video_start_time'])
     fps = job.get('fps') or 20.0
     conn = traffic_db.get_connection()
-    filas = conn.execute(
-        """SELECT timestamp, track_id, direction, vehicle_type, bbox_height, confidence
-           FROM crossings WHERE job_id = ? AND lane_id = ? ORDER BY timestamp""",
-        (a.job, a.carril)).fetchall()
+    consulta = ("""SELECT timestamp, track_id, direction, vehicle_type, bbox_height, confidence
+                   FROM crossings WHERE job_id = ? AND lane_id = ?""")
+    parametros = [a.job, a.carril]
+    if a.clase:
+        consulta += ' AND vehicle_type = ?'
+        parametros.append(a.clase)
+    filas = conn.execute(consulta + ' ORDER BY timestamp', parametros).fetchall()
+    if a.maximo:
+        filas = filas[:a.maximo]
     if not filas:
         sys.exit('Ese video no registró cruces en ese carril')
 
@@ -73,7 +81,7 @@ def main():
         y0 = max(0, int(y_linea - a.alto_banda / 2))
         y1 = min(img.shape[0], int(y_linea + a.alto_banda / 2))
         r = cv2.resize(img[y0:y1, int(x0):int(min(x1, img.shape[1]))], (ancho_r, alto_r))
-        cv2.putText(r, f"{n / fps:.1f}s id{f['track_id']} {f['bbox_height'] or 0}px "
+        cv2.putText(r, f"{n / fps:.1f}s {f['vehicle_type']} {f['bbox_height'] or 0}px "
                        f"{f['confidence'] or 0:.2f}", (5, 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
         y_rel = int((y_linea - y0) / (y1 - y0) * alto_r)
