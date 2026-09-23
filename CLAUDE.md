@@ -845,6 +845,23 @@ caja, contra 1 s y 2 altos del direccional— porque con los del direccional
 **dos vehículos que se siguen a medio segundo se fusionan en uno**; está en
 la regresión `tools/probar_conteo_trayectoria.py`.
 
+### Cuánta exactitud se puede sostener sin conteo manual
+
+`tools/auditar_conteo.py`. Cuatro evidencias independientes, ninguna
+sustituye a un aforo de campo pero juntas acotan el error:
+
+| comprobación | resultado |
+|---|---|
+| Precisión, revisada vehículo por vehículo (`hoja_cruces.py`) | **81 de 81 cruces reales y distintos**, en tres minutos: uno cargado de día, uno normal y uno de noche |
+| Conservación de flujo: cruzar la línea y también 60 px antes y después | **0.96** en 8 minutos repartidos (con el sesgo de las orillas del video dentro; ya se corrigió) |
+| Estabilidad con la línea a otra altura (860 / 900 / 960 / 1020) | 33 / 33 / 32 / 32 y 17 / 17 / 17 / 18 → **±3 %** |
+| Referencia ajena que sí existe: AI City cam_5 | **0.95×**, 9 de 12 movimientos con GEH < 5 |
+
+Lo que ninguna ve es el vehículo que el detector **nunca** vio; para eso hace
+falta el conteo manual. El lazo virtual del barrido sirve solo para tamizar:
+en el minuto más cargado marcó 21 donde hay 32 verificados a ojo, porque
+junta a los que cruzan pegados.
+
 ### Dónde poner la línea, medido
 
 Sobre el minuto más cargado, detectando una sola vez y moviendo solo la
