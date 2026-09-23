@@ -845,6 +845,24 @@ caja, contra 1 s y 2 altos del direccional— porque con los del direccional
 **dos vehículos que se siguen a medio segundo se fusionan en uno**; está en
 la regresión `tools/probar_conteo_trayectoria.py`.
 
+### Dónde poner la línea, medido
+
+Sobre el minuto más cargado, detectando una sola vez y moviendo solo la
+línea (calzada hacia la cámara):
+
+| altura | cruces | alto del vehículo |
+|---|---|---|
+| y = 900 | 33 | 104 px |
+| **y = 960 (la puesta)** | **32** | **128 px** |
+| y = 1020 | 32 | 156 px |
+| y = 1080 | **24** | 182 px |
+
+A y=1080 se pierden 9 vehículos: a esa altura ya salen del cuadro por la
+orilla izquierda antes de cruzar. El cruce de más de y=900 no es un vehículo
+perdido — es una pickup que cruza en el último segundo del minuto, y con la
+línea en 960 la cuenta el video siguiente. En un aforo continuo se cuenta una
+sola vez igual.
+
 ### La noche SÍ se puede contar con esta cámara
 
 Lo que con la cámara vieja era 0.03× del tránsito real. Minuto de las 22:30,
