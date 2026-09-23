@@ -998,6 +998,22 @@ video.
 sigue funcionando (se dibuja un cuadro por segundo). Vale la pena encendido
 para revisar un aforo nuevo; no para un día entero ya calibrado.
 
+**Medido al apagarlo, en el mismo material y la misma máquina:**
+
+| | por minuto de video |
+|---|---|
+| Con video anotado | 163, 163, 165 s |
+| **Sin video anotado** | **97, 98 s** |
+
+**40 % menos**, más de lo estimado (25 %) porque además desaparece la pasada
+de ffmpeg. De 2.7× tiempo real a 1.6×: las 677 horas de video que quedaban
+pasan de ~30 h de proceso a ~18 h.
+
+Un video que ya se contó antes conserva el anotado de **esa** vez, así que al
+recontarlo con la opción apagada **se borra y se limpia la ruta**: dejarlo
+sería ofrecer en la pantalla un video cuyas cajas y totales dibujados son los
+del conteo viejo.
+
 **Al agregarlo aparecieron dos valores que existían y no se leían**, la
 misma trampa de `input_size` de la que ya hay sección: la API aceptaba
 `nms_agnostico` y `conteo_trayectoria` al **crear** un proyecto y nunca los

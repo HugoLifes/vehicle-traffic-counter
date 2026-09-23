@@ -523,9 +523,17 @@ class VideoJobProcessor:
                 # .mkv de prueba decía 9001 y solo había 6059). Al terminar se
                 # corrige con el conteo real, si no la barra de progreso se
                 # queda clavada y parece que el proceso quedó a medias.
+                if not guardar_anotado:
+                    # Un video que ya se conto antes conserva el anotado de
+                    # ESA vez. Dejarlo seria ofrecer en la pantalla un video
+                    # que no corresponde al conteo vigente: las cajas y los
+                    # totales dibujados son los viejos. Se borra y se limpia
+                    # la ruta; es un archivo que la plataforma escribio ella
+                    # misma dentro de data/uploads.
+                    final_path.unlink(missing_ok=True)
                 traffic_db.update_video_job(
                     job_id, total_frames=frame_count,
-                    **({'output_video_path': str(final_path)} if guardar_anotado else {})
+                    output_video_path=(str(final_path) if guardar_anotado else None)
                 )
                 if por_trayectoria:
                     lineas = [{'id': lid, 'puntos': meta['points'],
