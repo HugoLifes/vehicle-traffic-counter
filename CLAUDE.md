@@ -857,6 +857,54 @@ son vehículos de verdad juntos (revisados a ojo). Contra el lazo virtual el
 sistema queda entre 1.03 y 1.06, y el lazo pierde motos y junta vehículos
 pegados, así que esa diferencia es su límite, no necesariamente el nuestro.
 
+### La regla de clase SÍ viaja a la cámara frontal, y ahora hay motos
+
+La duda era legítima: el múltiplo 1.58 que separa liviano de pesado se
+calibró contra el conteo manual **con la cámara de lado**, y de frente la
+silueta del vehículo es otra. Medido con `tools/silueta_clases.py` sobre
+2 675 cruces del proyecto 7:
+
+| | hacia la cámara | alejándose |
+|---|---|---|
+| Automóvil mediano | 126 px | 124 px |
+| Nivel del desglose | **medido** | **medido** |
+| Umbral de la regla (1.58×) | 199 px | 196 px |
+| **Corte natural de los `truck`** (Otsu, sin mirar nuestro umbral) | **213 px** | **211 px** |
+
+**La regla corta a un 7 % del sitio donde los datos se parten solos.** Con
+la cámara vieja la calzada del fondo era `estimado` (automóvil de 15 px) y
+sólo valía la proporción; aquí las dos calzadas suben a `medido` por el
+tamaño, sin tocar ningún umbral — que es justo lo que se esperaba de unos
+umbrales físicos sobre la imagen.
+
+Y los `truck` de COCO se parten en las dos poblaciones que la taxonomía SCT
+necesita: **102 de mediana 150 px** (la troca, que es **A**) contra **78 de
+mediana 306 px** (el camión de verdad), y 101 contra 61 en la otra calzada.
+
+**La moto ahora se puede separar, y con la cámara vieja no se podía.** La
+distingue el **ancho**, no el alto:
+
+| | ancho/alto | ancho |
+|---|---|---|
+| Moto | **0.75–0.79** | 56–72 px |
+| Automóvil | 1.35–1.68 | 173–217 px |
+
+`crossings.bbox_width` se guarda desde el 23-sep-2026. Se captura al contar
+porque **la clasificación se calcula al leer**: la regla se afina después
+sin volver a procesar, pero la medida cruda se toma una sola vez.
+
+**Así se verificó que el arreglo de la clase congelada funciona en
+producción.** Las "motos" de 214 px de media que quedaban en la base
+estaban **todas** en videos aún sin recontar; en lo ya recontado la moto
+mide 75–93 px de alto y 64–90 de ancho. Se comprueba con una consulta que
+cruza `crossings` contra `video_jobs.status`, no con el total.
+
+**Cuidado al mirar las hojas de cruces con esta cámara.** `crossings.timestamp`
+guarda sólo hasta el segundo, así que el recorte puede caer hasta un segundo
+después del cruce; a 2560×1440 el vehículo ya se fue del sitio. Se compensa
+con una banda alta (`--alto-banda`), y la celda ya no se encoge a 390 px
+fijos (`--celda`), que hacía que una moto y un peatón se vieran igual.
+
 ### Contar por instante o por trayectoria: medido, dan lo mismo
 
 `src/engine/conteo_trayectoria.py` cuenta al cerrar el video sobre el
@@ -1696,15 +1744,27 @@ imagen; editar el archivo en el host no cambia lo que corre:
 git pull && docker compose -f docker-compose.jetson.yml up -d --build
 ```
 
-**Cada reconstrucción deja la imagen anterior colgada, y son 18 GB.** El
-disco del Jetson llegó al **100 %** con 53 imágenes (371 GB, 340 de basura) y
-entonces `up -d --build` **falla en silencio**: la salida dice "Building" y
-el contenedor sigue con el código viejo, así que un arreglo parece desplegado
-y no lo está. Después de reconstruir:
+**Cada reconstrucción deja basura, y `docker image prune` no la quita
+toda.** El disco del Jetson llegó al **100 %** y `up -d --build` empezó a
+**fallar en silencio**: la salida dice "Building" y el contenedor sigue con
+el código viejo, así que un arreglo parece desplegado y no lo está.
+
+Lo que llena el disco son **dos** cosas y sólo se ve pidiéndolas por
+separado con `docker system df`:
+
+| | medido el 23-sep-2026 |
+|---|---|
+| Imágenes colgadas (18 GB cada una) | 10 GB |
+| **Caché de construcción** | **134.6 GB** |
+
+`docker image prune -f` reportó **0 B** recuperados con 134 GB de caché
+esperando: no la toca. Las dos, siempre, después de reconstruir:
 
 ```bash
-docker image prune -f && docker builder prune -f
+docker builder prune -f && docker image prune -a -f --filter "until=24h"
 ```
+
+Eso dejó el disco en 27 % (327 GB libres) desde 57 %.
 
 Comandos de operación:
 
