@@ -1028,11 +1028,35 @@ problema: 4 de 5 eran camionetas y SUV etiquetadas `car`, una de ellas una
 pickup clarísima a 0.67 de confianza.
 
 **Separar automóvil de camioneta necesita otro modelo, no otro umbral.** Lo
-que hay hoy es un detector entrenado en COCO, que no tiene la clase. Las dos
-salidas reales son afinar un modelo con recortes de este mismo material —hay
-10 000 cruces con su caja guardada— o un clasificador chico sobre el recorte.
-Antes de intentarlo, medir contra recortes etiquetados a mano en DOS horas
-distintas: el modelo de visión ya dio 36/36 a mediodía y 28/40 a las 07:00.
+que hay hoy es un detector entrenado en COCO, que no tiene la clase. Antes de
+intentarlo, medir contra recortes etiquetados a mano en DOS horas distintas:
+el modelo de visión ya dio 36/36 a mediodía y 28/40 a las 07:00.
+
+**El entrenamiento NO es el cuello de botella, y está medido.** Un
+`mobilenet_v3_small` de dos salidas (auto / camioneta) sobre recortes, en la
+GTX 1650 de la PC de desarrollo:
+
+| lote y tamaño | imágenes/s | pico de memoria | 10 000 recortes × 30 épocas |
+|---|---|---|---|
+| 64 a 128 px | 1 803 | 0.37 GB | **2.8 min** |
+| 32 a 224 px | 678 | 0.53 GB | 7.4 min |
+
+Son **minutos y medio giga**. El Orin Nano es 1.3 veces más lento, así que
+ahí serían 4–10 min y cabe de sobra en los 6 GB del contenedor — pero **no
+mientras la cola cuenta**, por el conflicto de GPU ya documentado.
+
+Consecuencias:
+
+- **No hace falta la nube.** Con esto no hay motivo para subir el video del
+  cliente a un servicio de terceros.
+- **El cuello de botella es ETIQUETAR**, no entrenar. Un clasificador binario
+  sobre el recorte del cruce (moto, autobús y camión ya los resuelve la regla
+  del alto) necesita del orden de 1 000–2 000 ejemplos por clase.
+- Conviene partir de pesos **preentrenados de torchvision** (ImageNet), que
+  además son de licencia libre para uso comercial, a diferencia de
+  Ultralytics, que es AGPL-3.0.
+- El clasificador corre **solo en el instante del cruce**, no en cada cuadro:
+  unas decenas de inferencias por minuto de video contra 1 200 del detector.
 
 **Lo que sí se puede, verificado mirando los recortes (15 de 15):**
 
