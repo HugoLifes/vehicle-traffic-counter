@@ -184,6 +184,7 @@ se podía contestar de otro modo:
 | `comparar_aforo_real.py` | Contrastar contra el aforo real de campo (conteo manual o tubo) |
 | `validar_clasificacion.py` | Validar la clasificación vehicular contra el conteo manual |
 | `hoja_clases.py` | Ver los vehículos recortados con lo que el sistema dice de cada uno |
+| `silueta_clases.py` | Si la regla de liviano/pesado tiene sentido en una cámara nueva, antes de entregar |
 | `exportar_comparacion.py` | Sacar a JSON todo lo que el reporte necesita, acotable por calzada |
 | `reporte_calibracion_pdf.py` | Reporte de calibración en PDF para presentar a la empresa |
 | `mover_proyecto.py` | Llevar un proyecto calibrado de una máquina a otra |
@@ -390,6 +391,32 @@ La regla solo falla en dos casos frontera, una SUV de 53 px y una pickup de
 del mediodía llevaba a construir sobre arena; solo probarlo en otra hora lo
 descubrió. Cualquier prueba de este proyecto que se haga sobre una sola
 franja horaria hay que repetirla en otra antes de creerla.
+
+#### El umbral se calibró con la cámara de lado, y eso no viaja solo
+
+El múltiplo 1.58 se midió contra el conteo manual **con la cámara lateral**.
+Viaja bien entre calzadas de esa cámara —está medido— pero nadie había
+comprobado que viaje entre **cámaras**, y de frente la silueta es otra: de
+lado un camión se ve larguísimo, de frente se ve alto y ancho.
+
+`tools/silueta_clases.py` enseña lo que hay antes de entregar un desglose:
+alto y ancho de cada clase de COCO **en la línea**, el umbral que la regla
+va a aplicar, y de qué lado cae cada vehículo. Contesta tres preguntas:
+
+- **¿El umbral lo alcanza alguien?** Si ningún `truck` lo pasa, o no hubo
+  pesados en la muestra o el múltiplo no aplica a esa cámara.
+- **¿Los `truck` salen en dos grupos?** El corte natural se busca con Otsu,
+  que no mira ningún umbral nuestro, así que sirve de segunda opinión.
+- **¿Las motos tienen silueta de moto?** Una moto es **angosta**. Una "moto"
+  tan ancha como un automóvil es un automóvil mal etiquetado.
+
+**Dos grupos pueden ser dos tipos o dos distancias, y confundirlos manda a
+arreglar lo que no es.** Lo que los separa es el automóvil: un automóvil
+siempre mide lo mismo, así que si el automóvil **también** sale en dos
+grupos, lo que hay es una línea recogiendo dos calzadas. Probado contra el
+proyecto 11, la calibración vieja: la herramienta avisa de la fuga de
+`Carril 2` —207 cajas de mediana 76 px entre 783 de 17 px— **sin que nadie
+le dijera que esa fuga existía.**
 
 #### Verificado mirando los vehículos, no solo los totales
 
