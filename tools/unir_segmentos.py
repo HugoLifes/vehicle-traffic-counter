@@ -103,14 +103,31 @@ def duracion(ruta):
     return (n / fps) if fps > 0 and n > 0 else None
 
 
-def hora_de(nombre):
-    m = PATRON_HORA.search(os.path.basename(nombre))
-    if not m:
-        return None
-    h, mi, s = (int(x) for x in m.groups())
-    if h > 23 or mi > 59 or s > 59:
-        return None
-    return dt.timedelta(hours=h, minutes=mi, seconds=s)
+def hora_de(ruta):
+    """Hora de inicio del segmento, sacada de la RUTA.
+
+    Dos formas, las dos reales en este material:
+      · `12-38-00.mp4`  — hora completa en el nombre;
+      · `.../12/38.mp4` — la carpeta es la hora y el archivo el minuto, que
+        es como entrega esta camara.
+
+    Nunca de la leyenda impresa en la imagen: en este material el OSD se
+    atraso cerca de un mes a partir de las 12:25 y los videos siguen
+    completos.
+    """
+    base = os.path.basename(ruta)
+    m = PATRON_HORA.search(base)
+    if m:
+        h, mi, s = (int(x) for x in m.groups())
+        if h <= 23 and mi <= 59 and s <= 59:
+            return dt.timedelta(hours=h, minutes=mi, seconds=s)
+    minuto = os.path.splitext(base)[0]
+    carpeta = os.path.basename(os.path.dirname(os.path.abspath(ruta)))
+    if minuto.isdigit() and carpeta.isdigit():
+        h, mi = int(carpeta), int(minuto)
+        if h <= 23 and mi <= 59:
+            return dt.timedelta(hours=h, minutes=mi)
+    return None
 
 
 def segmentos(entrada, recursivo):
@@ -132,7 +149,7 @@ def segmentos(entrada, recursivo):
 
 def tramos(lista, minutos, verbose=True):
     """Parte la lista en rachas de minutos consecutivos y de buena duracion."""
-    salida, actual, fin_esperado = [], [], None
+    salida, actual = [], []
     for hora, ruta in lista:
         d = duracion(ruta)
         if d is None:
@@ -140,27 +157,48 @@ def tramos(lista, minutos, verbose=True):
                 print(f"  {os.path.basename(ruta)}: no abre, corta el tramo")
             if actual:
                 salida.append(actual)
-            actual, fin_esperado = [], None
+            actual = []
             continue
-        hueco = (fin_esperado is not None
-                 and abs((hora - fin_esperado).total_seconds()) > TOLERANCIA_S)
+        # El desfase se mide contra el PRINCIPIO del tramo, no contra el
+        # segmento anterior. Los segmentos de esta camara no duran 60 s
+        # exactos, y comparando de a dos cada uno cabe dentro de la
+        # tolerancia mientras la suma se va de varios segundos: dentro del
+        # tramo pegado, la hora de un cruce sale del inicio del tramo mas su
+        # cuadro, asi que lo que hay que acotar es la deriva ACUMULADA.
+        desfase = 0.0
+        if actual:
+            acumulado = sum(x[2] for x in actual)
+            desfase = (hora - actual[0][0]).total_seconds() - acumulado
+        hueco = bool(actual) and abs(desfase) > TOLERANCIA_S
         lleno = bool(actual) and sum(x[2] for x in actual) >= minutos * 60
         if hueco and verbose:
-            print(f"  hueco de {(hora - fin_esperado).total_seconds():.0f} s "
-                  f"antes de {os.path.basename(ruta)}: corta el tramo")
+            print(f"  desfase de {desfase:.0f} s acumulados antes de "
+                  f"{os.path.basename(ruta)}: corta el tramo")
         if actual and (hueco or lleno):
             salida.append(actual)
             actual = []
         actual.append((hora, ruta, d))
-        fin_esperado = hora + dt.timedelta(seconds=d)
     if actual:
         salida.append(actual)
     return salida
 
 
+def nombre_de_salida(hora, ruta_origen):
+    """`12-27-00.mp4`, con la hora SIEMPRE en el nombre.
+
+    No se hereda el nombre del primer segmento: cuando la camara entrega
+    `12/27.mp4`, la hora vive en la carpeta, y al sacar el tramo a otra
+    carpeta se perderia. La plataforma saca la hora del nombre, asi que un
+    tramo llamado `27.mp4` se contaria a la hora equivocada.
+    """
+    s = int(hora.total_seconds())
+    ext = os.path.splitext(ruta_origen)[1] or ".mp4"
+    return f"{s // 3600:02d}-{s % 3600 // 60:02d}-{s % 60:02d}{ext}"
+
+
 def unir(tramo, carpeta_salida):
-    primero = tramo[0][1]
-    destino = os.path.join(carpeta_salida, os.path.basename(primero))
+    hora, primero, _ = tramo[0]
+    destino = os.path.join(carpeta_salida, nombre_de_salida(hora, primero))
     esperado = sum(x[2] for x in tramo)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
                                      encoding="utf-8") as lista:
@@ -208,7 +246,7 @@ def main():
     print(f"{len(grupos)} tramos")
     if a.simular:
         for g in grupos:
-            print(f"  {os.path.basename(g[0][1])}  {len(g)} partes  "
+            print(f"  {nombre_de_salida(g[0][0], g[0][1])}  {len(g)} partes  "
                   f"{sum(x[2] for x in g) / 60:.1f} min")
         cortes_antes, cortes_despues = len(lista), len(grupos)
         print(f"\ncortes de archivo: {cortes_antes} -> {cortes_despues} "
@@ -220,7 +258,7 @@ def main():
     for g in grupos:
         destino, error = unir(g, a.salida)
         if error:
-            print(f"  {os.path.basename(g[0][1])}: {error}")
+            print(f"  {nombre_de_salida(g[0][0], g[0][1])}: {error}")
             fallos += 1
         else:
             print(f"  {os.path.basename(destino)}  {len(g)} partes  "
