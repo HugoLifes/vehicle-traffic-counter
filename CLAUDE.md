@@ -206,6 +206,7 @@ se podía contestar de otro modo:
 | `barrido_linea.py` | Referencia sin detector: apila la franja de la línea cuadro a cuadro y marca encima los cruces contados |
 | `hoja_cruces.py` | El cuadro exacto de cada cruce contado, para cazar dobles conteos uno por uno |
 | `probar_rastreador.py` | Regresión sin GPU de los tres defectos que causaron conteos dobles o partidos |
+| `unir_segmentos.py` | Pegar los segmentos de un minuto en tramos, comprobando que no se corran las horas |
 
 ---
 
@@ -947,6 +948,63 @@ Lo que ninguna ve es el vehículo que el detector **nunca** vio; para eso hace
 falta el conteo manual. El lazo virtual del barrido sirve solo para tamizar:
 en el minuto más cargado marcó 21 donde hay 32 verificados a ojo, porque
 junta a los que cruzan pegados.
+
+### Cada archivo que empieza cuesta ~1 % del conteo
+
+Medido sobre 52 videos ya contados del aforo frontal, contando los cruces
+por segundo **dentro** de cada archivo:
+
+| | cruces respecto a lo normal |
+|---|---|
+| segundo 0 del archivo | **48 %** |
+| segundo 1 | **76 %** |
+| segundo 2 en adelante | normal |
+| segundos 58 y 59 | 112 % |
+
+El vehículo que va cruzando la línea justo cuando **empieza** el archivo no
+se cuenta: el rastreador necesita ver la caja unos cuadros antes de la línea
+para registrar el cruce, y al arrancar el archivo ese pasado no existe. El
+repunte del final es el mismo vehículo, contado por el archivo siguiente,
+pero no alcanza a compensar: el neto es **alrededor del 1 % hacia abajo**.
+
+Con 730 archivos de un minuto ese 1 % se paga 730 veces. `unir_segmentos.py`
+los pega en tramos de 10 minutos y lo baja a una décima parte.
+
+**Lo que unir los segmentos NO arregla, también medido:**
+
+- **No acelera.** La cola no tiene un segundo muerto entre videos: el
+  `finished_at` de uno es el `started_at` del siguiente. No hay costo fijo
+  por archivo que ahorrar; el trabajo es por cuadro (159–165 s por minuto
+  de video, o sea 2.7× tiempo real).
+- **No ahorra disco.** Los mismos bytes en menos archivos.
+
+**El riesgo de pegarlos es que se corran las horas, y es serio.** La hora de
+cada cruce sale de la hora de inicio del archivo más el número de cuadro. Si
+falta un minuto en medio, todo lo que sigue queda corrido **sin un solo
+error en el log**. En este material ya hay un archivo cortado (el de las
+12:25). Por eso la herramienta solo pega minutos consecutivos, exige que
+cada parte dure lo que dice, y **comprueba la duración del tramo contra la
+suma de sus partes**, descartándolo si no cuadra. Nunca borra los originales.
+
+### El video anotado cuesta 25 % del tiempo y más disco que el original
+
+Medido en el aforo frontal: el anotado ocupa **31.3 MB por minuto** contra
+los 16 MB del archivo de la cámara, así que con 730 videos son **23 GB** —
+más que el material original. Y cuesta 22 ms de dibujo + 15 de escritura de
+los ~150 ms por cuadro, **más una pasada entera de ffmpeg** al terminar cada
+video.
+
+`projects.video_anotado` lo apaga por proyecto. Apagado, el visor en vivo
+sigue funcionando (se dibuja un cuadro por segundo). Vale la pena encendido
+para revisar un aforo nuevo; no para un día entero ya calibrado.
+
+**Al agregarlo aparecieron dos valores que existían y no se leían**, la
+misma trampa de `input_size` de la que ya hay sección: la API aceptaba
+`nms_agnostico` y `conteo_trayectoria` al **crear** un proyecto y nunca los
+pasaba a la base, y `update_project` los filtraba de los campos permitidos.
+O sea que no había forma de encenderlos desde la plataforma, ni al crear ni
+después. Al agregar una bandera nueva, **seguirla hasta la base y hasta el
+procesador.**
 
 ### Dónde poner la línea, medido
 
