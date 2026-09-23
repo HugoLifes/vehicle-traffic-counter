@@ -1003,9 +1003,36 @@ vehículo como múltiplo del automóvil mediano de su calzada:
 **Entre automóvil y troca NO hay valle, y por eso no se separan.** La clase
 `car` de COCO ya trae SUV, crossovers y minivans, que miden lo mismo que una
 pickup: los automóviles se extienden de 0.80 a 1.40 sin ningún hueco donde
-poner un umbral. Es un límite de la taxonomía de COCO, no de la cámara, y
-poner ahí un corte sería inventar una cifra. En la clasificación SCT la
-pickup es **A** de todos modos, así que el entregable no lo necesita.
+poner un umbral. En la clasificación SCT la pickup es **A** de todos modos,
+así que el entregable no lo necesita.
+
+**Y la etiqueta `truck` de COCO tampoco sirve para contarlas, aunque acierte
+cuando la da.** Mirando los recortes, `truck` bajo el umbral de pesado salió
+**8 de 8** camioneta de verdad (cinco pickups, un Bronco, una Ranger, una
+Traverse): tiene buena precisión. Lo que no tiene es cobertura, y se mide en
+una sola línea:
+
+| calzada | qué se ve del vehículo | COCO dice `truck` |
+|---|---|---|
+| Hacia la cámara | el frente | **1.2 %** (55 de 4 465) |
+| Alejándose | la parte de atrás | **7.6 %** (367 de 4 856) |
+
+Misma vía, mismo día, los mismos vehículos yendo y volviendo: **seis veces
+más "trocas" en un sentido que en el otro.** Por detrás se le ve la caja a
+la pickup y YOLO dice `truck`; de frente parece un automóvil grande y dice
+`car`. **La etiqueta mide el ángulo, no el vehículo**, así que contar
+camionetas con ella daría un número que cambia con la dirección.
+
+En la hoja de los `car` altos (145–175 px) se ve el otro lado del mismo
+problema: 4 de 5 eran camionetas y SUV etiquetadas `car`, una de ellas una
+pickup clarísima a 0.67 de confianza.
+
+**Separar automóvil de camioneta necesita otro modelo, no otro umbral.** Lo
+que hay hoy es un detector entrenado en COCO, que no tiene la clase. Las dos
+salidas reales son afinar un modelo con recortes de este mismo material —hay
+10 000 cruces con su caja guardada— o un clasificador chico sobre el recorte.
+Antes de intentarlo, medir contra recortes etiquetados a mano en DOS horas
+distintas: el modelo de visión ya dio 36/36 a mediodía y 28/40 a las 07:00.
 
 **Lo que sí se puede, verificado mirando los recortes (15 de 15):**
 
