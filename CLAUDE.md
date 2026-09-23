@@ -208,6 +208,9 @@ se podía contestar de otro modo:
 | `probar_rastreador.py` | Regresión sin GPU de los tres defectos que causaron conteos dobles o partidos |
 | `unir_segmentos.py` | Pegar los segmentos de un minuto en tramos, comprobando que no se corran las horas |
 | `probar_clasificacion.py` | Regresión sin GPU de las clases, con los vehículos reales ya verificados a ojo |
+| `silueta_clases.py` | Si la regla de liviano/pesado tiene sentido en una cámara nueva |
+| `exportar_recortes.py` | Sacar el recorte de cada vehículo contado, repartido por hora, para etiquetar |
+| `entrenar_clasificador.py` | Entrenar auto contra camioneta sobre esos recortes, con su prueba de humo |
 
 ---
 
@@ -1171,6 +1174,34 @@ por cuadro, o sea **~2.5 min por cada minuto de video** y unas 30 h para las
   detecciones grandes (83 de 83 por encima de 100 px), pero pierde las del
   fondo (4.56 contra 5.30 vehículos por cuadro). **No se cambió**: ahorra
   12 % del total y toca un parámetro validado.
+
+---
+
+## Estado de la beta (23-sep-2026)
+
+Lo que está corriendo y verificado en el Jetson, proyecto **7**
+("Cd. Juárez — frontal 19-sep-2026"):
+
+| | |
+|---|---|
+| Videos | 730 de un minuto, 11:00–23:59 |
+| Contados | ~390 al momento de escribir, el resto en cola |
+| Ritmo | **112 s por minuto de video** (1.9× tiempo real) |
+| Clasificación | **MOTO / A / B / C**, las dos calzadas en nivel `medido` |
+| Composición | A 92.1 %, C 3.7 %, MOTO 2.3 %, B 1.9 % |
+| Regresiones | 30 + 9 + 9 + 4 casos, **0 fallos**, corriendo dentro del contenedor |
+
+**Lo que NO se puede declarar todavía:** una razón contra el aforo real. De
+este video no hay conteo manual de campo, así que lo verificable es que no
+sobrecuenta (cruces revisados uno por uno) y que la clasificación acierta
+(15 de 15 a ojo). **Para dar una razón hace falta que la empresa cuente a
+mano unos cuartos de hora de este mismo video.**
+
+Pendiente inmediato, con las herramientas ya listas: etiquetar recortes y
+entrenar el clasificador de automóvil contra camioneta. El exportador ya
+deja recortes utilizables —se ven perfectamente— y de los primeros 12, todos
+marcados `car` por COCO, **al menos 4 son camionetas**, que es exactamente
+el problema que el clasificador viene a resolver.
 
 ---
 
