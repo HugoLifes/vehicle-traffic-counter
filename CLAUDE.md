@@ -212,6 +212,7 @@ se podía contestar de otro modo:
 | `exportar_recortes.py` | Sacar el recorte de cada vehículo contado, repartido por hora, para etiquetar |
 | `entrenar_clasificador.py` | Entrenar auto contra camioneta sobre esos recortes, con su prueba de humo |
 | `probar_comparacion.py` | Probar `comparar_aforo_real.py` de punta a punta con un conteo fabricado con errores conocidos |
+| `revisar_reloj.py` | Cuál reloj del video dice la hora real —archivo o leyenda—, comprobado contra la puesta de sol |
 
 ---
 
@@ -804,10 +805,42 @@ Lo que cambia respecto al material viejo:
 | Confianza en el cruce | 0.55 / 0.86 | **0.85** |
 | De noche | estelas, 0.03× del real | **se ven los vehículos** (20:00–23:59) |
 
-**Cuidado con la hora: la leyenda de la cámara miente.** Desde las 12:25 la
-fecha y hora impresas en la imagen se atrasaron cerca de un mes. Los videos
-están completos, así que la hora de cada uno sale de **la carpeta y el
-nombre del archivo**, nunca del OSD.
+**Cuidado con la hora: la leyenda de la cámara miente, y ya se sabe cuánto.**
+Leída al principio y al final de un video por hora (`revisar_reloj.py
+--hoja-leyenda`):
+
+| archivo | leyenda en la imagen |
+|---|---|
+| 11:48 … 12:24 | **igual al archivo, al segundo** (`2026-09-19 12:24:00`) |
+| 12:26 | `2026-08-28 17:21:00` |
+| 13:00 | `2026-08-28 17:55:01` |
+| 19:00 | `2026-08-28 23:55:00` |
+| 23:59 | `2026-08-29 04:54:00` |
+
+A las 12:25 la leyenda **saltó 22 días atrás y 4 h 55 min adelante** y
+mantuvo ese desfase; los nombres de archivo siguieron corriendo sin brincos.
+Lo más probable es que la cámara se reiniciara en ese minuto: el archivo de
+las 12:25 es justo el que llegó cortado, sin índice.
+
+**Cuál de los dos es la hora real lo dice el sol**, el único reloj del video
+que no depende de la grabadora. Con la hora del archivo el sol toca el
+horizonte a las 18:55, se mete antes de las 19:10 y el alumbrado prende a las
+19:25; la NOAA da puesta de sol a las **19:08** y fin del crepúsculo civil a
+las **19:32** (verificado contra api.sunrise-sunset.org: 19:07:35 y
+19:30:41). Con la hora de la leyenda el atardecer habría sido a las 23:50.
+**El nombre del archivo es la hora real**; la leyenda, desde las 12:25, no.
+
+Una suposición que resultó falsa en el camino: que la cámara pasaría a
+blanco y negro de noche y eso marcaría el ocaso. No pasa: el alumbrado es
+anaranjado y la saturación se queda en 75–120. El ocaso se reconoce mirando
+los cuadros (`data/nuevos/ocaso.jpg`), no con un umbral.
+
+**Consecuencia para el conteo manual:** si la empresa cuenta leyendo la
+pantalla, sus horas desde las 12:25 van corridas 4 h 55 min y su fecha dice
+28 de agosto. `comparar_aforo_real.py` se niega solo (la fecha no cuadra), y
+con `--desfase-referencia -295` corre la referencia a la hora real. Como
+4 h 55 no es múltiplo de 15, sus cuartos de hora caen en 13:05–13:20: los
+nuestros se arman por minuto sobre los que traiga el conteo.
 
 Otras cosas que aparecieron al cargarlo, y que conviene mirar en cualquier
 entrega nueva:
@@ -1207,6 +1240,9 @@ llegue el conteo, y tenía cuatro fallos que habrían estropeado ese día:
   cuartos de hora salían de la comparación sin avisar. Ahora redondea.
 - Solo leía sentidos `OTE-PTE`/`PTE-OTE`. Ahora cualquier par de rumbos, o
   el nombre de la hoja.
+- **Una fila en blanco se leía como cero vehículos.** Con un conteo de tres
+  franjas, trece horas nuestras se comparaban contra ceros. Ahora una fila
+  sin ningún número es un cuarto que nadie contó.
 - Con dos conteos en la misma carpeta el segundo **pisaba** al primero. Ahora
   lee la fecha del título de la hoja y **se niega a comparar días distintos**.
   El conteo del frontal va en su propia carpeta:
@@ -1222,15 +1258,17 @@ Este solo se declara si **los dos sentidos piden el mismo desfase**: el reloj
 es uno, y probar 21 desfases le gana al cero por puro azar — la primera
 versión avisó "2 min adelantado" sobre el aforo viejo, que no tenía nada.
 
-`tools/probar_comparacion.py --proyecto 7` fabrica un conteo con el formato
-de la empresa y errores conocidos (reloj 3 min, 0.93× y 0.98×, sin motos,
-sentidos `NTE-SUR`) y comprueba que la herramienta los recupera: **8 de 8**.
+`tools/probar_comparacion.py --proyecto 7` fabrica conteos con el formato de
+la empresa y errores conocidos, en cuatro escenarios —día completo con el
+reloj corrido 3 min, solo tres franjas con el resto en blanco, contado con la
+hora de la pantalla, y el conteo de otro día— y comprueba que la herramienta
+recupera cada uno: **16 de 16**.
 
 **Qué pedirle a la empresa junto con el conteo:**
 
-1. **La hora de la carpeta y el archivo, NO la de la pantalla.** Si cuentan
-   viendo el video, la leyenda miente desde las 12:25 (se atrasó casi un
-   mes) y sus cuartos de hora quedarían corridos respecto a los nuestros.
+1. **Con qué hora contaron.** La buena es la del archivo (comprobado contra
+   el sol). Si usaron la de la pantalla, no hay que repetir nada: se compara
+   con `--desfase-referencia -295`.
 2. **Dónde van las motos**: dentro de A, aparte, o no se cuentan.
 3. **Tres franjas como mínimo, no una**: una normal, la pico y una de noche.
    Una sola condición no valida nada, y la noche es justo lo que la cámara
