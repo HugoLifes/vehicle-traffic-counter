@@ -1244,7 +1244,8 @@ mano unos cuartos de hora de este mismo video.**
 ### Calibrado contra el contador de ejes del mismo día
 
 La empresa mandó el **contador de ejes** (RoadRunner3) del 19 al 24 de
-septiembre, no un conteo manual: `referencias/aforo_frontal/`, clasificatorio
+septiembre, no un conteo manual (comprobado: cuatro archivos de una sola
+hoja, todos del aparato): `referencias/aforo_frontal/`, clasificatorio
 y volumen por sentido. Lo lee `tools/contador_ejes.py` (ver su encabezado: un
 archivo trae la clasificación y las velocidades de dos carriles, y las
 columnas no caen bajo sus encabezados). El aparato cuadra consigo mismo el
@@ -1331,6 +1332,50 @@ proyecto 7 (fila 820, ~17 m) y **recontar** —la velocidad se guarda por
 cruce al contar—, unas 20 h de Jetson. El mismo recuento dejaría la posición
 de la caja en los cruces de antes de las 18:20. Y la distancia medida en el
 pavimento para confirmar los 17 m sin depender del tubo.
+
+**Ajustar el recorrido completo NO mejoró**, y está medido. Es lo que hacen
+Roboflow/supervision y los métodos de BrnoCompSpeed: la distancia real de
+cada punto del piso (Z = K / (y − horizonte), piso plano) ajustada sobre
+todos los cuadros del tramo, en vez de dos instantes. Mismas horas de
+calibración y de prueba: p85 a 3.4 km/h alejándose (contra 1.9 de las dos
+líneas) y 3.4–4.8 hacia la cámara (contra 4.3). Se queda el de dos líneas.
+De paso, el ancho de los autos que se alejan da el horizonte en la fila 650
+(en la imagen se ve hacia la 660) y, con 1.8 m de ancho típico, **la cámara a
+3.2 m de altura**. Hacia la cámara esa regla no sirve: se ven de lado y en
+la orilla, donde el lente deforma.
+
+**Este tramo no tiene marcas pintadas**, así que la calibración que usan
+esos proyectos —medidas reales del sitio, no otro aparato— necesita la
+ubicación exacta de la cámara (para medir en la foto satelital) o una
+distancia medida en campo. Mientras, la distancia sale del tubo.
+
+### Cómo procesar más rápido sin perder vehículos (24-sep-2026)
+
+Medido en el Jetson sobre los 4 minutos ya revisados a ojo (11:55, 16:10,
+18:10, 22:30; 158 vehículos), con la misma detección para todas las
+variantes y sin escribir en la base. La variante de producción reprodujo lo
+guardado exacto (158 de 158):
+
+| variante | vehículos | tiempo |
+|---|---|---|
+| todos los cuadros, `input_size` 1280 (producción) | 158 | 46 ms detectar |
+| **uno de cada dos cuadros** | **127 (−20 %; −40 % alejándose)** | la mitad |
+| todos, `input_size` 960 | 158 | 32 ms |
+| todos, `input_size` 640 | 156 (−1.3 %) | 26 ms |
+
+**Saltar cuadros queda descartado**: la caja se mueve demasiado entre
+cuadros y el rastro se parte, y el olvido en segundos en vez de en cuadros
+no lo arregla. **960 da lo mismo con esta cámara** (el vehículo mide 115–150
+px en la línea) y ahorra ~15 % del tiempo total; con la cámara vieja (14 px)
+no aplica, así que tendría que ser por proyecto. Leer el video cuesta
+**23 ms por cuadro** (decodificar 2560×1440 en el CPU): el decodificador de
+hardware del Orin es la otra palanca, sin probar.
+
+**Pegar los 730 minutos en pocos videos no aligera al Jetson**: el trabajo
+es por cuadro, no hay costo por archivo. Lo que sí da es recuperar el
+0.3–0.5 % que se pierde al arrancar cada archivo y una cola más manejable, a
+cambio de que un fallo a media hora cueste rehacer el video entero.
+`unir_segmentos.py --minutos N` lo hace con los candados de la hora.
 
 ### El Excel, revisado como lo recibiría la empresa (24-sep-2026)
 
@@ -1433,10 +1478,9 @@ modelos de texto.
 
 **El tractor sin caja es un 20 % de los pesados** en la calzada que se aleja
 (tractores de patio que mueven cajas entre maquiladoras; se repiten las
-mismas unidades). Va a **C**, como lo registra el contador de ejes (3A-SU),
-pero el formato A, B, C, T-S, T-S-R no dice dónde lo pone la empresa:
-**preguntarlo.** Si lo cuentan como T-S, basta cambiar `A_SCT` y volver a
-aplicar.
+mismas unidades). **La empresa lo cuenta como clase propia, `TRACTOR`**
+(decidido el 24-sep-2026), igual que la moto: el formato A, B, C, T-S, T-S-R
+no tiene columna para ninguno de los dos. En el proyecto 7: 63 y 26.
 
 Recontar un video borra sus cruces y con ellos la revisión; hay que volver a
 recortar, etiquetar y aplicar.
@@ -1522,8 +1566,7 @@ recupera cada uno: **16 de 16**.
 5. Para velocidad (hoy el proyecto 7 no tiene tramo): la **distancia medida
    en el pavimento** entre dos marcas que crucen la calzada.
 6. El minuto de las 12:25, que llegó cortado, y los videos de la mañana.
-7. **En qué columna cuentan el tractor sin caja** (C o T-S). En este tramo
-   es un 20 % de los pesados de un sentido.
+7. Resuelto: el tractor sin caja y la moto van como clases propias.
 
 Pendiente después, con las herramientas ya listas: etiquetar recortes y
 entrenar el clasificador de automóvil contra camioneta. El exportador ya
