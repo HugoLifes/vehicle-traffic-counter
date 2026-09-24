@@ -45,58 +45,6 @@ REFERENCIAS = RAIZ / "referencias" / "aforo_real"
 BD = RAIZ / "data" / "traffic.db"
 
 
-def leer_contador(ruta: Path) -> tuple[str, str, dict[int, float]]:
-    """Devuelve (sentido, fecha, {minuto_del_dia: vehiculos}) de un reporte.
-
-    Dos detalles del formato que costaron descubrir:
-
-    1. La columna del total se RECORRE entre bloques de pagina (c23 en el
-       primero, c22 en los siguientes). Se toma la ultima celda numerica de
-       la fila, que el propio archivo garantiza que es la suma de las clases.
-    2. Despues de los datos viene un resumen que repite los totales; hay que
-       cortar ahi o todo se cuenta dos veces.
-    """
-    import xlrd  # solo aqui: el .xls viejo no lo lee openpyxl
-
-    hoja = xlrd.open_workbook(str(ruta)).sheet_by_index(0)
-
-    def texto(fila: int) -> str:
-        return " ".join(str(hoja.cell_value(fila, c)) for c in range(hoja.ncols))
-
-    sentido, fecha, corte = ruta.stem, "", hoja.nrows
-    for r in range(hoja.nrows):
-        linea = texto(r)
-        if "Info Line 1" in linea:
-            partes = [
-                str(hoja.cell_value(r, c)).strip()
-                for c in range(hoja.ncols)
-                if str(hoja.cell_value(r, c)).strip()
-            ]
-            if len(partes) > 1:
-                sentido = partes[1]
-        if not fecha and "Data From:" in linea:
-            fecha = linea.split("From:")[1].split("-", 1)[1].strip()[:10]
-        if "Axle Data Summary" in linea:
-            corte = r
-            break
-
-    por_minuto: dict[int, float] = {}
-    for r in range(20, corte):
-        fila = [hoja.cell_value(r, c) for c in range(hoja.ncols)]
-        hora = fila[2]
-        if not (isinstance(hora, float) and 0.0 <= hora < 1.0):
-            continue
-        minuto = round(hora * 24 * 60)
-        if minuto % 15:
-            continue
-        numeros = [v for c, v in enumerate(fila) if c > 2 and isinstance(v, float)]
-        if numeros:
-            # Asignar y no acumular: las paginas no se solapan, pero el
-            # resumen si repetiria los valores si no se hubiera cortado.
-            por_minuto[minuto] = numeros[-1]
-    return sentido, fecha, por_minuto
-
-
 # Sentidos como los escribe la empresa. El primer formato solo traia
 # OTE-PTE y PTE-OTE, y el lector los tenia fijos: un aforo de una calle
 # norte-sur, o escrito "NORTE-SUR", no se leia y la herramienta decia que no
@@ -204,7 +152,7 @@ def _minuto_de_rango(etiqueta) -> int | None:
     return h * 60 + mi
 
 
-def cargar_referencia(carpeta: Path, fuente: str = "auto"):
+def cargar_referencia(carpeta: Path, fuente: str = "auto", fecha: str | None = None):
     """El conteo manual manda sobre el contador de ejes cuando ambos existen.
 
     Contrastados entre si sobre este mismo tramo y dia, el tubo perdio el
@@ -212,8 +160,9 @@ def cargar_referencia(carpeta: Path, fuente: str = "auto"):
     mientras acertaba en el otro (0.95x). Una persona contando es la
     referencia; el tubo es un instrumento que puede fallar y aqui fallo.
 
-    Devuelve (totales, clases, fecha). `clases` es None con el tubo, que no
-    las da en la taxonomia de la empresa; `fecha` es None si no se pudo leer.
+    Devuelve (totales, clases, fecha). `clases` va en la taxonomia de la
+    empresa (el tubo se traduce de sus clases por ejes); `fecha` es None si
+    no se pudo leer. `fecha` escoge el dia cuando el reporte trae varios.
     """
     manuales = sorted(carpeta.glob("*.xlsx"))
     tubos = sorted(carpeta.glob("*.xls"))
@@ -252,13 +201,64 @@ def cargar_referencia(carpeta: Path, fuente: str = "auto"):
 
     if not tubos:
         sys.exit(f"No hay reportes de referencia en {carpeta}")
-    real = {}
+    return cargar_tubos(tubos, fecha)
+
+
+def cargar_tubos(tubos, fecha):
+    """Contador de ejes: (totales, clases SCT, fecha) del dia `fecha`.
+
+    Lo lee `contador_ejes.py`, que separa las secciones del reporte (un
+    archivo trae la clasificacion y las velocidades de DOS carriles) y los
+    dias (el del frontal trae cinco). Se usa el carril 1: el 2 es un canal
+    sin mangueras, casi en cero, que no correlaciona con el transito.
+
+    Cuando del mismo sentido llegan el clasificatorio y el de volumen, manda
+    el clasificatorio (trae las clases) y el de volumen se usa para
+    comprobar que el aparato cuadra consigo mismo.
+    """
+    sys.path.insert(0, str(RAIZ / "tools"))
+    import contador_ejes as ce
+
+    porsentido: dict[str, dict] = {}
     for ruta in tubos:
-        sentido, fecha, datos = leer_contador(ruta)
-        print(f"  {ruta.name} [contador de ejes]: sentido {sentido}, {fecha}, "
-              f"{len(datos)}/96 cuartos de hora, {int(sum(datos.values()))} vehiculos")
-        real[sentido] = datos
-    return real, None, None
+        meta, secciones, _ = ce.leer_todo(str(ruta))
+        sentido = meta.get("sentido", ruta.stem.lower())
+        tipo = meta.get("tipo", "clasificatorio")
+        datos = secciones.get((tipo, 1), {})
+        dias = sorted(datos)
+        dia = fecha if fecha in datos else (dias[0] if len(dias) == 1 else None)
+        if dia is None:
+            sys.exit(f"{ruta.name} trae {len(dias)} dias ({', '.join(dias)}) y ninguno "
+                     f"es el del video ({fecha}).")
+        porsentido.setdefault(sentido, {})[tipo] = (ruta.name, meta, datos[dia])
+
+    real, clases = {}, {}
+    for sentido, tipos in sorted(porsentido.items()):
+        if "clasificatorio" in tipos:
+            nombre, meta, d = tipos["clasificatorio"]
+            clases[sentido] = {m: _clases_sct(v, ce.SCT) for m, v in d.items()}
+            real[sentido] = {m: sum(v.values()) for m, v in d.items()}
+        else:
+            nombre, meta, d = tipos["volumen"]
+            real[sentido] = dict(d)
+        print(f"  {nombre} [contador de ejes, serie {meta.get('serie', '?')}, mangueras a "
+              f"{meta.get('separacion', '?')}]: sentido {sentido}, {len(real[sentido])} cuartos "
+              f"de hora, {int(sum(real[sentido].values()))} vehiculos")
+        if "clasificatorio" in tipos and "volumen" in tipos:
+            vol = tipos["volumen"][2]
+            comunes = set(vol) & set(real[sentido])
+            a = sum(real[sentido][m] for m in comunes)
+            b = sum(vol[m] for m in comunes)
+            print(f"    el reporte de volumen del mismo aparato da {int(b)} contra {int(a)}"
+                  f" ({100 * (a - b) / b:+.1f} %)" if b else "")
+    return real, (clases or None), fecha
+
+
+def _clases_sct(v, sct):
+    out: dict[str, float] = defaultdict(float)
+    for clase, n in v.items():
+        out[sct.get(clase, "OTRO")] += n
+    return dict(out)
 
 
 def diagnosticar_sin_cruces(bd: Path, proyecto: int) -> str:
@@ -546,6 +546,9 @@ def informe_clases(clases_real, pares, bins, comp) -> None:
                 real[clase] += v
     sin_resolver = comp.get("SIN_RESOLVER", 0)
     if "PESADO" in comp:
+        # Con la camara de clases gruesas nuestras motos van dentro de A;
+        # las del contador de ejes tambien, o se comparan cosas distintas.
+        real["A"] += real.pop("MOTO", 0.0)
         filas = [("A (livianos)", real["A"], comp.get("A", 0)),
                  ("Pesados", real["B"] + real["C"] + real["T-S"] + real["T-S-R"],
                   comp.get("PESADO", 0))]
@@ -555,12 +558,19 @@ def informe_clases(clases_real, pares, bins, comp) -> None:
                  ("C camion (C+T-S+T-S-R)",
                   real["C"] + real["T-S"] + real["T-S-R"], comp.get("C", 0))]
     motos = comp.get("MOTO", 0)
+    # El contador de ejes trae motos ("Cycle"): entonces entran a la tabla
+    # como una clase mas, de los dos lados.
+    con_motos = "MOTO" in real
+    if con_motos:
+        filas.append(("Motocicleta", real["MOTO"], motos))
+        motos = 0
     tr = sum(f[1] for f in filas)
     tn = sum(f[2] for f in filas)
     if not tr or not tn:
         print("\nComposicion: sin datos de clase en la ventana.")
         return
-    print("\n=== Composicion por clase (ambos sentidos, sin motos) ===")
+    titulo = "con motos" if con_motos else "sin motos"
+    print(f"\n=== Composicion por clase (ambos sentidos, {titulo}) ===")
     print(f"{'clase':<26}{'nuestro':>9}{'real':>9}{'razon':>8}"
           f"{'% nuestro':>11}{'% real':>9}{'puntos':>8}")
     for nombre, r, n in filas:
@@ -572,6 +582,9 @@ def informe_clases(clases_real, pares, bins, comp) -> None:
         print(f"Motocicletas nuestras: {motos}. El formato de la empresa no las "
               "trae; si las\n  cuentan dentro de A, sumarlas a nuestra A antes "
               "de comparar.")
+    if real.get("OTRO"):
+        print(f"El contador de ejes dejo {int(real['OTRO'])} vehiculos como 'Other' "
+              "(ejes que no forman un patron conocido), fuera de los porcentajes.")
     if sin_resolver:
         print(f"Sin clasificar (noche o vehiculo muy chico): {sin_resolver}, "
               "fuera de los porcentajes.")
@@ -599,7 +612,8 @@ def main() -> None:
     a = p.parse_args()
 
     print("Aforo real de referencia:")
-    real, clases_real, fecha_ref = cargar_referencia(a.referencias, a.fuente)
+    fecha_video = fecha_del_proyecto(a.bd, a.proyecto)
+    real, clases_real, fecha_ref = cargar_referencia(a.referencias, a.fuente, fecha_video)
     if a.desfase_referencia:
         # Se corre la REFERENCIA, no lo nuestro: nuestras horas salen del
         # nombre del archivo, que `revisar_reloj.py` comprobo contra el sol.
@@ -613,7 +627,6 @@ def main() -> None:
         # leyenda del frontal tambien viene corrida (22 dias), asi que ya no
         # sirve de candado.
         fecha_ref = None
-    fecha_video = fecha_del_proyecto(a.bd, a.proyecto)
     # La carpeta por omision trae el aforo del 19-ago-2026 (camara lateral).
     # Sin este candado, el proyecto frontal del 19-sep se compara contra el
     # dia equivocado y la cifra sale razonable y falsa a la vez.
@@ -656,20 +669,37 @@ def main() -> None:
     # con un conteo sin motos lo destapo: cada sentido salia 3 % inflado
     # (0.96x donde se habia metido 0.93x) aunque el total "sin motos" cuadraba.
     motos = agrupar(motos_minuto, bins)
+    # El conteo manual no trae motos; el contador de ejes SI (su clase
+    # "Cycle"). Con el tubo, "sin motos" las quita de los DOS lados: es la
+    # comparacion sin la clase mas dificil para ambos instrumentos.
+    ref_con_motos = bool(clases_real) and any(
+        "MOTO" in v for x in clases_real.values() for v in x.values())
+
+    def motos_ref(sentido, b):
+        if not ref_con_motos or not sentido:
+            return 0
+        return clases_real.get(sentido, {}).get(b, {}).get("MOTO", 0)
+
     print(f"{'calzada':<24}{'nuestro':>9}{'real':>9}{'razon':>8}{'sin motos':>11}")
-    tn = tr = mn = 0
+    tn = tr = mn = mr = 0
     for zona, (sentido, _) in sorted(pares.items()):
         n = sum(nuestro[zona].get(b, 0) for b in bins)
         rr = sum(real[sentido].get(b, 0) for b in bins) if sentido else 0
         mz = sum(motos.get(zona, {}).get(b, 0) for b in bins)
-        tn, tr, mn = tn + n, tr + rr, mn + mz
+        rz = sum(motos_ref(sentido, b) for b in bins)
+        tn, tr, mn, mr = tn + n, tr + rr, mn + mz, mr + rz
         razon = f"{n / rr:.2f}x" if rr else "-"
-        sin = f"{(n - mz) / rr:.2f}x" if rr else "-"
+        sin = f"{(n - mz) / (rr - rz):.2f}x" if rr - rz else "-"
         print(f"{zona:<24}{n:>9}{int(rr):>9}{razon:>8}{sin:>11}")
     if tr:
         print(f"{'AMBOS SENTIDOS':<24}{tn:>9}{int(tr):>9}{tn / tr:>7.2f}x"
-              f"{(tn - mn) / tr:>10.2f}x")
-        if mn:
+              f"{(tn - mn) / (tr - mr):>10.2f}x")
+        if ref_con_motos:
+            print(f"  (motocicletas: {mn} nuestras, {int(mr)} del contador de ejes.) El "
+                  "contador SI las cuenta:")
+            print("  la razon buena es la primera; la de 'sin motos' compara sin "
+                  "ellas de los dos lados.")
+        elif mn:
             print(f"  ({mn} motocicletas nuestras.) El conteo de la empresa no "
                   "trae columna de motos:")
             print("  si NO las cuentan, la razon buena es la de 'sin motos'; si "
