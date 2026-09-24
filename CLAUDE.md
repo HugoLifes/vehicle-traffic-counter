@@ -211,6 +211,7 @@ se podía contestar de otro modo:
 | `silueta_clases.py` | Si la regla de liviano/pesado tiene sentido en una cámara nueva |
 | `exportar_recortes.py` | Sacar el recorte de cada vehículo contado, repartido por hora, para etiquetar |
 | `entrenar_clasificador.py` | Entrenar auto contra camioneta sobre esos recortes, con su prueba de humo |
+| `probar_comparacion.py` | Probar `comparar_aforo_real.py` de punta a punta con un conteo fabricado con errores conocidos |
 
 ---
 
@@ -1197,7 +1198,50 @@ sobrecuenta (cruces revisados uno por uno) y que la clasificación acierta
 (15 de 15 a ojo). **Para dar una razón hace falta que la empresa cuente a
 mano unos cuartos de hora de este mismo video.**
 
-Pendiente inmediato, con las herramientas ya listas: etiquetar recortes y
+### Lista para el conteo manual del aforo frontal
+
+`comparar_aforo_real.py` se revisó contra el proyecto 7 **antes** de que
+llegue el conteo, y tenía cuatro fallos que habrían estropeado ese día:
+
+- **7 videos duran 58 s** y la cobertura truncaba (`int(0.97 min) = 0`): sus
+  cuartos de hora salían de la comparación sin avisar. Ahora redondea.
+- Solo leía sentidos `OTE-PTE`/`PTE-OTE`. Ahora cualquier par de rumbos, o
+  el nombre de la hoja.
+- Con dos conteos en la misma carpeta el segundo **pisaba** al primero. Ahora
+  lee la fecha del título de la hoja y **se niega a comparar días distintos**.
+  El conteo del frontal va en su propia carpeta:
+  `--referencias referencias/aforo_frontal/`.
+- **El formato de la empresa no tiene columna de motos** (A, B, C, T-S,
+  T-S-R) y nosotros sí las contamos (~2 %). Da la razón con y sin motos,
+  **también por calzada**: con un conteo sin motos cada sentido salía 3 %
+  inflado aunque el total "sin motos" cuadrara.
+
+Dos diagnósticos nuevos: la composición por clase, leída de
+`get_interval_counts` (lo que ve el usuario), y el **desfase del reloj**.
+Este solo se declara si **los dos sentidos piden el mismo desfase**: el reloj
+es uno, y probar 21 desfases le gana al cero por puro azar — la primera
+versión avisó "2 min adelantado" sobre el aforo viejo, que no tenía nada.
+
+`tools/probar_comparacion.py --proyecto 7` fabrica un conteo con el formato
+de la empresa y errores conocidos (reloj 3 min, 0.93× y 0.98×, sin motos,
+sentidos `NTE-SUR`) y comprueba que la herramienta los recupera: **8 de 8**.
+
+**Qué pedirle a la empresa junto con el conteo:**
+
+1. **La hora de la carpeta y el archivo, NO la de la pantalla.** Si cuentan
+   viendo el video, la leyenda miente desde las 12:25 (se atrasó casi un
+   mes) y sus cuartos de hora quedarían corridos respecto a los nuestros.
+2. **Dónde van las motos**: dentro de A, aparte, o no se cuentan.
+3. **Tres franjas como mínimo, no una**: una normal, la pico y una de noche.
+   Una sola condición no valida nada, y la noche es justo lo que la cámara
+   nueva recuperó.
+4. Si hubo gente en campo ese día: **si el reloj de la grabadora estaba en
+   hora.**
+5. Para velocidad (hoy el proyecto 7 no tiene tramo): la **distancia medida
+   en el pavimento** entre dos marcas que crucen la calzada.
+6. El minuto de las 12:25, que llegó cortado, y los videos de la mañana.
+
+Pendiente después, con las herramientas ya listas: etiquetar recortes y
 entrenar el clasificador de automóvil contra camioneta. El exportador ya
 deja recortes utilizables —se ven perfectamente— y de los primeros 12, todos
 marcados `car` por COCO, **al menos 4 son camionetas**, que es exactamente
@@ -1861,9 +1905,10 @@ sale 54/46 contra 52/48 real y la correlación del perfil por cuarto de hora
 es r = +0.96. La calzada del fondo se queda en 0.90× por el tamaño del
 vehículo (14–17 px), que es límite de cámara y no del rastreador.
 
-Queda otro defecto sin tocar, a propósito para medir uno a la vez: una
-detección cuyo mejor emparejamiento tuvo IoU bajo entra dos veces a la
-lista de sin pareja y crea dos rastros.
+El otro defecto que quedó pendiente aquí —una detección cuyo mejor
+emparejamiento tuvo IoU bajo entraba dos veces a la lista de sin pareja y
+creaba dos rastros— ya se arregló con la cámara frontal (ver "Tres defectos
+encontrados así") y está en `tools/probar_rastreador.py`.
 
 ### No correr dos trabajos de GPU a la vez en el Orin
 
@@ -1927,11 +1972,11 @@ Añade `-T` a `exec` cuando el comando no sea interactivo (scripts, tuberías,
 todo lo que corra sin terminal). Sin eso falla con "the input device is not
 a TTY".
 
-**Solo tres carpetas están montadas desde el host y sobreviven a recrear el
-contenedor: `data/`, `models/` y `configs/`.** El resto —`input/`, `tools/`,
-`src/`, `web/`— está horneado en la imagen. Consecuencia práctica: **las
-herramientas de diagnóstico tienen que escribir su salida en `data/`**, o
-el PNG o el clip se pierden con el contenedor:
+**Montado desde el host:** `data/`, `models/` y `configs/` (lo que persiste)
+y `src/` y `tools/` de solo lectura (el código). `web/` e `input/` siguen
+horneados en la imagen. Consecuencia práctica: **las herramientas de
+diagnóstico tienen que escribir su salida en `data/`** —es lo único montado
+con escritura—, o el PNG o el clip se pierden con el contenedor:
 
 ```bash
 docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular   python3 tools/inspeccionar.py --job 1 --salida data/inspeccion.png
