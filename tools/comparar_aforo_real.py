@@ -553,10 +553,14 @@ def informe_clases(clases_real, pares, bins, comp) -> None:
                  ("Pesados", real["B"] + real["C"] + real["T-S"] + real["T-S-R"],
                   comp.get("PESADO", 0))]
     else:
+        # Del lado nuestro el C se junta con T-S y el tractor sin caja: la
+        # empresa no dice en que columna cuenta al tractor, asi que separarlos
+        # compararia repartos distintos de los mismos vehiculos.
         filas = [("A (livianos)", real["A"], comp.get("A", 0)),
                  ("B autobus", real["B"], comp.get("B", 0)),
-                 ("C camion (C+T-S+T-S-R)",
-                  real["C"] + real["T-S"] + real["T-S-R"], comp.get("C", 0))]
+                 ("C camion (C+T-S+T-S-R+tractor)",
+                  real["C"] + real["T-S"] + real["T-S-R"],
+                  sum(comp.get(k, 0) for k in ("C", "T-S", "T-S-R", "TRACTOR")))]
     motos = comp.get("MOTO", 0)
     # El contador de ejes trae motos ("Cycle"): entonces entran a la tabla
     # como una clase mas, de los dos lados.

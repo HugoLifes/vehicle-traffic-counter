@@ -62,11 +62,13 @@ PROMPT = (
     "CAR = car, SUV, van or pickup truck\n"
     "Reply with only the category word.")
 
-# A la taxonomía de la empresa. El tractor sin caja va a C: el contador de
-# ejes y el conteo por ejes lo registran como camión de 3 ejes (3A-SU), y el
-# formato A, B, C, T-S, T-S-R no tiene columna para él. T-S incluye T-S-R:
-# con esta cámara no se distinguió ningún doble remolque.
-A_SCT = {"BUS": "B", "TRUCK": "C", "TRACTOR": "C", "SEMI": "T-S", "CAR": "A"}
+# A la taxonomía de la empresa. El tractor sin caja es clase PROPIA: el
+# formato A, B, C, T-S, T-S-R no tiene columna para él y la empresa decidió
+# contarlo aparte (24-sep-2026). En el aforo frontal es un 20 % de los
+# pesados de un sentido: tractores de patio que mueven cajas entre
+# maquiladoras. El contador de ejes lo registra como 3A-SU (camión).
+# T-S incluye T-S-R: con esta cámara no se distinguió ningún doble remolque.
+A_SCT = {"BUS": "B", "TRUCK": "C", "TRACTOR": "TRACTOR", "SEMI": "T-S", "CAR": "A"}
 
 
 def _cargar(ruta, omision):
@@ -160,7 +162,7 @@ def aplicar(a):
         conn.commit()
     print(f"\n{'carril':<28}{'clase':>8}{'antes':>8}{'después':>9}")
     for k in sorted(set(antes) | set(despues)):
-        if antes[k] != despues[k] or k[1] in ("B", "C", "T-S"):
+        if antes[k] != despues[k] or k[1] in ("B", "C", "T-S", "TRACTOR"):
             print(f"{k[0]:<28}{k[1]:>8}{antes[k]:>8}{despues[k]:>9}")
     print("\nESCRITO en la base." if a.aplicar else
           "\nNo se escribió nada. Revisar la hoja y repetir con --aplicar.")

@@ -413,7 +413,8 @@ def _hoja_cuartos(wb: Workbook, d: Dict):
 
 # Orden de las columnas de clase: el de la hoja de la empresa (A, B, C, T-S,
 # T-S-R) y despues lo que el sistema declara aparte.
-_ORDEN_CLASES = ("A", "B", "C", "T-S", "T-S-R", "MOTO", "PESADO", "SIN_RESOLVER")
+_ORDEN_CLASES = ("A", "B", "C", "T-S", "T-S-R", "TRACTOR", "MOTO", "PESADO",
+                 "SIN_RESOLVER")
 _TITULO_CLASE = {"SIN_RESOLVER": "SIN CLASIFICAR"}
 
 
@@ -469,11 +470,14 @@ def _hoja_clases(wb: Workbook, project_id: int, d: Dict) -> None:
                          "doble remolque (T-S-R): con esta camara todavia no se "
                          "separan.")
         if c == "T-S":
-            notas.append("C: camion unitario y tractor sin caja. T-S: tractocamion con "
-                         "semirremolque, incluido el doble remolque (T-S-R), que no se "
-                         "separa. Clase revisada sobre el recorte de cada pesado (ver "
-                         "METODO); los pesados sin revisar llevan la regla del alto y van "
-                         "en C.")
+            notas.append("C: camion unitario. T-S: tractocamion con semirremolque, "
+                         "incluido el doble remolque (T-S-R), que no se separa. Clase "
+                         "revisada sobre el recorte de cada pesado (ver METODO); los "
+                         "pesados sin revisar llevan la regla del alto y van en C.")
+        if c == "TRACTOR":
+            notas.append("TRACTOR: tractocamion sin semirremolque. Clase propia: el "
+                         "formato A, B, C, T-S, T-S-R no la tiene. El contador de ejes "
+                         "lo registra como camion de 3 ejes.")
         if c == "MOTO":
             notas.append("MOTO: la clasificacion de la empresa no tiene columna de "
                          "motocicletas; se entregan aparte para sumarlas donde "

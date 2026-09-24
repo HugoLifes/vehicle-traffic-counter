@@ -93,6 +93,7 @@
      verde se confundian con su cafe (deuteranopia, dE 0.7-4.8). Este queda
      a dE 20 de C y de MOTO. */
   --veh-T-S: #c9a227;
+  --veh-TRACTOR: #b0263e;
   --veh-SIN_RESOLVER: #6b7280;
   --veh-car: #1d54b3;
   --veh-truck: #9a5a12;
@@ -193,6 +194,7 @@
     --veh-B: #b98ae8;
     --veh-C: #e0913c;
     --veh-T-S: #f0d264;
+    --veh-TRACTOR: #e0607a;
     --veh-SIN_RESOLVER: #9aa3b2;
     --veh-car: #7aa9f0;
     --veh-truck: #e0913c;
@@ -248,6 +250,7 @@
   --veh-B: #b98ae8;
   --veh-C: #e0913c;
   --veh-T-S: #f0d264;
+  --veh-TRACTOR: #e0607a;
   --veh-SIN_RESOLVER: #9aa3b2;
   --veh-car: #7aa9f0;
   --veh-truck: #e0913c;
