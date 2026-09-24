@@ -212,6 +212,7 @@ se podía contestar de otro modo:
 | `exportar_recortes.py` | Sacar el recorte de cada vehículo contado, repartido por hora, para etiquetar |
 | `entrenar_clasificador.py` | Entrenar auto contra camioneta sobre esos recortes, con su prueba de humo |
 | `probar_comparacion.py` | Probar `comparar_aforo_real.py` de punta a punta con un conteo fabricado con errores conocidos |
+| `contador_ejes.py` | Leer los reportes del contador de ejes (clasificación, volumen y velocidades, varios días y carriles) |
 | `revisar_reloj.py` | Cuál reloj del video dice la hora real —archivo o leyenda—, comprobado contra la puesta de sol |
 
 ---
@@ -1236,6 +1237,62 @@ este video no hay conteo manual de campo, así que lo verificable es que no
 sobrecuenta (cruces revisados uno por uno) y que la clasificación acierta
 (15 de 15 a ojo). **Para dar una razón hace falta que la empresa cuente a
 mano unos cuartos de hora de este mismo video.**
+
+### Calibrado contra el contador de ejes del mismo día
+
+La empresa mandó el **contador de ejes** (RoadRunner3) del 19 al 24 de
+septiembre, no un conteo manual: `referencias/aforo_frontal/`, clasificatorio
+y volumen por sentido. Lo lee `tools/contador_ejes.py` (ver su encabezado: un
+archivo trae la clasificación y las velocidades de dos carriles, y las
+columnas no caen bajo sus encabezados). El aparato cuadra consigo mismo el
+19: clasificatorio 9 776, volumen 9 792 y velocidades 9 776. El **carril 2 es
+un canal sin mangueras** (correlación −0.26 y 0.01 con el 1) y el **23 el tubo
+ote-pte falló** (se desploma a 4 300 y sus dos reportes dejan de cuadrar).
+
+Los dos aparatos traen historia, y se miró antes de creerles: el 19079
+(ahora pte-ote) es el que en agosto tenía mal la separación de mangueras; el
+140084 (ahora ote-pte) es el que perdió el 31 %.
+
+```bash
+python tools/comparar_aforo_real.py --proyecto 7 --referencias referencias/aforo_frontal
+```
+
+Resultado, 12:00–24:00 (47 cuartos de hora):
+
+| | nuestro | tubo | razón |
+|---|---|---|---|
+| Se aleja ↔ ote-pte | 10 106 | 9 151 | 1.10× |
+| Hacia la cámara ↔ pte-ote | 9 766 | 8 284 | 1.18× |
+| **Motocicletas** | 408 | 417 | **0.98×** |
+
+Perfil por cuarto de hora r = +0.99, reparto 51/49 contra 52/48, reloj sin
+desfase. El emparejamiento por correlación coincide con la geometría (con el
+sol poniéndose a la izquierda, la calzada que se aleja va al poniente).
+
+**Contamos más que el tubo, y quien se queda corto es el tubo.** Tres pruebas
+independientes:
+
+1. **La diferencia crece con el tránsito** (r = +0.83 entre razón y volumen):
+   de noche, con 400–500 veh/h por sentido, **1.02–1.08×**; en la tarde,
+   1.09–1.25×.
+2. **Contados a ojo sobre el barrido** (`barrido_linea.py`), tres minutos de
+   pelotón: 16:10 hacia la cámara 29–30 vehículos contra **29** nuestros;
+   18:10 hacia la cámara 24–25 contra **25**; 18:10 se aleja 25–27 contra
+   **26**. Ninguna marca sin raya; la única raya sin marca es la del segundo 0
+   del archivo (el efecto de arranque ya medido).
+3. **El tubo lee autos pegados como un vehículo de 4 ejes.** La proporción de
+   4A-SU + 4A-ST sube con el volumen horario (r = +0.83 y +0.82) y la del
+   tractocamión común de 5 ejes no (+0.22 y −0.05): un camión de verdad no
+   aparece más porque haya más autos. A las 6:00 registra 4.6 veces más "4
+   ejes" que tractocamiones de 5, al revés de lo que circula en México. Eso
+   baja su total y le sube los pesados a la vez: ve 1 547 pesados contra
+   nuestros 860 de autobús + camión; **quitando sus clases de 4 ejes queda en
+   ~829 (1.04×)**.
+
+**Consecuencia: el tubo NO sirve para escalar nuestros conteos en hora
+cargada.** Coincide con el video donde el tránsito es ligero y se queda corto
+donde se junta. No se corrige nada del lado nuestro. Tampoco separa autobús
+(3 en doce horas: los clasifica como 2A-SU por sus ejes).
 
 ### Lista para el conteo manual del aforo frontal
 
