@@ -1173,7 +1173,8 @@ def _tramos_de_video(project_id: int):
     return fundidos
 
 
-def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
+def get_interval_counts(project_id: int, interval_minutes: int = 15,
+                        por_calzada: bool = False) -> Dict:
     """
     Conteos agrupados en intervalos de tiempo REALES (ej. 8:00-8:15,
     8:15-8:30...), la salida clásica de un estudio de aforo manual.
@@ -1246,7 +1247,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
     # 3. Traer todos los cruces del rango y clasificarlos en su cajón
     rows = conn.execute(
         f"""SELECT lane_id, direction, vehicle_type, bbox_height, bbox_width,
-                   confidence, timestamp, tiempo_tramo_s FROM crossings
+                   confidence, timestamp, tiempo_tramo_s, zone_id FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
@@ -1362,6 +1363,15 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
                                perfil=perfiles.get(lane["id"]))
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
+            # El sentido del informe es la calzada de CADA cruce, no la de la
+            # linea: en una calibracion vieja (proyecto 11) una linea recogio
+            # 221 cruces de la otra calzada, y agrupar por linea daba otro
+            # total por sentido que el resto del Excel. La clase se sigue
+            # sacando con la escala de la linea, que es la que fija la
+            # distancia a la camara.
+            if por_calzada:
+                pz = bucket.setdefault("by_zone", {}).setdefault(row["zone_id"], {})
+                pz[clase] = pz.get(clase, 0) + 1
             # La velocidad solo en las horas medibles: de noche el vehículo
             # es una estela de luz y su rastro no dice a qué velocidad iba.
             if lane.get("tramo") and _hora(row) in horas_medibles:

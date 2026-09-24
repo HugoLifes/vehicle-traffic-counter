@@ -404,6 +404,157 @@ def _hoja_cuartos(wb: Workbook, d: Dict):
         col += ancho + 2
 
 
+# Orden de las columnas de clase: el de la hoja de la empresa (A, B, C, T-S,
+# T-S-R) y despues lo que el sistema declara aparte.
+_ORDEN_CLASES = ("A", "B", "C", "T-S", "T-S-R", "MOTO", "PESADO", "SIN_RESOLVER")
+_TITULO_CLASE = {"SIN_RESOLVER": "SIN CLASIFICAR"}
+
+
+def _clases_por_sentido(project_id: int) -> Dict:
+    """{sentido: {(fecha, minuto): {clase: n}}} por cuarto de hora.
+
+    Sale de `get_interval_counts`, que es el UNICO sitio donde se traduce
+    COCO a la clasificacion de la empresa (ver CLAUDE.md): si el Excel
+    tradujera por su cuenta, podria decir otra cosa que la pantalla. El
+    sentido es la calzada de cada cruce, igual que en las demas hojas.
+    """
+    r = traffic_db.get_interval_counts(project_id, 15, por_calzada=True)
+    zonas = {z["id"]: z["name"] for z in traffic_db.list_zones(project_id, active_only=False)}
+    datos = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    for carril in r.get("lanes", []):
+        for iv in carril["intervals"]:
+            t = datetime.strptime(iv["start"], "%Y-%m-%d %H:%M:%S")
+            for zona, clases in iv.get("by_zone", {}).items():
+                # Igual que _datos: COALESCE(nombre de la calzada, de la linea).
+                sentido = zonas.get(zona) or carril["lane_name"]
+                for clase, n in clases.items():
+                    datos[sentido][(t.date(), t.hour * 60 + t.minute)][clase] += n
+    return {"datos": datos}
+
+
+def _hoja_clases(wb: Workbook, project_id: int, d: Dict) -> None:
+    """
+    Clasificacion por cuarto de hora y sentido, en el formato del aforo
+    manual de la empresa: una fila por cuarto, una columna por clase.
+
+    El informe no la traia: tenia totales y cuartos de hora, pero el
+    entregable de la empresa es justo este desglose (A, B, C, T-S, T-S-R
+    por cuarto y por sentido). Las clases que el sistema todavia no separa
+    se dicen en el encabezado en vez de dejar una columna en cero, que se
+    leeria como "no paso ninguno".
+    """
+    cl = _clases_por_sentido(project_id)
+    if not cl["datos"]:
+        return
+    ws = wb.create_sheet("CLASIFICACION (15MIN)")
+    ws.sheet_view.showGridLines = False
+    p = d["proyecto"]
+    presentes = {c for s in cl["datos"].values() for q in s.values() for c in q}
+    clases = [c for c in _ORDEN_CLASES if c in presentes]
+    clases += sorted(presentes - set(clases))
+    notas = []
+    titulos = []
+    for c in clases:
+        t = _TITULO_CLASE.get(c, c)
+        if c == "C" and "T-S" not in presentes:
+            t = "C *"
+            notas.append("* C incluye camion unitario (C), tractocamion (T-S) y "
+                         "doble remolque (T-S-R): con esta camara todavia no se "
+                         "separan.")
+        if c == "MOTO":
+            notas.append("MOTO: la clasificacion de la empresa no tiene columna de "
+                         "motocicletas; se entregan aparte para sumarlas donde "
+                         "corresponda.")
+        if c == "PESADO":
+            notas.append("PESADO: autobuses y camiones juntos; en esta calzada el "
+                         "vehiculo se ve demasiado pequeno para separarlos.")
+        if c == "SIN_RESOLVER":
+            notas.append("SIN CLASIFICAR: vehiculos contados en horas o calzadas "
+                         "donde el tipo no se distingue (ver METODO). Estan en el "
+                         "total.")
+        titulos.append(t)
+
+    _celda(ws, 1, 1, "CLASIFICACION VEHICULAR POR CUARTOS DE HORA", _TITULO, borde=False)
+    _celda(ws, 2, 1, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 2, 2, p["name"], _NORMAL, alineacion=_IZQ, borde=False)
+
+    ancho = len(clases) + 2
+    col = 1
+    for sentido in sorted(cl["datos"]):
+        datos = cl["datos"][sentido]
+        fila = 4
+        _celda(ws, fila, col, sentido.upper(), _SUBTITULO, _AZUL)
+        ws.merge_cells(start_row=fila, start_column=col, end_row=fila,
+                       end_column=col + ancho - 1)
+        fila += 1
+        for fecha in d["fechas"]:
+            _celda(ws, fila, col, f"{DIAS[fecha.weekday()]} {fecha.day:02d}/"
+                   f"{MESES[fecha.month - 1][:3]}/{fecha.year}", _CABECERA, _GRIS)
+            for i, t in enumerate(titulos + ["TOTAL"]):
+                _celda(ws, fila, col + 1 + i, t, _CABECERA, _GRIS)
+            fila += 1
+            suma_dia = defaultdict(int)
+            for hora in range(24):
+                suma_hora = defaultdict(int)
+                cov_hora = []
+                vacia = (fecha.weekday(), hora) in d["no_medibles"]
+                for q in range(4):
+                    ini = hora * 60 + q * 15
+                    cv = _cobertura(d, fecha, ini)
+                    cov_hora.append(cv)
+                    q_datos = datos.get((fecha, ini), {})
+                    con_video = bool(cv) or bool(q_datos)
+                    parcial = con_video and cv is not None and cv < 0.995 and not vacia
+                    _celda(ws, fila, col,
+                           f"{hora:02d}:{q * 15:02d}-{(hora + (q + 1) // 4):02d}:"
+                           f"{((q + 1) * 15) % 60:02d}", _NORMAL)
+                    for i, c in enumerate(clases + ["TOTAL"]):
+                        n = sum(q_datos.values()) if c == "TOTAL" else q_datos.get(c, 0)
+                        valor = "" if (vacia or not con_video) else n
+                        celda = _celda(ws, fila, col + 1 + i, valor,
+                                       _CABECERA if c == "TOTAL" else _NORMAL,
+                                       _INCOMPLETO if parcial else None)
+                        if parcial and c == "TOTAL":
+                            celda.comment = Comment(
+                                f"Video incompleto: cubre el {100 * cv:.0f} % de este "
+                                "cuarto de hora. El conteo es parcial.", "Aforo vehicular")
+                        if valor != "":
+                            suma_hora[c] += n
+                    fila += 1
+                conocida = None not in cov_hora
+                incompleta = conocida and any(cov_hora) and min(cov_hora) < 0.995
+                _celda(ws, fila, col, f"{hora:02d}:00-{hora + 1:02d}:00", _CABECERA, _GRIS)
+                hay = bool(suma_hora) or (conocida and any(cov_hora))
+                for i, c in enumerate(clases + ["TOTAL"]):
+                    valor = "" if (vacia or not hay) else suma_hora.get(c, 0)
+                    _celda(ws, fila, col + 1 + i, valor, _CABECERA,
+                           _INCOMPLETO if incompleta and valor != "" else _GRIS)
+                    if valor != "":
+                        suma_dia[c] += valor
+                fila += 1
+            _celda(ws, fila, col, "TOTAL DEL DIA", _CABECERA, _AZUL)
+            for i, c in enumerate(clases + ["TOTAL"]):
+                _celda(ws, fila, col + 1 + i, suma_dia.get(c, 0), _CABECERA, _AZUL)
+            fila += 1
+            total = suma_dia.get("TOTAL", 0)
+            _celda(ws, fila, col, "%", _CABECERA, _AZUL)
+            for i, c in enumerate(clases + ["TOTAL"]):
+                pct = round(100 * suma_dia.get(c, 0) / total, 1) if total else ""
+                _celda(ws, fila, col + 1 + i, pct, _CABECERA, _AZUL)
+            fila += 2
+
+        ws.column_dimensions[get_column_letter(col)].width = 14
+        for i in range(ancho - 1):
+            ws.column_dimensions[get_column_letter(col + 1 + i)].width = 9
+        col += ancho + 1
+
+    fila = ws.max_row + 2
+    for nota in notas + (["En naranja: cuarto u hora con video incompleto (el conteo "
+                          "es parcial). Celda vacia: sin medicion en ese periodo."]):
+        _celda(ws, fila, 1, nota, _NORMAL, alineacion=_IZQ, borde=False)
+        fila += 1
+
+
 def _hoja_metodo(wb: Workbook, d: Dict):
     """
     De dónde salieron los números.
@@ -450,16 +601,23 @@ def _hoja_metodo(wb: Workbook, d: Dict):
     # Está medido que es al revés: de noche la imagen es el DOBLE de
     # brillante que de día (177 contra 84 en la franja de la vía). La cámara
     # sobreexpone y barre el movimiento, y el vehículo sale como una estela.
+    #
+    # Y solo sale si hay horas no medibles. Estaba fijo, y en el aforo
+    # frontal de Cd. Juárez —donde la noche SÍ se mide, 12 de 12 vehículos
+    # revisados a ojo a las 22:30— el informe decía lo contrario de sus
+    # propias cifras.
+    if not d["no_medibles"]:
+        return
     aviso = ws.cell(len(filas) + 5, 1,
-                    "Las horas nocturnas no son medición fiable con el material "
-                    "actual. Contrastado contra aforo manual del mismo día: de "
-                    "día el sistema mide 0.96x del tránsito real; de noche, "
-                    "0.03x. La causa no es falta de luz sino lo contrario — la "
+                    "Las horas en blanco no son medición fiable: la confianza "
+                    "media del detector quedó por debajo de 0.65. Suele ser de "
+                    "noche, y no por falta de luz sino por lo contrario — la "
                     "cámara sobreexpone y el obturador lento convierte cada "
-                    "vehículo en una estela. Se corrige forzando obturador "
-                    "rápido en el modo nocturno de la cámara.")
+                    "vehículo en una estela. Medido en Cd. Juárez con la "
+                    "cámara lateral contra aforo manual: 0.96x del tránsito "
+                    "real de día y 0.03x de noche. Se corrige forzando "
+                    "obturador rápido en el modo nocturno de la cámara.")
     aviso.font = Font(size=9, italic=True, color="9C2F26")
-    aviso.alignment = _IZQ
     aviso.alignment = Alignment(wrap_text=True, vertical="top")
     ws.merge_cells(start_row=len(filas) + 5, start_column=1,
                    end_row=len(filas) + 6, end_column=2)
@@ -761,6 +919,7 @@ def generar(project_id: int, ruta: str) -> Dict:
     if d["sentidos"]:
         _hoja_totales(wb, d)
         _hoja_cuartos(wb, d)
+        _hoja_clases(wb, project_id, d)
     _hoja_velocidad(wb, project_id, d)
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
     if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:
