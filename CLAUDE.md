@@ -2312,6 +2312,14 @@ docker builder prune -f && docker image prune -a -f --filter "until=24h"
 
 Eso dejó el disco en 27 % (327 GB libres) desde 57 %.
 
+**Y la imagen misma pesaba 42 GB por `data/`.** `.dockerignore` solo
+excluía `data/uploads` y la base, así que los videos de `data/nuevos`,
+`data/od` y `data/aicity` entraban al contexto y, por el `COPY . .`, a la
+imagen, donde el montaje de `./data` los tapa. Con `data/` entera ignorada
+(24-sep-2026) el contexto bajó de 14 GB y subiendo a 25 MB, la imagen de
+42.4 a **15.5 GB**, y la reconstrucción para un cambio de interfaz tardó
+minutos. Al agregar una carpeta grande que se monta, ignorarla también.
+
 Comandos de operación:
 
 ```bash
