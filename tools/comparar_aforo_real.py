@@ -616,25 +616,29 @@ def main() -> None:
         print("  emparejamiento calzada-sentido no es fiable; puede estar invertido.")
 
     print("\n=== Totales en la ventana comparable ===")
-    print(f"{'calzada':<20}{'nuestro':>10}{'real':>10}{'razon':>9}")
-    tn = tr = 0
+    # Las motos se quitan tambien POR CALZADA, no solo del total. La prueba
+    # con un conteo sin motos lo destapo: cada sentido salia 3 % inflado
+    # (0.96x donde se habia metido 0.93x) aunque el total "sin motos" cuadraba.
+    motos = motos_por_cuarto(a.bd, a.proyecto)
+    print(f"{'calzada':<24}{'nuestro':>9}{'real':>9}{'razon':>8}{'sin motos':>11}")
+    tn = tr = mn = 0
     for zona, (sentido, _) in sorted(pares.items()):
         n = sum(nuestro[zona].get(b, 0) for b in bins)
         rr = sum(real[sentido].get(b, 0) for b in bins) if sentido else 0
-        tn, tr = tn + n, tr + rr
+        mz = sum(motos.get(zona, {}).get(b, 0) for b in bins)
+        tn, tr, mn = tn + n, tr + rr, mn + mz
         razon = f"{n / rr:.2f}x" if rr else "-"
-        print(f"{zona:<20}{n:>10}{int(rr):>10}{razon:>9}")
+        sin = f"{(n - mz) / rr:.2f}x" if rr else "-"
+        print(f"{zona:<24}{n:>9}{int(rr):>9}{razon:>8}{sin:>11}")
     if tr:
-        print(f"{'AMBOS SENTIDOS':<20}{tn:>10}{int(tr):>10}{tn / tr:>8.2f}x")
-        motos = motos_por_cuarto(a.bd, a.proyecto)
-        mn = sum(motos.get(z, {}).get(b, 0) for z in pares for b in bins)
+        print(f"{'AMBOS SENTIDOS':<24}{tn:>9}{int(tr):>9}{tn / tr:>7.2f}x"
+              f"{(tn - mn) / tr:>10.2f}x")
         if mn:
-            print(f"{'  sin motocicletas':<20}{tn - mn:>10}{int(tr):>10}"
-                  f"{(tn - mn) / tr:>8.2f}x   ({mn} motos nuestras)")
-            print("  El conteo de la empresa no trae columna de motos. Si NO las "
-                  "cuentan, la razon")
-            print("  buena es la de abajo; si las meten en A, la de arriba. "
-                  "Hay que preguntarlo.")
+            print(f"  ({mn} motocicletas nuestras.) El conteo de la empresa no "
+                  "trae columna de motos:")
+            print("  si NO las cuentan, la razon buena es la de 'sin motos'; si "
+                  "las meten en A,")
+            print("  la otra. Hay que preguntarlo.")
 
     print("\n=== Reparto entre sentidos ===")
     reparto_real = " / ".join(

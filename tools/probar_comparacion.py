@@ -152,16 +152,21 @@ def main():
               "reconoce sentidos escritos NTE-SUR")
     comprobar(re.search(r"reloj del video parece ir 3 min adelantado", texto) is not None,
               f"encuentra el reloj corrido {DESFASE_MIN} min")
+    # La razon que hay que recuperar es la de "sin motos": el conteo de
+    # prueba no las trae, igual que el de la empresa. Con el reloj corrido
+    # algunos vehiculos caen en el cuarto vecino, asi que sale cerca, no
+    # exacta; la tolerancia es estrecha a proposito, porque la primera version
+    # de esta prueba (0.03) dejo pasar un 3 % de motos metidas en la razon.
     for z, razon in zip(zonas, RAZON):
-        m = re.search(rf"{re.escape(z)}\s+\d+\s+\d+\s+([\d.]+)x", texto)
-        # Con el reloj corrido algunos vehiculos caen en el cuarto vecino,
-        # asi que la razon por calzada sale cerca, no exacta.
-        comprobar(m is not None and abs(float(m.group(1)) - razon) <= 0.03,
-                  f"razon de {z}: {m.group(1) if m else '?'}x (se metio {razon}x)")
-    m = re.search(r"sin motocicletas\s+\d+\s+\d+\s+([\d.]+)x", texto)
+        m = re.search(rf"{re.escape(z)}\s+\d+\s+\d+\s+[\d.]+x\s+([\d.]+)x", texto)
+        comprobar(m is not None and abs(float(m.group(1)) - razon) <= 0.015,
+                  f"razon sin motos de {z}: {m.group(1) if m else '?'}x "
+                  f"(se metio {razon}x)")
+    m = re.search(r"AMBOS SENTIDOS\s+\d+\s+\d+\s+[\d.]+x\s+([\d.]+)x", texto)
     esperada = sum(RAZON) / 2
-    comprobar(m is not None and abs(float(m.group(1)) - esperada) <= 0.03,
-              f"sin motocicletas: {m.group(1) if m else '?'}x (cerca de {esperada:.2f}x)")
+    comprobar(m is not None and abs(float(m.group(1)) - esperada) <= 0.015,
+              f"ambos sentidos sin motos: {m.group(1) if m else '?'}x "
+              f"(cerca de {esperada:.3f}x)")
     comprobar("Composicion por clase" in texto and "B autobus" in texto,
               "compara las clases MOTO / A / B / C contra A B C T-S T-S-R")
 
