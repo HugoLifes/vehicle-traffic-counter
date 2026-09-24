@@ -216,6 +216,7 @@ se podía contestar de otro modo:
 | `revisar_reloj.py` | Cuál reloj del video dice la hora real —archivo o leyenda—, comprobado contra la puesta de sol |
 | `calibrar_velocidad.py` | Fijar la distancia del tramo contra el tubo con unas horas y medir las demás; de paso, si los dos tubos miden velocidades compatibles |
 | `recortes_sin_posicion.py` | Recortar cruces contados antes de guardar la posición de la caja, detectando solo su segundo |
+| `revisar_pesados.py` | Revisar la clase de los pesados (autobús, camión, tractor, T-S) sobre su recorte con un modelo de visión, y aplicarla |
 
 ---
 
@@ -1396,7 +1397,83 @@ los recortes.
 Los cruces anteriores a las 18:20 no guardaron posición de la caja.
 `tools/recortes_sin_posicion.py` los recorta sin recontar: de cada cruce se
 sabe el segundo, la calzada y el tamaño de la caja, y basta volver a detectar
-los ~20 cuadros de ese segundo (minutos de GPU en vez de 12 h).
+los ~20 cuadros de ese segundo (minutos de GPU en vez de 12 h). Sobre el
+día completo encontró los 883 pesados, **ninguno sin pareja**.
+
+**Sobre esos 703 recortes de día, que no se usaron para diseñar la regla**,
+con las etiquetas del modelo de visión como referencia: la regla del T-S
+acierta **86 de 86** donde dice T-S y se le escapan 23 de 109. Y hacia la
+cámara, de día, **26 autobuses salieron `truck` contra 20 `bus`**.
+
+### La clase de los pesados, revisada sobre el recorte
+
+`tools/revisar_pesados.py` (etiquetar → hoja → aplicar). Un modelo de visión
+de la API de NVIDIA, **nemotron-3-nano-omni**, clasifica cada recorte en
+autobús / camión unitario / tractor sin caja / tractocamión / liviano, y la
+clase queda en `crossings.clase_revisada`, que gana sobre la regla en
+`get_interval_counts`.
+
+Probado contra etiquetas hechas a ojo **en dos horas distintas** —la lección
+del modelo de 36/36 a mediodía y 28/40 a las 07:00—:
+
+| | acierto |
+|---|---|
+| Livianos, 18 h (auto, camioneta, pickup, pesado, moto) | 60 / 60 |
+| Livianos, 13 h | 72 / 73 (y 3 errores 429 de la API) |
+| Pesados de día, tarde y noche | 126 / 136: autobús 69/71, T-S 25/26; los demás, respuestas vacías |
+| Revisión a ojo de SUS etiquetas del día | autobús-que-era-`truck` 26/26, tractor sin caja 36/36, T-S 34/36 |
+
+Del catálogo de la API solo sirvió ese: llama-3.2-90b-vision da timeout,
+gemma-3 y cosmos-reason2 404, llama-4-maverick 410 y kimi-k3 tarda 42 s y
+acertó 27/33. **Por eso no se usa al contar**: el catálogo cambia sin aviso y
+el Jetson no debe depender de internet para producir un aforo. Es una
+revisión posterior, y deja etiquetas para entrenar un clasificador local
+(`entrenar_clasificador.py`). El ollama que corre en el Jetson solo tiene
+modelos de texto.
+
+**El tractor sin caja es un 20 % de los pesados** en la calzada que se aleja
+(tractores de patio que mueven cajas entre maquiladoras; se repiten las
+mismas unidades). Va a **C**, como lo registra el contador de ejes (3A-SU),
+pero el formato A, B, C, T-S, T-S-R no dice dónde lo pone la empresa:
+**preguntarlo.** Si lo cuentan como T-S, basta cambiar `A_SCT` y volver a
+aplicar.
+
+Recontar un video borra sus cruces y con ellos la revisión; hay que volver a
+recortar, etiquetar y aplicar.
+
+**Aplicado al proyecto 7 el 24-sep-2026** (879 de 883 pesados; 4 sin
+respuesta se quedan con la regla). Respaldo previo de la base en el Jetson:
+`data/nuevos/traffic_antes_revision.db`.
+
+| | B | C | T-S |
+|---|---|---|---|
+| Hacia la cámara, antes | 141 | 281 | — |
+| Hacia la cámara, revisado | **225** | 76 | **106** |
+| Se aleja, antes | 259 | 238 | — |
+| Se aleja, revisado | **252** | 164 | **55** |
+
+Los autobuses quedan parejos entre sentidos (225 y 252), como corresponde a
+autobuses de personal que van y vuelven.
+
+**Contra el tubo, el T-S cuadra en un sentido y en el otro el tubo
+sobrecuenta.** Alejándose: 48 contra 54 del tubo (5A+6A-ST), hora por hora.
+Hacia la cámara: de 12 a 14 h damos MÁS que el tubo (36/24, 28/18, 15/13) y
+de 15 a 19 h mucho menos (2–5 contra 6–18 por hora). Se miraron a ojo los 36
+pesados no-autobús de ese sentido entre 15 y 19 h: hay **8 tractocamiones**,
+no 53, y sí muchos **tractores sin caja** que van y vienen. Un tractor de 3
+ejes con un auto pegado da 5 ejes, y el aparato lo lee como T-S: es la misma
+falla de los autos pegados, con tractores.
+
+**De noche la revisión es menos segura.** Mirada a ojo la franja 18:20–24:00:
+autobuses, camiones y tractores bien casi todos; de los 24 T-S, 18 claros, 3
+eran tractores sin caja y 3 no se distinguen ni a ojo. Del resto, ~4 de 32
+mal (una pipa como camión, un remolque tapado por un auto como liviano). Unos
+85–90 %, contra el 0 % de la regla, que manda todo T-S a C.
+
+Referencia de forma, no de cifra (otro día y otra cámara): el conteo manual
+de agosto, miércoles 12–24 h, reparte los pesados en B 43–49 %, C 18–25 %,
+T-S 27–39 % y T-S-R ~0. Revisado, el sábado del frontal da B 54–55 %, C
+19–35 % y T-S 12–26 %.
 
 ### Lista para el conteo manual del aforo frontal
 
@@ -1445,6 +1522,8 @@ recupera cada uno: **16 de 16**.
 5. Para velocidad (hoy el proyecto 7 no tiene tramo): la **distancia medida
    en el pavimento** entre dos marcas que crucen la calzada.
 6. El minuto de las 12:25, que llegó cortado, y los videos de la mañana.
+7. **En qué columna cuentan el tractor sin caja** (C o T-S). En este tramo
+   es un 20 % de los pesados de un sentido.
 
 Pendiente después, con las herramientas ya listas: etiquetar recortes y
 entrenar el clasificador de automóvil contra camioneta. El exportador ya
