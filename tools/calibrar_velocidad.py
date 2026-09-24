@@ -82,7 +82,16 @@ def tiempos_de_muestra(ruta, poligono, linea_a, linea_b):
     for c in sorted(por_cuadro):
         for m in med.observar(c, por_cuadro[c]):
             tiempos.append(m["segundos"])
-    return tiempos
+    # Cuantos cruzaron la linea de conteo: sin esto, una hora donde solo se
+    # alcanza a medir a unos pocos se lee igual que una donde se mide a casi
+    # todos. De noche, hacia la camara, los faros parten el rastro entre las
+    # dos lineas y se median 6-19 vehiculos por muestra contra 45-92 de dia.
+    ya = linea_a[0][1]
+    cruces = 0
+    for r in d["rastros"].values():
+        ys = [y2 for _, x1, _, x2, y2, _ in r["p"] if dentro(poligono, (x1 + x2) / 2, y2)]
+        cruces += any((a - ya) * (b - ya) <= 0 and a != b for a, b in zip(ys, ys[1:]))
+    return tiempos, cruces
 
 
 def percentil_rangos(hist, q):
@@ -148,12 +157,14 @@ def main():
             sys.exit(f"{ruta} no trae velocidades del {fecha}")
 
         por_hora = defaultdict(list)
+        cruces_hora = defaultdict(int)
         tubo_hora = defaultdict(lambda: [0] * len(ce.RANGOS_KMH))
         for m in muestras:
             base = os.path.splitext(os.path.basename(m))[0]
             hh, mm = base.split("-")[:2]
-            t = tiempos_de_muestra(m, pol, la, lb)
+            t, n_cruces = tiempos_de_muestra(m, pol, la, lb)
             por_hora[hh] += t
+            cruces_hora[hh] += n_cruces
             cuarto = int(hh) * 60 + (int(mm) // 15) * 15
             if cuarto in vel:
                 for i in range(len(ce.RANGOS_KMH)):
@@ -168,7 +179,7 @@ def main():
         print(f"lineas del tramo: fila {ya:.0f} de x {ca[0]:.0f} a {ca[1]:.0f}; "
               f"fila {yb:.0f} de x {cb[0]:.0f} a {cb[1]:.0f}")
         print(f"distancia implicita del tramo: {distancia:.2f} m (calibrada con {', '.join(cal)} h)")
-        print(f"{'hora':>5}   {'n':>4} {'p50':>6} {'p85':>6}   {'tubo n':>6} {'p50':>6} {'p85':>6}   {'dif p85':>7}")
+        print(f"{'hora':>5}   {'n':>4} {'medido':>6} {'p50':>6} {'p85':>6}   {'tubo n':>6} {'p50':>6} {'p85':>6}   {'dif p85':>7}")
         filas = []
         for h in sorted(por_hora):
             kmh = sorted(distancia / t * 3.6 for t in por_hora[h] if t > 0)
@@ -178,9 +189,11 @@ def main():
             n50, n85 = percentil(kmh, 50), percentil(kmh, 85)
             t50, t85 = percentil_rangos(tubo_hora[h], .5), percentil_rangos(tubo_hora[h], .85)
             marca = "c" if h in cal else " "
-            print(f"{h}:xx {marca} {len(kmh):>4} {n50:>6.1f} {n85:>6.1f}   {int(sum(tubo_hora[h])):>6} "
+            medido = len(kmh) / max(1, cruces_hora[h])
+            print(f"{h}:xx {marca} {len(kmh):>4} {100 * medido:>5.0f}% {n50:>6.1f} {n85:>6.1f}   {int(sum(tubo_hora[h])):>6} "
                   f"{t50:>6.1f} {t85:>6.1f}   {n85 - t85:>+7.1f}")
-            filas.append({"hora": h, "cal": h in cal, "n": len(kmh), "p50": n50, "p85": n85,
+            filas.append({"hora": h, "cal": h in cal, "n": len(kmh), "medido": medido,
+                          "p50": n50, "p85": n85,
                           "tubo_p50": t50, "tubo_p85": t85, "rangos": a_rangos(kmh),
                           "rangos_tubo": tubo_hora[h]})
         prueba = [f for f in filas if not f["cal"]]

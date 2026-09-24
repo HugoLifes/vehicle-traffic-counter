@@ -637,21 +637,35 @@ def _hoja_velocidad(wb: Workbook, project_id: int, d: Dict) -> int:
     límites. Se deja en blanco donde el conteo no es medible, por la misma
     razón que en las otras hojas.
     """
-    from src.engine.velocidad import kmh_de, resumen
+    from src.engine.velocidad import FRACCION_MINIMA, horas_representativas, kmh_de, resumen
 
     conn = traffic_db.get_connection()
     tramos = [l for l in traffic_db.list_lanes(project_id=project_id) if l.get("tramo")]
     distancia = {l["id"]: l["tramo"]["distancia_m"] for l in tramos}
-    filas = conn.execute("""
+    if not tramos:
+        return 0
+    # Todos los cruces de las lineas con tramo, no solo los que dieron
+    # velocidad: hacen falta para saber a que fraccion se midio.
+    filas = conn.execute(f"""
         SELECT c.timestamp AS ts, c.tiempo_tramo_s AS s, c.lane_id AS lane,
                COALESCE(z.name, l.name) AS sentido
         FROM crossings c
         JOIN lane_configs l ON l.id = c.lane_id
         LEFT JOIN zones z ON z.id = c.zone_id
-        WHERE l.project_id = ? AND l.active = 1 AND c.tiempo_tramo_s IS NOT NULL
-    """, (project_id,)).fetchall()
-    if not filas or not tramos:
+        WHERE l.project_id = ? AND l.active = 1
+          AND c.lane_id IN ({",".join("?" * len(distancia))})
+    """, (project_id, *distancia)).fetchall()
+    if not filas:
         return 0
+
+    cruces_hora, medidos_hora = defaultdict(int), defaultdict(int)
+    for f in filas:
+        clave = (f["lane"], (f["ts"] or "")[:13])
+        cruces_hora[clave] += 1
+        if kmh_de(distancia.get(f["lane"]), f["s"]) is not None:
+            medidos_hora[clave] += 1
+    validas = horas_representativas(cruces_hora, medidos_hora)
+    descartadas = {k[1] for k in cruces_hora if k not in validas and medidos_hora.get(k)}
 
     por_cuarto = defaultdict(lambda: defaultdict(list))
     por_hora = defaultdict(lambda: defaultdict(list))
@@ -662,6 +676,8 @@ def _hoja_velocidad(wb: Workbook, project_id: int, d: Dict) -> int:
         except (TypeError, ValueError):
             continue
         if (t.weekday(), t.hour) in d["no_medibles"]:
+            continue
+        if (f["lane"], f["ts"][:13]) not in validas:
             continue
         v = kmh_de(distancia.get(f["lane"]), f["s"])
         if v is None:
@@ -733,7 +749,12 @@ def _hoja_velocidad(wb: Workbook, project_id: int, d: Dict) -> int:
     ] + [
         "Una distancia mal medida cambia todas las velocidades en la misma proporción. "
         "Verifíquela antes de usar estas cifras para fijar un límite.",
-    ]
+    ] + ([
+        f"Sin velocidad en {len(descartadas)} hora(s) de algún sentido: ahí menos del "
+        f"{100 * FRACCION_MINIMA:.0f} % de los vehículos llegó a la segunda línea (de noche, "
+        "los faros de frente parten el rastro) y la velocidad de los pocos medidos no "
+        "representa al resto. El conteo de esas horas sí vale.",
+    ] if descartadas else [])
     for i, n in enumerate(notas):
         c = ws.cell(fila + i, 1, n)
         c.font = Font(size=9, italic=True)

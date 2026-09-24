@@ -1337,7 +1337,20 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
         for lane in lanes
     }
 
-    from src.engine.velocidad import control_distancia, kmh_de, resumen as resumen_velocidad
+    from src.engine.velocidad import (control_distancia, horas_representativas, kmh_de,
+                                      resumen as resumen_velocidad)
+
+    # La velocidad de una hora solo se publica si se midio a la mayoria de
+    # sus vehiculos (ver FRACCION_MINIMA).
+    distancia_tramo = {l["id"]: l["tramo"]["distancia_m"] for l in lanes if l.get("tramo")}
+    cruces_hora, medidos_hora = defaultdict(int), defaultdict(int)
+    for f in rows:
+        if f["lane_id"] in distancia_tramo and _hora(f) in horas_medibles:
+            clave = (f["lane_id"], f["timestamp"][:13])
+            cruces_hora[clave] += 1
+            if kmh_de(distancia_tramo[f["lane_id"]], f["tiempo_tramo_s"]) is not None:
+                medidos_hora[clave] += 1
+    velocidad_valida = horas_representativas(cruces_hora, medidos_hora)
 
     result_lanes = []
     for lane in lanes:
@@ -1374,7 +1387,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
                 pz[clase] = pz.get(clase, 0) + 1
             # La velocidad solo en las horas medibles: de noche el vehículo
             # es una estela de luz y su rastro no dice a qué velocidad iba.
-            if lane.get("tramo") and _hora(row) in horas_medibles:
+            if lane.get("tramo") and (lane["id"], row["timestamp"][:13]) in velocidad_valida:
                 kmh = kmh_de(lane["tramo"]["distancia_m"], row["tiempo_tramo_s"])
                 if kmh is not None:
                     velocidades[buckets[idx]].append(kmh)

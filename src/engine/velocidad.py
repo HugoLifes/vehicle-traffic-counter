@@ -161,6 +161,26 @@ def percentil(valores: List[float], q: float) -> Optional[float]:
     return v[i] + (v[i + 1] - v[i]) * (k - i)
 
 
+# Fraccion minima de los cruces de una hora que tienen que llegar a la
+# segunda linea para publicar su velocidad. Medido en el aforo frontal de
+# Cd. Juarez contra el contador de ejes, 12 horas por sentido: donde se
+# midio al 75-96 % de los vehiculos el percentil 85 quedo a 0-5 km/h del
+# tubo; de noche, hacia la camara, los faros parten el rastro entre las dos
+# lineas, se midio al 21-50 % y el error subio a 8-10 km/h. Una velocidad
+# sacada de los pocos que si llegan no representa al resto.
+FRACCION_MINIMA = 0.70
+
+
+def horas_representativas(cruces: Dict, medidos: Dict) -> set:
+    """Claves (carril, hora) cuya velocidad se puede publicar.
+
+    `cruces` y `medidos` cuentan, por la misma clave, los vehiculos que
+    cruzaron la linea de conteo y los que ademas dieron una velocidad.
+    """
+    return {k for k, n in cruces.items()
+            if n and medidos.get(k, 0) / n >= FRACCION_MINIMA}
+
+
 def resumen(valores: List[float]) -> Dict:
     """Lo que pide un estudio de velocidad: media, mediana y percentil 85.
 
