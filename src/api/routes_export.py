@@ -79,7 +79,7 @@ def exportar_intervalos(project_id: int, minutes: int = 15):
     cabeceras = [
         "interseccion", "carril", "inicio", "fin",
         "entrada", "salida", "total",
-    ] + [f"total_{t}" for t in tipos]
+    ] + [f"total_{t}" for t in tipos] + ["cobertura_video"]
 
     filas = []
     for carril in m["lanes"]:
@@ -99,6 +99,9 @@ def exportar_intervalos(project_id: int, minutes: int = 15):
                     (por_tipo.get(t, {}).get("in", 0) + por_tipo.get(t, {}).get("out", 0))
                     for t in tipos
                 ]
+                # Al final para no mover las columnas de quien ya suma sobre
+                # este CSV. Menos de 1 = periodo con video incompleto.
+                + [iv.get("cobertura", "")]
             )
 
     return _respuesta_csv(filas, cabeceras, _nombre_archivo(proyecto["name"], "intervalos"))
@@ -120,7 +123,7 @@ def exportar_resumen(project_id: int, minutes: int = 15):
         "entrada", "salida", "total",
         "hora_pico_inicio", "hora_pico_fin", "volumen_hora_pico",
         "fhp", "flujo_irregular",
-    ] + [f"total_{t}" for t in tipos]
+    ] + [f"total_{t}" for t in tipos] + ["cobertura_video"]
 
     filas = []
     for carril in m["lanes"]:

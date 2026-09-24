@@ -24,10 +24,11 @@ midió", y confundirlos en un informe de tránsito es grave.
 
 import logging
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -44,6 +45,8 @@ _NORMAL = Font(size=9)
 _CABECERA = Font(bold=True, size=9)
 _GRIS = PatternFill("solid", fgColor="D9D9D9")
 _AZUL = PatternFill("solid", fgColor="DCE6F1")
+# Cuarto u hora con video incompleto: conteo parcial, no bajon del transito.
+_INCOMPLETO = PatternFill("solid", fgColor="FCE4D6")
 _CENTRO = Alignment(horizontal="center", vertical="center")
 _IZQ = Alignment(horizontal="left", vertical="center")
 _borde = Side(style="thin", color="808080")
@@ -153,8 +156,25 @@ def _datos(project_id: int) -> Dict:
         primera = t if primera is None or t < primera else primera
         ultima = t if ultima is None or t > ultima else ultima
 
+    # Cuanto de cada cuarto de hora tiene video. Un cuarto con un minuto
+    # faltante (el archivo de las 12:25 del frontal llego cortado) se
+    # entregaba con 7 % menos vehiculos y sin aviso.
+    # Sin duracion de ningun video (camara en vivo) la cobertura no se conoce
+    # y no se marca: pintar todo de naranja seria avisar de algo que no se sabe.
+    tramos_video = traffic_db._tramos_de_video(project_id)
+    cobertura = {} if tramos_video else None
+    for f in (fechas if tramos_video else ()):
+        base = datetime(f.year, f.month, f.day)
+        for m in range(0, 1440, 15):
+            a = base + timedelta(minutes=m)
+            cv = traffic_db.cobertura_de_video(project_id, a, a + timedelta(minutes=15),
+                                               tramos_video)
+            if cv > 0:
+                cobertura[(f, m)] = cv
+
     return {
         "proyecto": proyecto,
+        "cobertura": cobertura,
         "no_medibles": _horas_no_medibles(conn, project_id),
         "sentidos": sorted(por_hora.keys()),
         "por_hora": por_hora,
@@ -299,6 +319,13 @@ def _hoja_totales(wb: Workbook, d: Dict):
         _bloque_totales(ws, col, "EN AMBOS SENTIDOS", d, juntos, dias)
 
 
+def _cobertura(d: Dict, fecha, minuto: int) -> float:
+    """Fraccion del cuarto con video; None si el proyecto no lo sabe."""
+    if d["cobertura"] is None:
+        return None
+    return d["cobertura"].get((fecha, minuto), 0.0)
+
+
 def _hoja_cuartos(wb: Workbook, d: Dict):
     ws = wb.create_sheet("(EST) (15MIN)")
     ws.sheet_view.showGridLines = False
@@ -337,19 +364,39 @@ def _hoja_cuartos(wb: Workbook, d: Dict):
                        f"{(hora + (q + 1) // 4):02d}:{((q + 1) * 15) % 60:02d}", _NORMAL)
                 for i, f in enumerate(fechas):
                     v = d["por_cuarto"][sentido].get(f, {}).get(ini)
+                    cv = _cobertura(d, f, ini)
+                    # Con video y sin vehiculos es un cero, no un hueco.
+                    if v is None and cv:
+                        v = 0
                     if (f.weekday(), hora) in d["no_medibles"]:
                         v = None
-                    _celda(ws, fila, col + 1 + i, v if v is not None else "")
+                    parcial = v is not None and cv is not None and cv < 0.995
+                    celda = _celda(ws, fila, col + 1 + i, v if v is not None else "",
+                                   relleno=_INCOMPLETO if parcial else None)
+                    if parcial:
+                        celda.comment = Comment(
+                            f"Video incompleto: cubre el {100 * cv:.0f} % de este cuarto "
+                            "de hora. El conteo es parcial, no un bajon del transito.",
+                            "Aforo vehicular")
                 fila += 1
             # Fila de total de la hora, como en los originales.
             _celda(ws, fila, col, f"{hora:02d}:00-{hora + 1:02d}:00", _CABECERA, _GRIS)
             for i, f in enumerate(fechas):
                 v = d["por_hora"][sentido].get(f.weekday(), {}).get(hora)
+                covs = [_cobertura(d, f, hora * 60 + 15 * q) for q in range(4)]
+                conocida = None not in covs
+                if v is None and conocida and any(covs):
+                    v = 0
                 if (f.weekday(), hora) in d["no_medibles"]:
                     v = None
+                incompleta = v is not None and conocida and min(covs) < 0.995
                 _celda(ws, fila, col + 1 + i, v if v is not None else "",
-                       _CABECERA, _GRIS)
+                       _CABECERA, _INCOMPLETO if incompleta else _GRIS)
             fila += 1
+        if d["cobertura"] is not None:
+            _celda(ws, fila + 1, col, "En naranja: cuarto u hora con video incompleto "
+                   "(el conteo es parcial). El porcentaje cubierto va en la nota de la celda.",
+                   _NORMAL, alineacion=_IZQ, borde=False)
 
         ws.column_dimensions[get_column_letter(col)].width = 13
         for i in range(len(fechas)):

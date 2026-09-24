@@ -1095,6 +1095,10 @@ def delete_video_job(job_id: int):
     # el borrado falla.
     conn.execute("DELETE FROM diagnosticos WHERE job_id = ?", (job_id,))
     conn.execute("DELETE FROM movimientos WHERE job_id = ?", (job_id,))
+    # Los cruces NO son llave foranea y se quedaban: al quitar del proyecto 7
+    # un video de la instalacion (10:41), su cruce siguio saliendo en el
+    # reporte como una hora con un vehiculo y sin video que la respalde.
+    conn.execute("DELETE FROM crossings WHERE job_id = ?", (job_id,))
     conn.execute("DELETE FROM video_jobs WHERE id = ?", (job_id,))
     conn.commit()
 
@@ -1124,6 +1128,49 @@ def get_video_jobs_by_project(project_id: int) -> List[Dict]:
         (project_id,)
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def cobertura_de_video(project_id: int, inicio, fin, tramos=None) -> float:
+    """Fraccion del intervalo [inicio, fin) que cubre algun video del proyecto.
+
+    Un cuarto de hora al que le falta un minuto de video se veia en el
+    reporte igual que uno completo, con 7 % menos vehiculos y sin ningun
+    aviso. Paso en el aforo frontal de Cd. Juarez: el archivo de las 12:25
+    llego cortado y el video empieza a las 11:48, asi que 12:15-12:30 y
+    11:45-12:00 salian bajos como si el transito hubiera bajado.
+
+    No se rellena lo que falta: eso seria inventar vehiculos. Se declara.
+    """
+    tramos = tramos if tramos is not None else _tramos_de_video(project_id)
+    total = (fin - inicio).total_seconds()
+    if total <= 0:
+        return 0.0
+    cubierto = 0.0
+    for a, b in tramos:
+        cubierto += max(0.0, (min(b, fin) - max(a, inicio)).total_seconds())
+    return min(1.0, cubierto / total)
+
+
+def _tramos_de_video(project_id: int):
+    """[(inicio, fin)] de los videos del proyecto, fundidos donde se tocan."""
+    import datetime as _dt
+    conn = get_connection()
+    tramos = []
+    for r in conn.execute(
+            """SELECT video_start_time, total_frames, fps FROM video_jobs
+               WHERE project_id = ? AND video_start_time IS NOT NULL
+                 AND total_frames IS NOT NULL AND fps IS NOT NULL AND fps > 0""",
+            (project_id,)):
+        a = _dt.datetime.fromisoformat(r["video_start_time"])
+        tramos.append((a, a + _dt.timedelta(seconds=r["total_frames"] / r["fps"])))
+    tramos.sort()
+    fundidos = []
+    for a, b in tramos:
+        if fundidos and a <= fundidos[-1][1] + _dt.timedelta(seconds=1):
+            fundidos[-1] = (fundidos[-1][0], max(fundidos[-1][1], b))
+        else:
+            fundidos.append((a, b))
+    return fundidos
 
 
 def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
@@ -1189,6 +1236,12 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
         cursor += delta
     if not buckets:
         buckets = [bucket_start]
+
+    # None si ningun video trae su duracion (camara en vivo): no se sabe.
+    tramos_video = _tramos_de_video(project_id)
+    coberturas = {b: (round(cobertura_de_video(project_id, b, b + delta, tramos_video), 3)
+                      if tramos_video else None)
+                  for b in buckets}
 
     # 3. Traer todos los cruces del rango y clasificarlos en su cajón
     rows = conn.execute(
@@ -1340,6 +1393,10 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15) -> Dict:
                 {
                     "start": b.strftime("%Y-%m-%d %H:%M:%S"),
                     "end": (b + delta).strftime("%Y-%m-%d %H:%M:%S"),
+                    # Fraccion del intervalo que tiene video. Menos de 1 es
+                    # un conteo parcial, no un bajon del transito; None, que
+                    # no se sabe.
+                    "cobertura": coberturas[b],
                     **interval_map[b],
                     **({"velocidad": _resumen_redondeado(resumen_velocidad(velocidades[b]))}
                        if lane.get("tramo") else {}),
