@@ -169,11 +169,17 @@ def leer_conteo_manual_clases(ruta: Path):
                 minuto = _minuto_de_rango(hoja.cell(fila, col).value)
                 if minuto is None or minuto in por_minuto:
                     continue
-                clases = {}
-                for i, nombre in enumerate(nombres, start=1):
-                    v = hoja.cell(fila, col + i).value
-                    clases[nombre] = float(v) if isinstance(v, (int, float)) else 0.0
-                por_minuto[minuto] = clases
+                valores = [hoja.cell(fila, col + i).value for i in range(1, 6)]
+                # Una fila con TODAS las clases en blanco no es "cero
+                # vehiculos": es un cuarto de hora que nadie conto. El conteo
+                # de 24 h venia lleno y no importaba; uno de tres franjas deja
+                # el resto en blanco, y leido como cero la comparacion ponia
+                # trece horas nuestras contra ceros.
+                if all(not isinstance(v, (int, float)) for v in valores):
+                    continue
+                por_minuto[minuto] = {
+                    nombre: float(v) if isinstance(v, (int, float)) else 0.0
+                    for nombre, v in zip(nombres, valores)}
         if por_minuto:
             real[sentido] = por_minuto
     return fecha, real
@@ -287,9 +293,19 @@ def _conectar_ro(bd: Path) -> sqlite3.Connection:
     return con
 
 
-def cargar_nuestro(bd: Path, proyecto: int) -> tuple[dict[str, dict[int, int]], set[int]]:
-    """Cruces del proyecto por calzada y cuarto de hora, y los minutos que el
-    video realmente cubre: sin eso se compara contra horas no grabadas."""
+def cargar_nuestro(bd: Path, proyecto: int):
+    """Cruces del proyecto por calzada y MINUTO, las motos aparte, y los
+    minutos que el video realmente cubre: sin eso se compara contra horas no
+    grabadas.
+
+    Por minuto y no por cuarto de hora: los cuartos los pone el conteo de
+    referencia. Si alguien conto leyendo la leyenda de la pantalla del aforo
+    frontal, sus cuartos van corridos 4 h 55 min —que no es multiplo de 15—
+    y caen en 13:05-13:20, no en 13:00-13:15. Con los cruces por minuto se
+    arman los cuartos que haga falta.
+
+    Devuelve (por_minuto, motos_por_minuto, cubiertos).
+    """
     con = _conectar_ro(bd)
 
     # Solo los videos YA CONTADOS. Con la cola a medias, incluir los que
@@ -314,11 +330,25 @@ def cargar_nuestro(bd: Path, proyecto: int) -> tuple[dict[str, dict[int, int]], 
         dur = round((r["f"] or 0) / (r["fps"] or 15) / 60)
         cubiertos.update(range(h * 60 + m, h * 60 + m + dur))
 
-    nuestro: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    for zona, minuto, _ in _cruces_por_minuto(con, proyecto):
-        nuestro[zona][(minuto // 15) * 15] += 1
+    por_minuto: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    # El formato de la empresa no trae columna de motos (A, B, C, T-S,
+    # T-S-R). Si no las cuentan, nuestro total lleva ~2 % de mas que ellos no
+    # tienen; se llevan aparte para dar la razon con y sin ellas.
+    motos: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for zona, minuto, vt in _cruces_por_minuto(con, proyecto):
+        por_minuto[zona][minuto] += 1
+        if vt == "motorcycle":
+            motos[zona][minuto] += 1
     con.close()
-    return {k: dict(v) for k, v in nuestro.items()}, cubiertos
+    return ({k: dict(v) for k, v in por_minuto.items()},
+            {k: dict(v) for k, v in motos.items()}, cubiertos)
+
+
+def agrupar(serie: dict[str, dict[int, int]], bins) -> dict[str, dict[int, int]]:
+    """De cruces por minuto a cruces por cuarto de hora, con los cuartos que
+    diga la referencia (que no tienen por que empezar en :00, :15, :30, :45)."""
+    return {z: {b: sum(d.get(m % 1440, 0) for m in range(b, b + 15)) for b in bins}
+            for z, d in serie.items()}
 
 
 def _cruces_por_minuto(con, proyecto):
@@ -342,24 +372,7 @@ def fecha_del_proyecto(bd: Path, proyecto: int) -> str | None:
     return r["t"][:10] if r and r["t"] else None
 
 
-def motos_por_cuarto(bd: Path, proyecto: int) -> dict[str, dict[int, int]]:
-    """Motocicletas por calzada y cuarto de hora.
-
-    El formato de la empresa no trae columna de motos (A, B, C, T-S, T-S-R).
-    Si no las cuentan, nuestro total lleva ~2 % de mas que ellos no tienen,
-    y la razon sale inflada por algo que no es error de nadie. Se reportan
-    las dos cifras hasta que la empresa diga donde van.
-    """
-    con = _conectar_ro(bd)
-    motos: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    for zona, minuto, vt in _cruces_por_minuto(con, proyecto):
-        if vt == "motorcycle":
-            motos[zona][(minuto // 15) * 15] += 1
-    con.close()
-    return {k: dict(v) for k, v in motos.items()}
-
-
-def buscar_desfase_reloj(bd, proyecto, real, pares, cubiertos, maximo=10):
+def buscar_desfase_reloj(por_minuto, real, pares, cubiertos, maximo=10):
     """Minutos que parece estar corrido el reloj del video respecto al conteo.
 
     La hora de cada cruce sale del nombre del archivo, que pone el reloj de
@@ -372,24 +385,23 @@ def buscar_desfase_reloj(bd, proyecto, real, pares, cubiertos, maximo=10):
     mide el error por cuarto de hora contra el conteo. Es un DIAGNOSTICO: la
     cifra principal se da siempre sin correr nada, y si aparece un desfase lo
     que toca es preguntar a la empresa, no corregirlo a mano.
-    """
-    con = _conectar_ro(bd)
-    por_minuto: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    for zona, minuto, _ in _cruces_por_minuto(con, proyecto):
-        por_minuto[zona][minuto] += 1
-    con.close()
 
+    Solo ve desfases de minutos. Uno de horas —como el de la leyenda del
+    aforo frontal, 4 h 55 min— lo tiene que decir quien conto, y se aplica
+    con --desfase-referencia; `revisar_reloj.py` dice cual reloj es el real.
+    """
+    candidatos = sorted({b for d in real.values() for b in d})
     combinado, por_zona = [], defaultdict(list)
     for s in range(-maximo, maximo + 1):
         # Solo cuartos de hora que sigan cubiertos enteros tras correrlos.
-        bins = [b for b in range(0, 24 * 60, 15)
-                if all((m - s) in cubiertos for m in range(b, b + 15))]
+        bins = [b for b in candidatos
+                if all(((m - s) % 1440) in cubiertos for m in range(b, b + 15))]
         error, base = 0.0, 0.0
         for zona, (sentido, _) in pares.items():
             if not sentido:
                 continue
-            ns = [sum(por_minuto[zona].get(m - s, 0) for m in range(b, b + 15))
-                  for b in bins]
+            ns = [sum(por_minuto.get(zona, {}).get((m - s) % 1440, 0)
+                      for m in range(b, b + 15)) for b in bins]
             rs = [real[sentido].get(b, 0) for b in bins]
             # Se quita la escala antes de medir: si el sistema cuenta 0.9x,
             # el error absoluto nunca bajaria del 10 % y taparia el desfase.
@@ -501,12 +513,17 @@ def composicion_nuestra(bd: Path, proyecto: int, bins) -> dict[str, int]:
     from src.storage import traffic_db
     traffic_db.DB_PATH = Path(bd)
     datos = traffic_db.get_interval_counts(proyecto, 15)
-    ventana = set(bins)
     comp: dict[str, int] = defaultdict(int)
     for carril in datos["lanes"]:
         for it in carril["intervals"]:
             t = it["start"]
-            if int(t[11:13]) * 60 + int(t[14:16]) not in ventana:
+            # Los intervalos de la plataforma van en :00/:15/:30/:45; los de
+            # la referencia pueden ir corridos (un conteo hecho con la hora de
+            # la pantalla). Entra el intervalo cuyo punto medio cae dentro de
+            # un cuarto comparable: para una PROPORCION, cinco minutos de
+            # orilla no pesan.
+            medio = int(t[11:13]) * 60 + int(t[14:16]) + 7.5
+            if not any(b <= medio < b + 15 for b in bins):
                 continue
             for clase, v in (it.get("by_vehicle_type") or {}).items():
                 comp[clase] += v.get("in", 0) + v.get("out", 0)
@@ -575,10 +592,27 @@ def main() -> None:
     p.add_argument("--salida", type=Path, help="CSV con el detalle por cuarto de hora")
     p.add_argument("--ignorar-fecha", action="store_true",
                    help="comparar aunque la fecha del conteo no sea la del video")
+    p.add_argument("--desfase-referencia", type=int, default=0, metavar="MIN",
+                   help="minutos que hay que SUMAR a las horas del conteo para "
+                        "llevarlas a la hora real. Aforo frontal del 19-sep-2026 "
+                        "contado con la leyenda de la pantalla: -295 (4 h 55 min)")
     a = p.parse_args()
 
     print("Aforo real de referencia:")
     real, clases_real, fecha_ref = cargar_referencia(a.referencias, a.fuente)
+    if a.desfase_referencia:
+        # Se corre la REFERENCIA, no lo nuestro: nuestras horas salen del
+        # nombre del archivo, que `revisar_reloj.py` comprobo contra el sol.
+        d = a.desfase_referencia
+        real = {s: {(m + d) % 1440: v for m, v in x.items()} for s, x in real.items()}
+        if clases_real:
+            clases_real = {s: {(m + d) % 1440: v for m, v in x.items()}
+                           for s, x in clases_real.items()}
+        print(f"  horas del conteo corridas {d:+d} min para llevarlas a la hora real")
+        # La fecha del titulo es la que se leyo en la pantalla; con la
+        # leyenda del frontal tambien viene corrida (22 dias), asi que ya no
+        # sirve de candado.
+        fecha_ref = None
     fecha_video = fecha_del_proyecto(a.bd, a.proyecto)
     # La carpeta por omision trae el aforo del 19-ago-2026 (camara lateral).
     # Sin este candado, el proyecto frontal del 19-sep se compara contra el
@@ -589,17 +623,19 @@ def main() -> None:
                  "No se comparan dias distintos.\nPon el conteo de este video "
                  "en su propia carpeta (--referencias referencias/<aforo>/),\n"
                  "o usa --ignorar-fecha si de verdad es el mismo dia.")
-    nuestro, cubiertos = cargar_nuestro(a.bd, a.proyecto)
-    if not nuestro:
+    por_minuto, motos_minuto, cubiertos = cargar_nuestro(a.bd, a.proyecto)
+    if not por_minuto:
         sys.exit(diagnosticar_sin_cruces(a.bd, a.proyecto))
 
-    # Solo los cuartos de hora cubiertos ENTEROS por el video: uno a medias
-    # compara 15 minutos de tubo contra 2 de camara y ensucia el resultado.
+    # Solo los cuartos que la referencia CONTO y que el video cubre ENTEROS:
+    # uno a medias compara 15 minutos de referencia contra 2 de camara.
     bins = sorted(
-        b for b in range(0, 24 * 60, 15) if all(m in cubiertos for m in range(b, b + 15))
+        b for b in {m for x in real.values() for m in x}
+        if all((m % 1440) in cubiertos for m in range(b, b + 15))
     )
     if not bins:
-        sys.exit("El video no cubre ningun cuarto de hora completo.")
+        sys.exit("El video no cubre ningun cuarto de hora de los que trae el conteo.")
+    nuestro = agrupar(por_minuto, bins)
     print(
         f"\nVentana comparable: {bins[0] // 60:02d}:{bins[0] % 60:02d} a "
         f"{(bins[-1] + 15) // 60:02d}:{(bins[-1] + 15) % 60:02d}  "
@@ -619,7 +655,7 @@ def main() -> None:
     # Las motos se quitan tambien POR CALZADA, no solo del total. La prueba
     # con un conteo sin motos lo destapo: cada sentido salia 3 % inflado
     # (0.96x donde se habia metido 0.93x) aunque el total "sin motos" cuadraba.
-    motos = motos_por_cuarto(a.bd, a.proyecto)
+    motos = agrupar(motos_minuto, bins)
     print(f"{'calzada':<24}{'nuestro':>9}{'real':>9}{'razon':>8}{'sin motos':>11}")
     tn = tr = mn = 0
     for zona, (sentido, _) in sorted(pares.items()):
@@ -674,7 +710,7 @@ def main() -> None:
         print("  pero la escala esta mal. r bajo = no lo esta viendo.")
 
     # El reloj de la grabadora puede estar corrido. Se reporta, no se corrige.
-    combinado, por_zona = buscar_desfase_reloj(a.bd, a.proyecto, real, pares, cubiertos)
+    combinado, por_zona = buscar_desfase_reloj(por_minuto, real, pares, cubiertos)
     desfase, cero, mejor, motivo = veredicto_reloj(combinado, por_zona)
     print()
     if desfase is not None:
