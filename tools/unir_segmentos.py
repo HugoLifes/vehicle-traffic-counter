@@ -1,19 +1,21 @@
 """
 Pegar los segmentos de un minuto en tramos mas largos, sin perder la hora.
 
-POR QUE, y por que NO por las razones obvias. Medido sobre 52 videos ya
+POR QUE, y por que NO por las razones obvias. Medido sobre 574 videos ya
 contados del aforo frontal, contando los cruces por segundo dentro de cada
 archivo:
 
-    segundo 0 de cada video    48 % de los cruces normales
-    segundo 1                  76 %
-    segundo 2 en adelante      normal
+    segundo 0 de cada video    80 % de los cruces normales
+    segundo 1 en adelante      normal (dentro del +-6 % de ruido por segundo)
+
+(La primera medida, con 52 videos, daba 48 % y 76 %: era ruido de muestra
+chica, 12 cruces en el segundo 0.)
 
 El vehiculo que va cruzando la linea justo cuando empieza el archivo **no se
 cuenta**: el rastreador necesita ver la caja unos cuadros antes de la linea
 para registrar el cruce, y al empezar el archivo ese pasado no existe. Sale
-**alrededor del 1 %** del aforo, y siempre hacia abajo. Con 730 archivos de
-un minuto ese 1 % se paga 730 veces; en tramos de 10 minutos se paga 73.
+**entre 0.3 y 0.5 %** del aforo, y siempre hacia abajo. Con 730 archivos de
+un minuto se paga 730 veces; en tramos de 10 minutos se paga 73.
 
 Lo que unir los segmentos **NO** arregla, tambien medido:
 

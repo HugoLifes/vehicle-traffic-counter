@@ -987,26 +987,32 @@ falta el conteo manual. El lazo virtual del barrido sirve solo para tamizar:
 en el minuto más cargado marcó 21 donde hay 32 verificados a ojo, porque
 junta a los que cruzan pegados.
 
-### Cada archivo que empieza cuesta ~1 % del conteo
+### Cada archivo que empieza cuesta 0.3–0.5 % del conteo
 
-Medido sobre 52 videos ya contados del aforo frontal, contando los cruces
-por segundo **dentro** de cada archivo:
+Cruces por segundo **dentro** de cada archivo, respecto a la media de los
+segundos 5–54:
 
-| | cruces respecto a lo normal |
-|---|---|
-| segundo 0 del archivo | **48 %** |
-| segundo 1 | **76 %** |
-| segundo 2 en adelante | normal |
-| segundos 58 y 59 | 112 % |
+| | 52 videos (primera medida) | **574 videos** |
+|---|---|---|
+| segundo 0 del archivo | 48 % | **80 %** |
+| segundo 1 | 76 % | 97 % |
+| segundo 2 | normal | 94 % |
+| segundos 58 y 59 | 112 % | 98 %, 94 % |
 
 El vehículo que va cruzando la línea justo cuando **empieza** el archivo no
 se cuenta: el rastreador necesita ver la caja unos cuadros antes de la línea
-para registrar el cruce, y al arrancar el archivo ese pasado no existe. El
-repunte del final es el mismo vehículo, contado por el archivo siguiente,
-pero no alcanza a compensar: el neto es **alrededor del 1 % hacia abajo**.
+para registrar el cruce, y al arrancar el archivo ese pasado no existe.
 
-Con 730 archivos de un minuto ese 1 % se paga 730 veces. `unir_segmentos.py`
-los pega en tramos de 10 minutos y lo baja a una décima parte.
+**La primera medida exageraba el efecto al doble y se corrigió con más
+datos.** Con 52 videos el segundo 0 tenía 12 cruces, y ahí un 48 % es ruido;
+con 574 tiene más de 240 y sale 80 %. Cada segundo lleva un ±6 % de ruido,
+así que solo el segundo 0 está claramente abajo: la pérdida neta es
+**0.3–0.5 %** por archivo, no el ~1 % que se había escrito. Es la misma
+lección de siempre en este proyecto, esta vez con el tamaño de la muestra.
+
+`unir_segmentos.py` pega los archivos en tramos de 10 minutos y lo baja a una
+décima parte. Con esta cifra **no vale la pena recontar un aforo ya contado
+para recuperarlo**; se usa desde el principio en los aforos nuevos.
 
 **Lo que unir los segmentos NO arregla, también medido:**
 
@@ -1049,10 +1055,10 @@ cuando la da.** Mirando los recortes, `truck` bajo el umbral de pesado salió
 Traverse): tiene buena precisión. Lo que no tiene es cobertura, y se mide en
 una sola línea:
 
-| calzada | qué se ve del vehículo | COCO dice `truck` |
-|---|---|---|
-| Hacia la cámara | el frente | **1.2 %** (55 de 4 465) |
-| Alejándose | la parte de atrás | **7.6 %** (367 de 4 856) |
+| calzada | qué se ve del vehículo | COCO dice `truck` (10 mil cruces) | (17 mil cruces) |
+|---|---|---|---|
+| Hacia la cámara | el frente | 1.2 % (55 de 4 465) | **0.9 %** (69 de 8 072) |
+| Alejándose | la parte de atrás | 7.6 % (367 de 4 856) | **5.4 %** (467 de 8 634) |
 
 Misma vía, mismo día, los mismos vehículos yendo y volviendo: **seis veces
 más "trocas" en un sentido que en el otro.** Por detrás se le ve la caja a
