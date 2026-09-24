@@ -18,6 +18,10 @@ results/
 # del Jetson solo la infla y arriesga meter un build viejo.
 web/node_modules/
 web/dist/
-data/uploads/
-data/*.db
-data/*.db-*
+# data/ ENTERA: en el Jetson se monta desde el host (docker-compose.jetson.yml)
+# y la imagen solo necesita la carpeta vacia, que crea el Dockerfile. Ignorar
+# solo uploads/ y la base dejaba entrar data/nuevos, data/od y data/aicity:
+# el 24-sep-2026 eran 43 GB y el contexto iba en 14 GB al minuto y medio.
+# Con `COPY . .` todo eso se horneaba en la imagen, donde nunca se ve porque
+# el montaje lo tapa.
+data/
