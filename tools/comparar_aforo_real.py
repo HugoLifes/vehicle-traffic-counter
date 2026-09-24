@@ -97,19 +97,50 @@ def leer_contador(ruta: Path) -> tuple[str, str, dict[int, float]]:
     return sentido, fecha, por_minuto
 
 
-def leer_conteo_manual(ruta: Path) -> dict[str, dict[int, float]]:
-    """Aforo contado por una persona: {sentido: {minuto: vehiculos}}.
+# Sentidos como los escribe la empresa. El primer formato solo traia
+# OTE-PTE y PTE-OTE, y el lector los tenia fijos: un aforo de una calle
+# norte-sur, o escrito "NORTE-SUR", no se leia y la herramienta decia que no
+# habia conteo manual.
+_RUMBO = r"(?:NTE|SUR|OTE|PTE|NORTE|ORIENTE|PONIENTE)"
+PATRON_SENTIDO = re.compile(rf"{_RUMBO}\s*-\s*{_RUMBO}", re.I)
+# La fecha viene en el titulo de la hoja: "BLVD MIGUEL DE LA MADRID
+# 19-AGOSTO-2026". Es el candado contra comparar un video con el aforo de
+# otro dia, que en la carpeta de referencias conviven.
+PATRON_FECHA = re.compile(r"(\d{1,2})\s*-\s*([A-Za-zÁÉÍÓÚáéíóú]+)\s*-\s*(\d{4})")
+MESES = {"ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5,
+         "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "SETIEMBRE": 9,
+         "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12}
+CLASES_MANUAL = ("A", "B", "C", "T-S", "T-S-R")
+
+
+def _fecha_de_titulo(txt: str) -> str | None:
+    m = PATRON_FECHA.search(txt or "")
+    if not m:
+        return None
+    mes = MESES.get(m.group(2).upper())
+    return f"{int(m.group(3)):04d}-{mes:02d}-{int(m.group(1)):02d}" if mes else None
+
+
+def leer_conteo_manual_clases(ruta: Path):
+    """Aforo contado por una persona, con su clase.
+
+    Devuelve (fecha, {sentido: {minuto: {clase: vehiculos}}}).
 
     Un archivo trae los DOS sentidos, una hoja cada uno, y cada hoja se
     parte en dos bloques lado a lado: la mitad AM a la izquierda y la PM a
     la derecha, con cinco clases (A, B, C, T-S, T-S-R) por bloque. La
     columna de la hora se localiza por su encabezado 'Hr/Mov' en vez de
-    fijarla, porque no cae en la misma letra en las dos hojas.
+    fijarla, porque no cae en la misma letra en las dos hojas; y el nombre
+    de cada clase se lee de la fila de abajo en vez de suponer el orden.
+
+    El formato NO trae columna de motocicletas. O van dentro de A o no se
+    cuentan, y eso hay que preguntarlo: nosotros si las contamos.
     """
     import openpyxl  # solo aqui: el resto de la herramienta no lo necesita
 
     libro = openpyxl.load_workbook(str(ruta), data_only=True)
-    real: dict[str, dict[int, float]] = {}
+    real: dict[str, dict[int, dict[str, float]]] = {}
+    fecha = None
 
     for hoja in libro.worksheets:
         columnas_hora, sentido = [], None
@@ -117,27 +148,41 @@ def leer_conteo_manual(ruta: Path) -> dict[str, dict[int, float]]:
             for celda in fila:
                 txt = str(celda.value or "").strip()
                 if txt.lower().startswith("hr/mov"):
-                    columnas_hora.append(celda.column)
-                elif re.fullmatch(r"(OTE|PTE)-(OTE|PTE)", txt, re.I):
-                    sentido = txt.lower()
-        if not columnas_hora or not sentido:
+                    columnas_hora.append((celda.row, celda.column))
+                elif PATRON_SENTIDO.fullmatch(txt):
+                    sentido = re.sub(r"\s+", "", txt).lower()
+                elif fecha is None:
+                    fecha = _fecha_de_titulo(txt)
+        if not columnas_hora:
             continue
+        # Sin un sentido reconocible se usa el nombre de la hoja: mejor un
+        # nombre raro que descartar la hoja entera en silencio.
+        sentido = sentido or hoja.title.strip().lower()
 
-        por_minuto: dict[int, float] = {}
-        for fila in range(1, hoja.max_row + 1):
-            for col in columnas_hora:
+        por_minuto: dict[int, dict[str, float]] = {}
+        for fila_hr, col in columnas_hora:
+            nombres = []
+            for i in range(1, 6):
+                n = str(hoja.cell(fila_hr + 1, col + i).value or "").strip().upper()
+                nombres.append(n if n in CLASES_MANUAL else CLASES_MANUAL[i - 1])
+            for fila in range(fila_hr + 1, hoja.max_row + 1):
                 minuto = _minuto_de_rango(hoja.cell(fila, col).value)
                 if minuto is None or minuto in por_minuto:
                     continue
-                total = 0.0
-                for i in range(1, 6):  # las cinco clases a la derecha
+                clases = {}
+                for i, nombre in enumerate(nombres, start=1):
                     v = hoja.cell(fila, col + i).value
-                    if isinstance(v, (int, float)):
-                        total += v
-                por_minuto[minuto] = total
+                    clases[nombre] = float(v) if isinstance(v, (int, float)) else 0.0
+                por_minuto[minuto] = clases
         if por_minuto:
             real[sentido] = por_minuto
-    return real
+    return fecha, real
+
+
+def leer_conteo_manual(ruta: Path) -> dict[str, dict[int, float]]:
+    """Aforo contado por una persona: {sentido: {minuto: vehiculos}}."""
+    _, real = leer_conteo_manual_clases(ruta)
+    return {s: {m: sum(c.values()) for m, c in d.items()} for s, d in real.items()}
 
 
 def _minuto_de_rango(etiqueta) -> int | None:
@@ -153,26 +198,49 @@ def _minuto_de_rango(etiqueta) -> int | None:
     return h * 60 + mi
 
 
-def cargar_referencia(carpeta: Path, fuente: str = "auto") -> dict[str, dict[int, float]]:
+def cargar_referencia(carpeta: Path, fuente: str = "auto"):
     """El conteo manual manda sobre el contador de ejes cuando ambos existen.
 
     Contrastados entre si sobre este mismo tramo y dia, el tubo perdio el
     31 % del transito en un sentido (1 916 contra 2 777 contados a mano)
     mientras acertaba en el otro (0.95x). Una persona contando es la
     referencia; el tubo es un instrumento que puede fallar y aqui fallo.
+
+    Devuelve (totales, clases, fecha). `clases` es None con el tubo, que no
+    las da en la taxonomia de la empresa; `fecha` es None si no se pudo leer.
     """
     manuales = sorted(carpeta.glob("*.xlsx"))
     tubos = sorted(carpeta.glob("*.xls"))
 
     if fuente in ("auto", "manual") and manuales:
         real: dict[str, dict[int, float]] = {}
+        clases: dict[str, dict[int, dict[str, float]]] = {}
+        fechas = set()
+        origen: dict[str, str] = {}
         for ruta in manuales:
-            for sentido, datos in leer_conteo_manual(ruta).items():
-                real[sentido] = datos
+            fecha, por_clase = leer_conteo_manual_clases(ruta)
+            if fecha:
+                fechas.add(fecha)
+            for sentido, datos in por_clase.items():
+                # Antes el segundo archivo pisaba al primero sin decir nada.
+                # Con el aforo viejo y el nuevo en la misma carpeta, eso
+                # compara un sentido de un dia contra el otro sentido de otro.
+                if sentido in origen:
+                    sys.exit(f"El sentido {sentido} viene en dos archivos "
+                             f"({origen[sentido]} y {ruta.name}). Deja en "
+                             f"{carpeta} solo el conteo de ESTE video, o usa "
+                             "--referencias con una carpeta para cada aforo.")
+                origen[sentido] = ruta.name
+                clases[sentido] = datos
+                real[sentido] = {m: sum(c.values()) for m, c in datos.items()}
                 print(f"  {ruta.name} [conteo manual]: sentido {sentido}, "
-                      f"{len(datos)}/96 cuartos de hora, {int(sum(datos.values()))} vehiculos")
+                      f"{fecha or 'fecha sin leer'}, {len(datos)}/96 cuartos de "
+                      f"hora, {int(sum(real[sentido].values()))} vehiculos")
+        if len(fechas) > 1:
+            sys.exit(f"Los conteos de {carpeta} son de dias distintos: "
+                     f"{', '.join(sorted(fechas))}.")
         if real:
-            return real
+            return real, clases, (fechas.pop() if fechas else None)
     if fuente == "manual":
         sys.exit(f"No hay conteo manual (.xlsx) en {carpeta}")
 
@@ -184,7 +252,7 @@ def cargar_referencia(carpeta: Path, fuente: str = "auto") -> dict[str, dict[int
         print(f"  {ruta.name} [contador de ejes]: sentido {sentido}, {fecha}, "
               f"{len(datos)}/96 cuartos de hora, {int(sum(datos.values()))} vehiculos")
         real[sentido] = datos
-    return real
+    return real, None, None
 
 
 def diagnosticar_sin_cruces(bd: Path, proyecto: int) -> str:
@@ -239,20 +307,130 @@ def cargar_nuestro(bd: Path, proyecto: int) -> tuple[dict[str, dict[int, int]], 
         (proyecto,),
     ):
         h, m, _ = map(int, r["t"][11:].split(":"))
-        dur = int((r["f"] or 0) / (r["fps"] or 15) / 60)
+        # REDONDEADO, no truncado. Con segmentos de un minuto, un archivo de
+        # 58 s (1 160 cuadros; hay 7 asi en el aforo frontal) daba int(0.97)
+        # = 0 minutos: su minuto quedaba como "no grabado" y el cuarto de
+        # hora entero salia de la comparacion sin avisar.
+        dur = round((r["f"] or 0) / (r["fps"] or 15) / 60)
         cubiertos.update(range(h * 60 + m, h * 60 + m + dur))
 
     nuestro: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for zona, minuto, _ in _cruces_por_minuto(con, proyecto):
+        nuestro[zona][(minuto // 15) * 15] += 1
+    con.close()
+    return {k: dict(v) for k, v in nuestro.items()}, cubiertos
+
+
+def _cruces_por_minuto(con, proyecto):
+    """(zona, minuto del dia, clase de COCO) de cada cruce del proyecto."""
     for r in con.execute(
-        "select z.name zona, x.timestamp ts from crossings x "
+        "select z.name zona, x.timestamp ts, x.vehicle_type vt from crossings x "
         "join video_jobs v on v.id=x.job_id left join zones z on z.id=x.zone_id "
         "where v.project_id=?",
         (proyecto,),
     ):
-        minuto = int(r["ts"][11:13]) * 60 + int(r["ts"][14:16])
-        nuestro[r["zona"] or "sin zona"][(minuto // 15) * 15] += 1
+        yield (r["zona"] or "sin zona",
+               int(r["ts"][11:13]) * 60 + int(r["ts"][14:16]), r["vt"])
+
+
+def fecha_del_proyecto(bd: Path, proyecto: int) -> str | None:
+    con = _conectar_ro(bd)
+    r = con.execute("select min(video_start_time) t from video_jobs "
+                    "where project_id=? and video_start_time is not null",
+                    (proyecto,)).fetchone()
     con.close()
-    return {k: dict(v) for k, v in nuestro.items()}, cubiertos
+    return r["t"][:10] if r and r["t"] else None
+
+
+def motos_por_cuarto(bd: Path, proyecto: int) -> dict[str, dict[int, int]]:
+    """Motocicletas por calzada y cuarto de hora.
+
+    El formato de la empresa no trae columna de motos (A, B, C, T-S, T-S-R).
+    Si no las cuentan, nuestro total lleva ~2 % de mas que ellos no tienen,
+    y la razon sale inflada por algo que no es error de nadie. Se reportan
+    las dos cifras hasta que la empresa diga donde van.
+    """
+    con = _conectar_ro(bd)
+    motos: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for zona, minuto, vt in _cruces_por_minuto(con, proyecto):
+        if vt == "motorcycle":
+            motos[zona][(minuto // 15) * 15] += 1
+    con.close()
+    return {k: dict(v) for k, v in motos.items()}
+
+
+def buscar_desfase_reloj(bd, proyecto, real, pares, cubiertos, maximo=10):
+    """Minutos que parece estar corrido el reloj del video respecto al conteo.
+
+    La hora de cada cruce sale del nombre del archivo, que pone el reloj de
+    la grabadora. En este material ese reloj ya dio una sorpresa: la leyenda
+    impresa en la imagen se atraso casi un mes a las 12:25. Si el reloj esta
+    corrido unos minutos, los vehiculos caen en el cuarto de hora vecino y la
+    comparacion por intervalo empeora aunque el total cuadre.
+
+    Se prueba correr nuestros cruces de -`maximo` a +`maximo` minutos y se
+    mide el error por cuarto de hora contra el conteo. Es un DIAGNOSTICO: la
+    cifra principal se da siempre sin correr nada, y si aparece un desfase lo
+    que toca es preguntar a la empresa, no corregirlo a mano.
+    """
+    con = _conectar_ro(bd)
+    por_minuto: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for zona, minuto, _ in _cruces_por_minuto(con, proyecto):
+        por_minuto[zona][minuto] += 1
+    con.close()
+
+    combinado, por_zona = [], defaultdict(list)
+    for s in range(-maximo, maximo + 1):
+        # Solo cuartos de hora que sigan cubiertos enteros tras correrlos.
+        bins = [b for b in range(0, 24 * 60, 15)
+                if all((m - s) in cubiertos for m in range(b, b + 15))]
+        error, base = 0.0, 0.0
+        for zona, (sentido, _) in pares.items():
+            if not sentido:
+                continue
+            ns = [sum(por_minuto[zona].get(m - s, 0) for m in range(b, b + 15))
+                  for b in bins]
+            rs = [real[sentido].get(b, 0) for b in bins]
+            # Se quita la escala antes de medir: si el sistema cuenta 0.9x,
+            # el error absoluto nunca bajaria del 10 % y taparia el desfase.
+            # Aqui solo importa si los vehiculos caen en su cuarto de hora.
+            k = sum(rs) / sum(ns) if sum(ns) else 0.0
+            e = sum(abs(k * n - r) for n, r in zip(ns, rs))
+            if sum(rs):
+                por_zona[zona].append((e / sum(rs), s))
+            error += e
+            base += sum(rs)
+        if base:
+            combinado.append((error / base, s))
+    return sorted(combinado), {z: sorted(v) for z, v in por_zona.items()}
+
+
+def veredicto_reloj(combinado, por_zona, mejora_minima=0.15):
+    """Decide si hay un desfase de reloj de verdad, o si es ruido.
+
+    Probar 21 desfases y quedarse con el mejor SIEMPRE le gana al cero por
+    azar: con doce cuartos de hora, el minimo de 21 intentos casi nunca es
+    el cero aunque el reloj este perfecto. La primera version cayo ahi y
+    aviso "2 min adelantado" sobre el aforo viejo con una calzada rota.
+
+    Lo que separa un desfase real del ruido es fisico: el reloj es UNO para
+    todo el video, asi que si esta corrido, los dos sentidos por separado
+    tienen que pedir el mismo desfase. Si cada uno pide uno distinto, lo que
+    hay es ruido de cuarto de hora, no reloj.
+
+    Devuelve (desfase o None, error en cero, error con desfase, texto).
+    """
+    if not combinado:
+        return None, None, None, "sin datos"
+    cero = next((e for e, s in combinado if s == 0), None)
+    mejor_e, mejor_s = combinado[0]
+    if cero is None or mejor_s == 0 or mejor_e >= (1 - mejora_minima) * cero:
+        return None, cero, mejor_e, "sin desfase aparente"
+    preferidos = {z: v[0][1] for z, v in por_zona.items() if v}
+    if len(preferidos) >= 2 and all(abs(s - mejor_s) <= 1 for s in preferidos.values()):
+        return mejor_s, cero, mejor_e, "los dos sentidos piden el mismo desfase"
+    detalle = ", ".join(f"{z} {s:+d} min" for z, s in sorted(preferidos.items()))
+    return None, cero, mejor_e, f"cada sentido pide otro desfase ({detalle}): ruido"
 
 
 def _correlacion(a, b):
@@ -311,6 +489,80 @@ def emparejar(real, nuestro, bins):
     return pares
 
 
+def composicion_nuestra(bd: Path, proyecto: int, bins) -> dict[str, int]:
+    """Clases de la ventana comparable, TAL COMO LAS VE EL USUARIO.
+
+    Se leen de `traffic_db.get_interval_counts`, que es el unico sitio donde
+    las clases de COCO se traducen a la taxonomia de la empresa (pantallas,
+    graficas y los dos CSV pasan por ahi). Comparar otra cosa seria validar
+    una cifra que nadie ve.
+    """
+    sys.path.insert(0, str(RAIZ))
+    from src.storage import traffic_db
+    traffic_db.DB_PATH = Path(bd)
+    datos = traffic_db.get_interval_counts(proyecto, 15)
+    ventana = set(bins)
+    comp: dict[str, int] = defaultdict(int)
+    for carril in datos["lanes"]:
+        for it in carril["intervals"]:
+            t = it["start"]
+            if int(t[11:13]) * 60 + int(t[14:16]) not in ventana:
+                continue
+            for clase, v in (it.get("by_vehicle_type") or {}).items():
+                comp[clase] += v.get("in", 0) + v.get("out", 0)
+    return dict(comp)
+
+
+def informe_clases(clases_real, pares, bins, comp) -> None:
+    """Composicion por clase contra el conteo manual, los dos sentidos juntos.
+
+    El conteo manual trae A, B, C, T-S y T-S-R. La camara frontal entrega
+    MOTO / A / B / C: su C son los camiones de un cuerpo Y los articulados,
+    que desde la camara no se separan. La camara vieja entrega A / PESADO.
+    """
+    real = defaultdict(float)
+    for sentido, _ in pares.values():
+        if not sentido or sentido not in clases_real:
+            continue
+        for b in bins:
+            for clase, v in clases_real[sentido].get(b, {}).items():
+                real[clase] += v
+    sin_resolver = comp.get("SIN_RESOLVER", 0)
+    if "PESADO" in comp:
+        filas = [("A (livianos)", real["A"], comp.get("A", 0)),
+                 ("Pesados", real["B"] + real["C"] + real["T-S"] + real["T-S-R"],
+                  comp.get("PESADO", 0))]
+    else:
+        filas = [("A (livianos)", real["A"], comp.get("A", 0)),
+                 ("B autobus", real["B"], comp.get("B", 0)),
+                 ("C camion (C+T-S+T-S-R)",
+                  real["C"] + real["T-S"] + real["T-S-R"], comp.get("C", 0))]
+    motos = comp.get("MOTO", 0)
+    tr = sum(f[1] for f in filas)
+    tn = sum(f[2] for f in filas)
+    if not tr or not tn:
+        print("\nComposicion: sin datos de clase en la ventana.")
+        return
+    print("\n=== Composicion por clase (ambos sentidos, sin motos) ===")
+    print(f"{'clase':<26}{'nuestro':>9}{'real':>9}{'razon':>8}"
+          f"{'% nuestro':>11}{'% real':>9}{'puntos':>8}")
+    for nombre, r, n in filas:
+        razon = f"{n / r:.2f}x" if r else "-"
+        pn, pr = 100 * n / tn, 100 * r / tr
+        print(f"{nombre:<26}{n:>9}{int(r):>9}{razon:>8}{pn:>10.1f}%"
+              f"{pr:>8.1f}%{abs(pn - pr):>8.1f}")
+    if motos:
+        print(f"Motocicletas nuestras: {motos}. El formato de la empresa no las "
+              "trae; si las\n  cuentan dentro de A, sumarlas a nuestra A antes "
+              "de comparar.")
+    if sin_resolver:
+        print(f"Sin clasificar (noche o vehiculo muy chico): {sin_resolver}, "
+              "fuera de los porcentajes.")
+    print("  (La composicion puede cuadrar con errores que se cancelan: una "
+          "troca contada\n   como pesada y un camion como liviano. Para eso "
+          "estan las hojas de recortes.)")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -321,10 +573,22 @@ def main() -> None:
                    help="referencia a usar; auto prefiere el conteo manual")
     p.add_argument("--bd", type=Path, default=BD)
     p.add_argument("--salida", type=Path, help="CSV con el detalle por cuarto de hora")
+    p.add_argument("--ignorar-fecha", action="store_true",
+                   help="comparar aunque la fecha del conteo no sea la del video")
     a = p.parse_args()
 
     print("Aforo real de referencia:")
-    real = cargar_referencia(a.referencias, a.fuente)
+    real, clases_real, fecha_ref = cargar_referencia(a.referencias, a.fuente)
+    fecha_video = fecha_del_proyecto(a.bd, a.proyecto)
+    # La carpeta por omision trae el aforo del 19-ago-2026 (camara lateral).
+    # Sin este candado, el proyecto frontal del 19-sep se compara contra el
+    # dia equivocado y la cifra sale razonable y falsa a la vez.
+    if fecha_ref and fecha_video and fecha_ref != fecha_video and not a.ignorar_fecha:
+        print()
+        sys.exit(f"El conteo es del {fecha_ref} y el video del {fecha_video}. "
+                 "No se comparan dias distintos.\nPon el conteo de este video "
+                 "en su propia carpeta (--referencias referencias/<aforo>/),\n"
+                 "o usa --ignorar-fecha si de verdad es el mismo dia.")
     nuestro, cubiertos = cargar_nuestro(a.bd, a.proyecto)
     if not nuestro:
         sys.exit(diagnosticar_sin_cruces(a.bd, a.proyecto))
@@ -362,6 +626,15 @@ def main() -> None:
         print(f"{zona:<20}{n:>10}{int(rr):>10}{razon:>9}")
     if tr:
         print(f"{'AMBOS SENTIDOS':<20}{tn:>10}{int(tr):>10}{tn / tr:>8.2f}x")
+        motos = motos_por_cuarto(a.bd, a.proyecto)
+        mn = sum(motos.get(z, {}).get(b, 0) for z in pares for b in bins)
+        if mn:
+            print(f"{'  sin motocicletas':<20}{tn - mn:>10}{int(tr):>10}"
+                  f"{(tn - mn) / tr:>8.2f}x   ({mn} motos nuestras)")
+            print("  El conteo de la empresa no trae columna de motos. Si NO las "
+                  "cuentan, la razon")
+            print("  buena es la de abajo; si las meten en A, la de arriba. "
+                  "Hay que preguntarlo.")
 
     print("\n=== Reparto entre sentidos ===")
     reparto_real = " / ".join(
@@ -395,6 +668,26 @@ def main() -> None:
         print(f"\nCorrelacion del perfil temporal (ambos sentidos): r = {r_total:+.2f}")
         print("  r alto con razon lejos de 1 = el detector si ve el transito real,")
         print("  pero la escala esta mal. r bajo = no lo esta viendo.")
+
+    # El reloj de la grabadora puede estar corrido. Se reporta, no se corrige.
+    combinado, por_zona = buscar_desfase_reloj(a.bd, a.proyecto, real, pares, cubiertos)
+    desfase, cero, mejor, motivo = veredicto_reloj(combinado, por_zona)
+    print()
+    if desfase is not None:
+        lado = "adelantado" if desfase < 0 else "atrasado"
+        print(f"AVISO DE RELOJ: el reloj del video parece ir {abs(desfase)} min {lado}")
+        print(f"  ({motivo}; el error por cuarto de hora baja de "
+              f"{100 * cero:.0f} % a {100 * mejor:.0f} %).")
+        print("  Las cifras de arriba NO lo corrigen: preguntar a la empresa si "
+              "la grabadora")
+        print("  tenia la hora sincronizada.")
+    elif cero is not None:
+        print(f"Reloj: {motivo} (error por cuarto de hora {100 * cero:.0f} % "
+              f"sin correr nada).")
+
+    if clases_real:
+        informe_clases(clases_real, pares, bins,
+                       composicion_nuestra(a.bd, a.proyecto, bins))
 
     if a.salida:
         a.salida.parent.mkdir(parents=True, exist_ok=True)
