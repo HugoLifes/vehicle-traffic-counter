@@ -214,6 +214,8 @@ se podía contestar de otro modo:
 | `probar_comparacion.py` | Probar `comparar_aforo_real.py` de punta a punta con un conteo fabricado con errores conocidos |
 | `contador_ejes.py` | Leer los reportes del contador de ejes (clasificación, volumen y velocidades, varios días y carriles) |
 | `revisar_reloj.py` | Cuál reloj del video dice la hora real —archivo o leyenda—, comprobado contra la puesta de sol |
+| `calibrar_velocidad.py` | Fijar la distancia del tramo contra el tubo con unas horas y medir las demás; de paso, si los dos tubos miden velocidades compatibles |
+| `recortes_sin_posicion.py` | Recortar cruces contados antes de guardar la posición de la caja, detectando solo su segundo |
 
 ---
 
@@ -1293,6 +1295,73 @@ independientes:
 cargada.** Coincide con el video donde el tránsito es ligero y se queda corto
 donde se junta. No se corrige nada del lado nuestro. Tampoco separa autobús
 (3 en doce horas: los clasifica como 2A-SU por sus ejes).
+
+### El Excel, revisado como lo recibiría la empresa (24-sep-2026)
+
+Tres huecos que no daban error y sí cambiaban el entregable:
+
+- **No traía la clasificación.** Tenía totales y cuartos de hora, pero el
+  formato de la empresa es justo el desglose por clase, por cuarto de hora y
+  por sentido. Hoja nueva `CLASIFICACION (15MIN)`, leída de
+  `get_interval_counts(..., por_calzada=True)`: el sentido es la calzada de
+  **cada cruce**, como en las demás hojas. Agrupando por línea, el proyecto
+  11 daba 361 en un sentido y 582 en las otras hojas.
+- **Un cuarto de hora con video incompleto se veía como un bajón del
+  tránsito.** 11:45–12:00 tiene 80 % de video (empieza 11:48) y 12:15–12:30
+  93 % (falta el archivo de las 12:25). Ahora `get_interval_counts` da la
+  `cobertura` de cada intervalo (None si no se sabe, como en la cámara en
+  vivo), el Excel los pinta de naranja con el porcentaje en la nota y el CSV
+  la lleva en la última columna.
+- **El aviso "de noche 0.03×" estaba fijo en la hoja METODO**, así que el
+  informe del frontal, que sí mide la noche, contradecía sus propias cifras.
+  Ahora solo sale si hay horas no medibles.
+
+Y borrar un video no borraba sus cruces (no son llave foránea): un cruce de
+un video de la instalación ya quitado seguía saliendo a las 10:41.
+
+### Los pesados, mirados uno por uno
+
+Con los recortes de los pesados del frontal (47 de día, sacados de los
+recorridos; 73 de 18:00–19:10; 23 de noche), dos cosas que los totales no
+enseñaban:
+
+**1. De lado, YOLO llama `truck` a los autobuses de personal.** En la calzada
+que viene hacia la cámara el vehículo se ve de lado, y en la banda del
+autobús (1.9–2.1× el alto del automóvil) 4 de 6 `truck` de día y 4 de 5 de
+la tarde eran autobuses. Hoy caen en **C**. Se nota en el total: B sale 141
+en ese sentido y 259 en el otro, y C al revés (281 contra 238), cuando los
+autobuses de personal van y vuelven. Por detrás, en la otra calzada, `bus`
+acierta. Los votos del rastro no lo arreglan: los autobuses mal etiquetados
+traen 0–40 % de votos `bus`, y los tractocamiones de verdad 18–23 %.
+
+**2. El tractocamión (T-S) sí se separa por la forma**, y es la columna de
+la empresa que no damos (hoy va dentro de C):
+
+| | alto (× auto) | ancho/alto (× el del auto de su calzada) |
+|---|---|---|
+| T-S, tractor con caja | 2.41–2.60 | **0.98–1.19** |
+| Tractor sin caja | 2.19–2.46 | 0.64–0.82 |
+| Camión de caja | 2.28–2.31 | 0.79–1.04 |
+| Autobús | 1.88–2.30 | 0.81–1.07 |
+
+Con la cámara de frente el largo del vehículo se proyecta en el alto de la
+caja; por eso el T-S es a la vez alto y ancho, y el tractor solo, alto y
+angosto. Regla candidata: **alto ≥ 2.38× y forma ≥ 0.93×**. Diseñada sobre
+los recortes de día y de la tarde, y probada después sobre 23 de noche que
+no se usaron: **10 de 10 T-S donde dice T-S**, pero se le escapan ~4 de 10
+—las pipas y plataformas, de caja baja (2.24×), y dos cajas con la forma en
+el límite—. Por hora sigue al tubo: su clase inequívoca de tractocamión
+(5A-ST) da 18, 9 y 6 a las 12, 13 y 14 h y luego 3–5; la regla, 35, 21, 12 y
+luego 2. Es sábado: a mediodía circulan y en la tarde no.
+
+**El tubo no valida esto.** No tiene autobuses (los manda a 2A-SU/3A-SU) y
+sus clases de 4 ejes se inflan con los autos pegados. Lo que valida es mirar
+los recortes.
+
+Los cruces anteriores a las 18:20 no guardaron posición de la caja.
+`tools/recortes_sin_posicion.py` los recorta sin recontar: de cada cruce se
+sabe el segundo, la calzada y el tamaño de la caja, y basta volver a detectar
+los ~20 cuadros de ese segundo (minutos de GPU en vez de 12 h).
 
 ### Lista para el conteo manual del aforo frontal
 
