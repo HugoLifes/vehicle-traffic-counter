@@ -108,6 +108,7 @@ export function EscenaFlujo({ lanes }: Props) {
         MOTO: leerColor('--veh-MOTO', '#0d6b72'),
         B: leerColor('--veh-B', '#6b34a1'),
         C: leerColor('--veh-C', '#9a5a12'),
+        'T-S': leerColor('--veh-T-S', '#c9a227'),
         SIN_RESOLVER: leerColor('--veh-SIN_RESOLVER', '#6b7280'),
         car: leerColor('--veh-car', '#1d54b3'),
         truck: leerColor('--veh-truck', '#9a5a12'),

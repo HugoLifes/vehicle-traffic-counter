@@ -172,8 +172,15 @@ def _datos(project_id: int) -> Dict:
             if cv > 0:
                 cobertura[(f, m)] = cv
 
+    revisados = dict(conn.execute("""
+        SELECT c.clase_revisada_por, COUNT(*) FROM crossings c
+        JOIN lane_configs l ON l.id = c.lane_id
+        WHERE l.project_id = ? AND c.clase_revisada IS NOT NULL
+        GROUP BY c.clase_revisada_por""", (project_id,)).fetchall())
+
     return {
         "proyecto": proyecto,
+        "revisados": revisados,
         "cobertura": cobertura,
         "no_medibles": _horas_no_medibles(conn, project_id),
         "sentidos": sorted(por_hora.keys()),
@@ -461,6 +468,12 @@ def _hoja_clases(wb: Workbook, project_id: int, d: Dict) -> None:
             notas.append("* C incluye camion unitario (C), tractocamion (T-S) y "
                          "doble remolque (T-S-R): con esta camara todavia no se "
                          "separan.")
+        if c == "T-S":
+            notas.append("C: camion unitario y tractor sin caja. T-S: tractocamion con "
+                         "semirremolque, incluido el doble remolque (T-S-R), que no se "
+                         "separa. Clase revisada sobre el recorte de cada pesado (ver "
+                         "METODO); los pesados sin revisar llevan la regla del alto y van "
+                         "en C.")
         if c == "MOTO":
             notas.append("MOTO: la clasificacion de la empresa no tiene columna de "
                          "motocicletas; se entregan aparte para sumarlas donde "
@@ -593,6 +606,12 @@ def _hoja_metodo(wb: Workbook, d: Dict):
                               "blanco a propósito, en vez de publicar el "
                               "conteo parcial que produjo el detector."),
     ]
+    if d.get("revisados"):
+        filas.append(("Clase de los pesados",
+                      "Revisada sobre el recorte de cada vehículo: " + ", ".join(
+                          f"{n} por {quien}" for quien, n in d["revisados"].items())
+                      + ". El resto, por la regla de alto y silueta del "
+                      "automóvil de su calzada."))
     for i, (k, v) in enumerate(filas, start=3):
         _celda(ws, i, 1, k, _ETIQUETA, alineacion=_IZQ, borde=False)
         _celda(ws, i, 2, v, _NORMAL, alineacion=_IZQ, borde=False)

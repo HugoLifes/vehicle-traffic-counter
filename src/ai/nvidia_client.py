@@ -104,12 +104,17 @@ def chat(messages: List[dict], max_tokens: int = 512, temperature: float = 0.2,
     return _with_retries("el modelo de chat", _call)
 
 
-def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400) -> str:
+def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400,
+           rol: str = "vision", timeout_s: Optional[float] = None,
+           calidad_jpeg: int = 70) -> str:
     """
     Analiza un frame (array BGR de OpenCV) con el modelo de visión.
     Se redimensiona/comprime antes de mandarlo — el free tier tiene
     límite de tamaño de payload en base64, y no hace falta más
     resolución para describir la escena en general.
+
+    `rol` elige el modelo de configs/nvidia_api.yaml: "clasificacion" usa
+    uno de razonamiento, que necesita más tokens y más tiempo.
     """
     client = _get_client()
     config = _load_config()
@@ -118,14 +123,14 @@ def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400) -> str:
     if w > 768:
         scale = 768 / w
         frame = cv2.resize(frame, (768, int(h * scale)))
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, calidad_jpeg])
     if not ok:
         raise NvidiaClientError("No se pudo codificar el frame para enviarlo")
     b64 = base64.b64encode(buf.tobytes()).decode()
 
     def _call():
         response = client.chat.completions.create(
-            model=config["models"]["vision"],
+            model=config["models"][rol],
             messages=[{
                 "role": "user",
                 "content": [
@@ -134,7 +139,7 @@ def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400) -> str:
                 ],
             }],
             max_tokens=max_tokens,
-            timeout=config.get("request_timeout_s", 30),
+            timeout=timeout_s or config.get("request_timeout_s", 30),
         )
         return response.choices[0].message.content or ""
 

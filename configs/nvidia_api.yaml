@@ -34,6 +34,16 @@ models:
   # contrario, clima). Versión más chica/rápida para llamadas periódicas.
   vision: "meta/llama-3.2-11b-vision-instruct"
 
+  # Clase del vehículo sobre su recorte (tools/revisar_pesados.py). Medido
+  # el 24-sep-2026 contra etiquetas hechas a ojo en el aforo frontal de
+  # Cd. Juárez: livianos 60/60 a las 18 h y 72/73 a las 13 h (auto,
+  # camioneta, pickup, pesado, moto); pesados 126/136 de día, tarde y noche
+  # (autobús 69/71, tractocamión 25/26; los fallos restantes son respuestas
+  # vacías). 2.5 s por recorte. llama-3.2-90b-vision da timeout, gemma-3 y
+  # cosmos-reason2 dan 404, llama-4-maverick 410; kimi-k3 contesta pero
+  # tarda 42 s y acertó 27/33.
+  clasificacion: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+
   # Embeddings para el RAG (2048 dimensiones)
   embedding: "nvidia/nemotron-3-embed-1b"
 

@@ -136,6 +136,13 @@ def init_schema():
     # en la camara de 2560x1440 el vehiculo recorre cientos de pixeles en
     # ese tiempo y el recorte cae donde ya no esta.
     _ensure_column(conn, "crossings", "cuadro", "INTEGER")
+    # Clase revisada sobre el recorte del vehiculo (tools/revisar_pesados.py),
+    # en la taxonomia de la empresa. Gana sobre la regla del alto: de lado,
+    # YOLO llama `truck` a los autobuses de personal, y el tractocamion (T-S)
+    # no tiene clase en COCO. `clase_revisada_por` dice quien la reviso.
+    # Recontar el video borra sus cruces y con ellos la revision.
+    _ensure_column(conn, "crossings", "clase_revisada", "TEXT")
+    _ensure_column(conn, "crossings", "clase_revisada_por", "TEXT")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS video_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1174,7 +1181,8 @@ def _tramos_de_video(project_id: int):
 
 
 def get_interval_counts(project_id: int, interval_minutes: int = 15,
-                        por_calzada: bool = False) -> Dict:
+                        por_calzada: bool = False,
+                        revision: Optional[Dict[int, str]] = None) -> Dict:
     """
     Conteos agrupados en intervalos de tiempo REALES (ej. 8:00-8:15,
     8:15-8:30...), la salida clásica de un estudio de aforo manual.
@@ -1246,8 +1254,9 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
 
     # 3. Traer todos los cruces del rango y clasificarlos en su cajón
     rows = conn.execute(
-        f"""SELECT lane_id, direction, vehicle_type, bbox_height, bbox_width,
-                   confidence, timestamp, tiempo_tramo_s, zone_id FROM crossings
+        f"""SELECT id, lane_id, direction, vehicle_type, bbox_height, bbox_width,
+                   confidence, timestamp, tiempo_tramo_s, zone_id,
+                   clase_revisada FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
@@ -1371,9 +1380,12 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
             # Cada cruce se clasifica con el umbral de SU hora.
             u_hora = niveles.get((lane["id"], row["timestamp"][11:13]),
                                  (NO_RESOLUBLE, None))[1]
-            clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora,
-                               ancho=row["bbox_width"],
-                               perfil=perfiles.get(lane["id"]))
+            # La clase revisada sobre el recorte gana sobre la regla.
+            # `revision` es la misma cosa sin escribirla: la usa
+            # revisar_pesados.py para enseñar el cambio antes de aplicarlo.
+            clase = (revision or {}).get(row["id"]) or row["clase_revisada"] or clasificar(
+                row["vehicle_type"], row["bbox_height"], u_hora,
+                ancho=row["bbox_width"], perfil=perfiles.get(lane["id"]))
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
             # El sentido del informe es la calzada de CADA cruce, no la de la

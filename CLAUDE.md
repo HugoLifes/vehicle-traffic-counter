@@ -1296,6 +1296,41 @@ cargada.** Coincide con el video donde el tránsito es ligero y se queda corto
 donde se junta. No se corrige nada del lado nuestro. Tampoco separa autobús
 (3 en doce horas: los clasifica como 2A-SU por sus ejes).
 
+### Velocidad del aforo frontal: sí se puede, calibrada contra el tubo
+
+`tools/calibrar_velocidad.py`, sobre los recorridos de 3 minutos por hora
+(12–23 h, `data/nuevos/vel/tray` en el Jetson). El tramo va de la fila 960
+(la línea de conteo) a la 820, cortado a lo ancho de cada calzada. La
+distancia se fija con la mediana de 12–14 h contra el tubo y se **miden** las
+otras 9 horas:
+
+| | distancia | p85, error absoluto medio | perfil por hora |
+|---|---|---|---|
+| Se aleja (ote-pte) | 16.71 m | **1.9 km/h**, noche incluida | r = +0.89 |
+| Hacia la cámara (pte-ote), de día | 17.49 m | 0–4.4 km/h (15–19 h) | |
+| Hacia la cámara, de noche | | **8–10 km/h** | no sirve |
+
+**La prueba que la cámara lateral no permitía.** Mirando a lo largo de la
+vía, una misma fila de la imagen está a la misma distancia real en las dos
+calzadas, así que las dos distancias calibradas tienen que coincidir si los
+dos tubos miden bien la velocidad. Salen 16.71 y 17.49 m: razón 0.96. **Los
+dos tubos son compatibles**, y la diferencia de velocidad entre sentidos
+(mediana 61 contra 48 km/h) es real, no un tubo mal capturado.
+
+**De noche, hacia la cámara, no se mide a casi nadie.** Los faros de frente
+parten el rastro entre las dos líneas: llega a la segunda línea el 21–50 %
+de los que cruzan la primera, contra 75–96 % en todas las horas buenas. La
+velocidad de esos pocos no representa al resto. Por eso
+`velocidad.FRACCION_MINIMA = 0.70`: por carril y hora, si menos del 70 % de
+los cruces dio velocidad, esa hora no publica velocidad (el conteo sí vale).
+Separa limpio los dos casos medidos.
+
+**Para tenerla en el entregable falta:** poner el tramo en las dos líneas del
+proyecto 7 (fila 820, ~17 m) y **recontar** —la velocidad se guarda por
+cruce al contar—, unas 20 h de Jetson. El mismo recuento dejaría la posición
+de la caja en los cruces de antes de las 18:20. Y la distancia medida en el
+pavimento para confirmar los 17 m sin depender del tubo.
+
 ### El Excel, revisado como lo recibiría la empresa (24-sep-2026)
 
 Tres huecos que no daban error y sí cambiaban el entregable:
