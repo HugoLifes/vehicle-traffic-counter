@@ -1293,6 +1293,16 @@ independientes:
    nuestros 860 de autobús + camión; **quitando sus clases de 4 ejes queda en
    ~829 (1.04×)**.
 
+4. **Donde más nos pasamos, sobra nada** (25-sep-2026). Cuarto de las 13:30
+   hacia la cámara, 1.31× el tubo: los 36 cruces del minuto 13:31, recortados
+   en su cuadro exacto, son **36 vehículos reales y distintos**, y **12 pasan
+   en pareja, lado a lado**. La calzada tiene dos carriles y el aparato una
+   sola manguera por sentido ("Number of Lanes: 1"): lo que la pisa casi a la
+   vez lo cuenta como uno. `comparar_clases_tubo.py --emular-tubo 0 0.5 0.7`
+   junta nuestros cruces igual y, de 18:30 a 24:00 (donde está el cuadro
+   exacto), queda en **0.99× y 1.02× con 0.6 s**, en las dos calzadas y con
+   dos aparatos distintos.
+
 **Consecuencia: el tubo NO sirve para escalar nuestros conteos en hora
 cargada.** Coincide con el video donde el tránsito es ligero y se queda corto
 donde se junta. No se corrige nada del lado nuestro. Tampoco separa autobús
