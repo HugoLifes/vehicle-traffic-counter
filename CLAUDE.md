@@ -1301,7 +1301,11 @@ independientes:
    vez lo cuenta como uno. `comparar_clases_tubo.py --emular-tubo 0 0.5 0.7`
    junta nuestros cruces igual y, de 18:30 a 24:00 (donde está el cuadro
    exacto), queda en **0.99× y 1.02× con 0.6 s**, en las dos calzadas y con
-   dos aparatos distintos.
+   dos aparatos distintos. **De día** (12–19 h), recontando en memoria 3
+   minutos por hora para tener el instante exacto (reprodujeron lo guardado
+   al vehículo en los 21) y aplicando el factor de cada hora a sus cuartos:
+   1.22× → **1.07×** hacia la cámara y 1.12× → **0.98×** alejándose. Queda un
+   7 % hacia la cámara de día sin explicar; lo decide el conteo manual.
 
 **Consecuencia: el tubo NO sirve para escalar nuestros conteos en hora
 cargada.** Coincide con el video donde el tránsito es ligero y se queda corto
