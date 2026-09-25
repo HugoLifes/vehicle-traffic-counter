@@ -53,6 +53,61 @@ GRUPOS = (
 )
 
 
+def emular_tubo(pares, esperas):
+    """Nuestros cruces contados como los contaria el aparato.
+
+    Medido en el aforo frontal: en el minuto de 13:31, el de mayor diferencia
+    contra el tubo (1.31x), los 36 cruces nuestros son 36 vehiculos reales y
+    distintos, revisados uno por uno, y 12 pasan en pareja, lado a lado: la
+    calzada tiene dos carriles y el aparato una sola manguera por sentido. Lo
+    que pisa la manguera casi al mismo tiempo lo registra como un solo
+    vehiculo. Juntando nuestros cruces igual (los separados por menos de
+    `espera` segundos cuentan uno), 18:30-24:00 queda en 0.98-1.04x con
+    0.5-0.7 s, en las dos calzadas y con dos aparatos distintos.
+
+    Necesita el cuadro exacto de cada cruce (`crossings.cuadro`, guardado
+    desde el 23-sep-2026): el `timestamp` solo llega al segundo.
+    """
+    from datetime import timedelta
+    from src.storage import traffic_db
+    conn = traffic_db.get_connection()
+    for par in pares:
+        lid, ruta = par.split("=", 1)
+        filas = conn.execute(
+            """SELECT c.cuadro, v.video_start_time, v.fps FROM crossings c
+               JOIN video_jobs v ON v.id = c.job_id
+               WHERE c.lane_id = ? AND c.cuadro IS NOT NULL""", (int(lid),)).fetchall()
+        ts = sorted(datetime.fromisoformat(f[1]) + timedelta(seconds=f[0] / (f[2] or 20))
+                    for f in filas)
+        meta, sec, _ = ce.leer_todo(ruta)
+        clas = sec.get(("clasificatorio", 1), {})
+        por_cuarto = defaultdict(list)
+        for t in ts:
+            por_cuarto[(t.date().isoformat(), t.hour * 60 + t.minute // 15 * 15)].append(t)
+        # Fuera el primer cuarto de la franja con cuadro: puede empezar a medias.
+        claves = sorted(k for k in por_cuarto if k[1] in clas.get(k[0], {}))[1:]
+        if not claves:
+            print(f"\nlinea {lid}: ningun cuarto con el cuadro exacto de sus cruces")
+            continue
+        print(f"\n=== linea {lid} / {meta.get('sentido')}: como lo contaria el tubo "
+              f"({len(claves)} cuartos de hora)")
+        print("  juntar a menos de   nuestro   emulado   tubo    razon  (mediana por cuarto)")
+        for espera in esperas:
+            n = e = tb = 0
+            razones = []
+            for k in claves:
+                grupos, ultimo = 0, None
+                for t in por_cuarto[k]:
+                    if ultimo is None or (t - ultimo).total_seconds() >= espera:
+                        grupos += 1
+                    ultimo = t
+                tubo = sum(clas[k[0]][k[1]].values())
+                n, e, tb = n + len(por_cuarto[k]), e + grupos, tb + tubo
+                razones.append(grupos / tubo if tubo else 0)
+            print(f"  {espera:14.1f} s   {n:7d}   {e:7d}   {int(tb):5d}   {e / tb:.2f}x  "
+                  f"({st.median(razones):.2f})")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -60,6 +115,9 @@ def main():
     ap.add_argument("--tubo", action="append", required=True,
                     help="'id_de_linea=reporte clasificatorio del tubo', uno por sentido")
     ap.add_argument("--salida", default=None, help="Excel con las tablas por periodo")
+    ap.add_argument("--emular-tubo", type=float, nargs="+", default=None, metavar="SEG",
+                    help="ademas, contar nuestros cruces como el aparato: juntar los que "
+                         "pasan a menos de SEG segundos (p. ej. 0 0.5 0.7)")
     a = ap.parse_args()
 
     from src.storage import traffic_db
@@ -140,6 +198,9 @@ def main():
             ws3.append([linea])
         wb.save(a.salida)
         print(f"\nExcel: {a.salida}")
+
+    if a.emular_tubo:
+        emular_tubo(a.tubo, a.emular_tubo)
 
 
 if __name__ == "__main__":
