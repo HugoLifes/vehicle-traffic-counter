@@ -12,7 +12,8 @@ corresponden una a una. Se comparan en los grupos donde sí equivalen:
     moto                 Cycle                       MOTO
     livianos             Cars + 2A-4T                A
     unitarios            Buses + 2A-SU + 3A-SU       B + C + TRACTOR
-    tractocamión         5A/6A-ST + 5A/6A-MT         T-S + T-S-R
+    tractocamión         5A-ST + 6A-ST               T-S
+    doble remolque       5A-MT + 6A-MT               T-S-R
     sin equivalente      4A-SU + 4A-ST + Other       —
 
 Por qué así, medido en el aforo frontal (19-sep-2026): el tubo no reconoce
@@ -43,7 +44,11 @@ GRUPOS = (
     ("moto", ("Cycle",), ("MOTO",)),
     ("livianos", ("Cars", "2A-4T"), ("A",)),
     ("unitarios", ("Buses", "2A-SU", "3A-SU"), ("B", "C", "TRACTOR", "PESADO")),
-    ("tractocamión", ("5A-ST", "6A-ST", "5A-MT", "6A-MT"), ("T-S", "T-S-R")),
+    ("tractocamión", ("5A-ST", "6A-ST"), ("T-S",)),
+    # Aparte: el conteo manual de agosto casi no tuvo doble remolque (T-S-R
+    # ~0) y el tubo marca 55 y 92 en doce horas; mezclarlos con el T-S
+    # escondia que el tractocamion simple si cuadra (48 contra 54).
+    ("doble remolque", ("5A-MT", "6A-MT"), ("T-S-R",)),
     ("sin equivalente", ("4A-SU", "4A-ST", "Other"), ()),
 )
 
