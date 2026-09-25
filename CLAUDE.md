@@ -1344,10 +1344,25 @@ De paso, el ancho de los autos que se alejan da el horizonte en la fila 650
 3.2 m de altura**. Hacia la cámara esa regla no sirve: se ven de lado y en
 la orilla, donde el lente deforma.
 
-**Este tramo no tiene marcas pintadas**, así que la calibración que usan
-esos proyectos —medidas reales del sitio, no otro aparato— necesita la
-ubicación exacta de la cámara (para medir en la foto satelital) o una
-distancia medida en campo. Mientras, la distancia sale del tubo.
+**Dónde está.** Blvd. Miguel de la Madrid, al sureste de Cd. Juárez, frente
+al parque industrial (≈ 31.571 N, −106.405; ubicado con OpenStreetMap y la
+foto satelital de Esri, no con coordenadas del aparato: el reporte trae el
+GPS vacío). La cámara va **en el camellón**, entre las dos calzadas, mirando
+al noroeste, hacia la sierra: la calzada de la derecha es la que se aleja
+(ote-pte) y la de la izquierda la que viene (pte-ote). Por el camellón corre
+la línea de alta tensión, con torres cada ~150 m. Las mangueras (separadas
+122 cm, según el reporte) no se ven en el cuadro.
+
+**La regla que sí está en la imagen: las losas de concreto.** Sin marcas
+pintadas, las juntas transversales de las losas son la medida física del
+sitio. Sobre el fondo sin vehículos de las 13:30 caen en las filas ~1330,
+1133, ~1020 y ~953, y con el horizonte en la 655 quedan **a pasos iguales**
+en distancia real: comprueba a la vez que el piso es plano y el horizonte
+que dio el ancho de los autos (650), dos medidas independientes. El tramo de
+velocidad (filas 960 → 820) abarca **~4.4 losas**, así que las distancias
+calibradas contra el tubo (16.7 y 17.5 m) implican losas de 3.8–4.0 m, un
+largo normal. **Medir UNA losa con cinta**, de junta a junta, en la calzada
+de la derecha, cierra la calibración sin depender del tubo.
 
 ### Cómo procesar más rápido sin perder vehículos (24-sep-2026)
 
