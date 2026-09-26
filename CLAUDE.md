@@ -1200,7 +1200,8 @@ resolución y con el encuadre de frente la caja es lo bastante grande para
 contar. Es el cambio más valioso del aforo nuevo: recupera las horas que
 antes se declaraban no medibles.
 
-**Sin conteo manual de campo no hay razón que reportar.** Lo verificable hoy
+**Sin conteo manual de campo no hay razón que reportar** (de noche; de día ya
+la hay, 1.00×, ver "Contra el conteo manual del frontal"). Lo verificable hoy
 es que no sobrecuenta (38 cruces revisados uno por uno, todos vehículos
 distintos y reales) y que el tamaño del vehículo en la línea pasó de 14-41 px
 a 115-150 px. Para dar una razón hace falta que la empresa cuente a mano unos
@@ -1240,6 +1241,85 @@ este video no hay conteo manual de campo, así que lo verificable es que no
 sobrecuenta (cruces revisados uno por uno) y que la clasificación acierta
 (15 de 15 a ojo). **Para dar una razón hace falta que la empresa cuente a
 mano unos cuartos de hora de este mismo video.**
+
+*(Actualizado el 26-sep-2026: el conteo manual llegó para 12:00–19:00 y da
+**1.00×** en los dos sentidos. Ver la sección siguiente. La noche sigue sin
+razón que reportar.)*
+
+### Contra el conteo manual del frontal: 1.00× (26-sep-2026)
+
+La empresa mandó el conteo a mano del mismo video:
+`referencias/aforo_frontal_manual/Aforo semanal Miguel de la madrid.xlsx`
+(en el Jetson, `data/nuevos/aforo_frontal_manual/`). **Por ahora trae
+12:00–19:00**, 28 cuartos de hora por sentido; de 19:00 a 24:00 las filas
+vienen en blanco porque siguen contando. Mismo formato de siempre (A, B, C,
+T-S, T-S-R, sin columna de motos), pero **con los dos sentidos en una sola
+hoja**, lado a lado. El lector tomaba un sentido por hoja y sacaba el
+PTE-OTE con el nombre del otro ("2.08x ambos sentidos"); ahora lee el
+sentido de cada bloque, y `probar_comparacion.py` fabrica ese acomodo como
+quinto escenario (**20 de 20**).
+
+```bash
+python tools/comparar_aforo_real.py --proyecto 7 --referencias data/nuevos/aforo_frontal_manual
+```
+
+| | nuestro | manual | razón | sin motos |
+|---|---|---|---|---|
+| Se aleja ↔ OTE-PTE | 7 009 | 6 991 | **1.00×** | 0.98× |
+| Hacia la cámara ↔ PTE-OTE | 6 454 | 6 486 | **1.00×** | 0.97× |
+| Ambos sentidos | 13 463 | 13 477 | **1.00×** | 0.98× |
+
+Son 27 cuartos de hora: el de 12:15 sale porque le falta el archivo cortado
+de las 12:25. **Por hora**, la razón queda entre 0.98 y 1.05, con GEH ≤ 1.5 en
+las 14 combinaciones de hora y sentido. **Por cuarto de hora**, la mediana es
+0.99 en los dos sentidos, el error absoluto medio 3.0 % y 2.0 %, y **53 de 54
+cuartos dan GEH < 5**. El reparto sale 52/48 igual que el real, el perfil de
+cada sentido da r = +0.97 y +0.98, y el reloj no tiene desfase. El
+emparejamiento por correlación coincide con la geometría.
+
+**Contaron con la hora del archivo, no con la de la pantalla.** La hoja dice
+19-SEPTIEMBRE, y las filas de 12:30 a 17:20 vienen llenas aunque esas horas
+la leyenda nunca las muestra.
+
+**Esto cierra la discusión con el tubo.** El 1.10–1.18× contra las mangueras
+era del aparato, que junta los vehículos lado a lado. El 7 % que la emulación
+dejaba "sin explicar" hacia la cámara de día también era suyo: contra el
+conteo manual esa calzada da 0.99×.
+
+**Por clase**, sobre `get_interval_counts(..., por_calzada=True)`, o sea lo
+mismo que ve el usuario:
+
+| clase | se aleja | hacia la cámara |
+|---|---|---|
+| A sin motos | 0.98× | 0.97× |
+| **A + MOTO** | **1.00×** | **0.99×** |
+| B autobús | 1.08× | 1.02× |
+| C sola | 0.72× | 0.64× |
+| **C + TRACTOR** | 1.18× | **1.02×** |
+| T-S (+T-S-R) | 0.90× | 1.04× |
+| C + T-S + TRACTOR | 1.10× | 1.03× |
+
+Dos preguntas que le íbamos a hacer a la empresa las contestan los datos.
+Aun así conviene que ellos las confirmen:
+
+- **La moto va dentro de A.** Con las motos, A cuadra en 1.00× y 0.99×; sin
+  ellas, en 0.98× y 0.97×.
+- **El tractor sin caja va en C.** La C sola sale en 0.64–0.72× y, sumándole
+  el tractor, en 1.02× hacia la cámara. Si lo contaran en T-S, esa clase
+  saldría en 1.31× y 2.17×.
+
+**El único cuarto con GEH > 5: 16:45, alejándose, 249 contra 207 (1.20×).**
+Antes de culparnos se miró. Nuestra serie por minuto en ese cuarto es normal
+(14 20 18 17 19 16 6 22 11 14 16 28 17 13 18), y sus vecinos cuadran (16:30
+240/229, 17:00 249/256). El minuto más cargado, **16:56**, se recontó y se
+recortó en el cuadro exacto: **28 de 28 son vehículos reales y distintos**,
+dos de ellos parejas lado a lado. Además el recuento reprodujo lo guardado,
+28 y 28. Lo más probable es que al conteo manual se le fueran unos 40
+vehículos en ese cuarto, pero solo lo confirma la empresa recontándolo.
+
+**Lo que este conteo NO valida todavía es la noche** (19:00–24:00). Es la
+franja que la cámara nueva recuperó y donde se nos escapan las motos hacia
+la cámara. Es la que más conviene que cuenten.
 
 ### Calibrado contra el contador de ejes del mismo día
 
@@ -1306,6 +1386,8 @@ independientes:
    al vehículo en los 21) y aplicando el factor de cada hora a sus cuartos:
    1.22× → **1.07×** hacia la cámara y 1.12× → **0.98×** alejándose. Queda un
    7 % hacia la cámara de día sin explicar; lo decide el conteo manual.
+   **Lo decidió** (26-sep-2026): contra el conteo manual esa calzada da
+   0.99× de 12 a 19 h, así que ese 7 % también era del tubo.
 
 **Consecuencia: el tubo NO sirve para escalar nuestros conteos en hora
 cargada.** Coincide con el video donde el tránsito es ligero y se queda corto
@@ -1579,17 +1661,22 @@ versión avisó "2 min adelantado" sobre el aforo viejo, que no tenía nada.
 la empresa y errores conocidos, en cuatro escenarios —día completo con el
 reloj corrido 3 min, solo tres franjas con el resto en blanco, contado con la
 hora de la pantalla, y el conteo de otro día— y comprueba que la herramienta
-recupera cada uno: **16 de 16**.
+recupera cada uno: **16 de 16**. Al llegar el conteo real apareció un quinto
+acomodo que ninguno de los cuatro cubría (los dos sentidos en una hoja); ya
+es escenario de la prueba: **20 de 20**.
 
 **Qué pedirle a la empresa junto con el conteo:**
 
 1. **Con qué hora contaron.** La buena es la del archivo (comprobado contra
    el sol). Si usaron la de la pantalla, no hay que repetir nada: se compara
-   con `--desfase-referencia -295`.
-2. **Dónde van las motos**: dentro de A, aparte, o no se cuentan.
+   con `--desfase-referencia -295`. *Contestado por el conteo: usaron la del
+   archivo.*
+2. **Dónde van las motos**: dentro de A, aparte, o no se cuentan. *Los datos
+   dicen que dentro de A (ver "Contra el conteo manual del frontal");
+   confirmarlo.*
 3. **Tres franjas como mínimo, no una**: una normal, la pico y una de noche.
    Una sola condición no valida nada, y la noche es justo lo que la cámara
-   nueva recuperó.
+   nueva recuperó. *Llegó 12:00–19:00; falta la noche.*
 4. Si hubo gente en campo ese día: **si el reloj de la grabadora estaba en
    hora.**
 5. Para velocidad (hoy el proyecto 7 no tiene tramo): la **distancia medida
