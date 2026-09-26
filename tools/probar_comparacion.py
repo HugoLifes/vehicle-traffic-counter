@@ -21,13 +21,17 @@ escenarios, cada uno sacado de algo que de verdad puede pasar:
    --desfase-referencia -295 tiene que recuperar las razones, aunque 4 h 55
    no sea multiplo de 15 y sus cuartos caigan en 13:05-13:20.
 
-Y que se niega a comparar contra el conteo de otro dia (el del 19-ago).
+Y que se niega a comparar contra el conteo de otro dia (el del 19-ago), y
+que lee los DOS sentidos en una sola hoja, un bloque cada uno: asi llego el
+conteo manual del frontal (25-sep-2026), y no del modo de agosto.
 
     python tools/probar_comparacion.py --proyecto 7 --salida data/prueba_comparacion
 
 Hasta ahora esta prueba encontro: 7 videos de 58 s que tiraban sus cuartos
 de hora, el aviso de reloj gritando lobo sobre un aforo sin desfase, las
-motos inflando 3 % cada sentido, y las filas en blanco leidas como cero.
+motos inflando 3 % cada sentido, y las filas en blanco leidas como cero. Lo
+de la hoja unica no lo encontro ella: lo encontro el conteo real, y por eso
+ahora es un escenario mas.
 """
 
 import argparse
@@ -89,13 +93,17 @@ def leer_proyecto(bd, proyecto):
     return zonas, umbral, cruces, horas, fecha
 
 
-def fabricar(cruces, zonas, umbral, fecha, ruta, reloj=0, leyenda=0, ventanas=None):
+def fabricar(cruces, zonas, umbral, fecha, ruta, reloj=0, leyenda=0, ventanas=None,
+             una_hoja=False):
     """Escribe un conteo manual de prueba.
 
     reloj: minutos que va adelantada la grabadora (el conteo lleva la hora real).
     leyenda: minutos que adelanta la PANTALLA con la que se conto (sus
         etiquetas = hora real + leyenda, y sus cuartos se arman sobre ese reloj).
     ventanas: [(desde, hasta)] en minutos DE LA ETIQUETA; fuera, filas en blanco.
+    una_hoja: los dos sentidos en UNA hoja, un bloque cada uno y los dos de
+        12:00 PM en adelante, como el conteo del frontal del 25-sep-2026. El
+        de agosto traia una hoja por sentido, con la mitad AM y la PM.
     """
     import openpyxl
     conteo = {s: defaultdict(lambda: defaultdict(float)) for s in SENTIDOS}
@@ -124,16 +132,20 @@ def fabricar(cruces, zonas, umbral, fecha, ruta, reloj=0, leyenda=0, ventanas=No
 
     libro = openpyxl.Workbook()
     libro.remove(libro.active)
-    for s in SENTIDOS:
-        h = libro.create_sheet(s)
-        for col0 in (2, 9):               # bloque AM en B, bloque PM en I
+    # (hoja, [(columna del bloque, sentido, primer minuto)])
+    if una_hoja:
+        hojas = [("Hoja1", [(2, SENTIDOS[0], 720), (9, SENTIDOS[1], 720)])]
+    else:                                  # bloque AM en B, bloque PM en I
+        hojas = [(s, [(2, s, 0), (9, s, 720)]) for s in SENTIDOS]
+    for nombre, bloques in hojas:
+        h = libro.create_sheet(nombre)
+        for col0, s, base in bloques:
             h.cell(3, col0, titulo)
             h.cell(4, col0, "Hr/Mov")
             h.cell(4, col0 + 1, s)
             for i, c in enumerate(("A", "B", "C", "T-S", "T-S-R"), start=1):
                 h.cell(5, col0 + i, c)
-        for k in range(48):
-            for col0, base in ((2, 0), (9, 720)):
+            for k in range(48):
                 m = base + 15 * k
                 h.cell(6 + k, col0, etiqueta(m))
                 if ventanas and not any(d <= m < ht for d, ht in ventanas):
@@ -246,6 +258,21 @@ def main():
     codigo, texto = correr(["--proyecto", str(a.proyecto), "--bd", a.bd])
     comprobar(codigo != 0 and "No se comparan dias distintos" in texto,
               "se niega a comparar contra el conteo de otro dia")
+
+    # --- 5. Los dos sentidos en una sola hoja ------------------------------
+    # Es como llego el conteo manual del frontal. Leido por hoja, un sentido
+    # salia con el nombre del otro y el segundo se perdia.
+    print("\n== 5. Los dos sentidos en una sola hoja, de 12:00 PM en adelante ==")
+    d5 = base / "una_hoja"
+    fabricar(cruces, zonas, umbral, fecha, d5 / "conteo.xlsx", una_hoja=True)
+    codigo, texto = correr(["--proyecto", str(a.proyecto), "--bd", a.bd,
+                            "--referencias", str(d5)])
+    if a.ver:
+        print(texto)
+    comprobar(codigo == 0, "corre con los dos sentidos en una hoja")
+    comprobar("nte-sur" in texto and "sur-nte" in texto,
+              "lee el sentido de cada bloque, no uno por hoja")
+    revisar_razones(texto, "una hoja")
 
     print(f"\n{fallos} fallos")
     return 1 if fallos else 0

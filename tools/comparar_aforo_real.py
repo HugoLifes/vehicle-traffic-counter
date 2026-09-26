@@ -74,12 +74,25 @@ def leer_conteo_manual_clases(ruta: Path):
 
     Devuelve (fecha, {sentido: {minuto: {clase: vehiculos}}}).
 
-    Un archivo trae los DOS sentidos, una hoja cada uno, y cada hoja se
-    parte en dos bloques lado a lado: la mitad AM a la izquierda y la PM a
-    la derecha, con cinco clases (A, B, C, T-S, T-S-R) por bloque. La
-    columna de la hora se localiza por su encabezado 'Hr/Mov' en vez de
-    fijarla, porque no cae en la misma letra en las dos hojas; y el nombre
-    de cada clase se lee de la fila de abajo en vez de suponer el orden.
+    La hoja se parte en bloques lado a lado, cada uno con su 'Hr/Mov', su
+    sentido escrito a la derecha y cinco clases (A, B, C, T-S, T-S-R). Hay
+    dos acomodos y los dos se leen igual:
+
+    - Conteo de agosto (camara lateral): una hoja por sentido, la mitad AM
+      a la izquierda y la PM a la derecha. Los dos bloques, un sentido.
+    - Conteo del frontal (25-sep-2026): UNA hoja con los dos sentidos,
+      PTE-OTE a la izquierda y OTE-PTE a la derecha, los dos de 12:00 PM
+      en adelante.
+
+    Por eso el sentido se lee POR BLOQUE, del rotulo pegado a su 'Hr/Mov'.
+    Leido por hoja, con el segundo acomodo se quedaba el ultimo rotulo
+    (OTE-PTE) para los dos bloques: el de la derecha se descartaba por
+    horas repetidas y el PTE-OTE salia como OTE-PTE, con la otra calzada
+    nuestra contra nada ("2.08x ambos sentidos").
+
+    La columna de la hora se localiza por su encabezado en vez de fijarla,
+    porque no cae en la misma letra en todas las hojas; y el nombre de cada
+    clase se lee de la fila de abajo en vez de suponer el orden.
 
     El formato NO trae columna de motocicletas. O van dentro de A o no se
     cuentan, y eso hay que preguntarlo: nosotros si las contamos.
@@ -91,24 +104,28 @@ def leer_conteo_manual_clases(ruta: Path):
     fecha = None
 
     for hoja in libro.worksheets:
-        columnas_hora, sentido = [], None
+        columnas_hora, rotulos = [], []
         for fila in hoja.iter_rows(min_row=1, max_row=6):
             for celda in fila:
                 txt = str(celda.value or "").strip()
                 if txt.lower().startswith("hr/mov"):
                     columnas_hora.append((celda.row, celda.column))
                 elif PATRON_SENTIDO.fullmatch(txt):
-                    sentido = re.sub(r"\s+", "", txt).lower()
+                    rotulos.append((celda.row, celda.column,
+                                    re.sub(r"\s+", "", txt).lower()))
                 elif fecha is None:
                     fecha = _fecha_de_titulo(txt)
         if not columnas_hora:
             continue
-        # Sin un sentido reconocible se usa el nombre de la hoja: mejor un
-        # nombre raro que descartar la hoja entera en silencio.
-        sentido = sentido or hoja.title.strip().lower()
+        # Un bloque sin rotulo propio toma el de la hoja, y una hoja sin
+        # ninguno su nombre: mejor un nombre raro que descartarla en silencio.
+        sentido_hoja = rotulos[-1][2] if rotulos else hoja.title.strip().lower()
 
-        por_minuto: dict[int, dict[str, float]] = {}
         for fila_hr, col in columnas_hora:
+            sentido = next((s for f, c, s in rotulos
+                            if abs(f - fila_hr) <= 1 and col < c <= col + 5),
+                           sentido_hoja)
+            por_minuto = real.setdefault(sentido, {})
             nombres = []
             for i in range(1, 6):
                 n = str(hoja.cell(fila_hr + 1, col + i).value or "").strip().upper()
@@ -128,9 +145,7 @@ def leer_conteo_manual_clases(ruta: Path):
                 por_minuto[minuto] = {
                     nombre: float(v) if isinstance(v, (int, float)) else 0.0
                     for nombre, v in zip(nombres, valores)}
-        if por_minuto:
-            real[sentido] = por_minuto
-    return fecha, real
+    return fecha, {s: d for s, d in real.items() if d}
 
 
 def leer_conteo_manual(ruta: Path) -> dict[str, dict[int, float]]:
