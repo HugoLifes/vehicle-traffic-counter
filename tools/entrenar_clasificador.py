@@ -52,6 +52,10 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 
 CLASES = ("auto", "camioneta")
+# Con --clases entrena cualquier otra separacion con las mismas reglas; la
+# primera que la uso fue la de los pesados (autobus, camion, tractocamion,
+# tractor sin caja y los livianos que la regla del alto mando a pesado), con
+# las etiquetas que dejo la revision sobre el recorte.
 # La hora viene en el nombre que puso `exportar_recortes.py`: `..._18h.jpg`.
 PATRON_HORA = re.compile(r"_(\d{2})h\.jpg$", re.IGNORECASE)
 
@@ -110,18 +114,23 @@ def informe(verdad, predicho, nombre):
                            "precision": round(prec, 3), "recuerdo": round(rec, 3)}
         print(f"{etiqueta:12} {reales:>7} {hallados:>9} {prec:>10.3f} {rec:>9.3f}")
 
-    # La cifra del entregable: que porcentaje de camionetas se declara.
-    i = CLASES.index("camioneta")
-    real_pct = 100 * sum(1 for a in verdad if a == i) / n
-    dicho_pct = 100 * sum(1 for b in predicho if b == i) / n
-    print(f"\ncomposicion camioneta: dice {dicho_pct:.1f} % y es {real_pct:.1f} %"
-          f"  ->  {abs(dicho_pct - real_pct):.1f} puntos")
+    # La cifra del entregable: que porcentaje de cada clase se declara.
+    composicion = {}
+    print()
+    for i, etiqueta in enumerate(CLASES):
+        real_pct = 100 * sum(1 for a in verdad if a == i) / n
+        dicho_pct = 100 * sum(1 for b in predicho if b == i) / n
+        composicion[etiqueta] = (round(dicho_pct, 1), round(real_pct, 1))
+        print(f"composicion {etiqueta}: dice {dicho_pct:.1f} % y es {real_pct:.1f} %"
+              f"  ->  {abs(dicho_pct - real_pct):.1f} puntos")
     print("(el acierto por vehiculo y la composicion NO dicen lo mismo: dos "
           "errores\n opuestos se cancelan en la composicion y no en el acierto)")
+    # Con dos clases la cifra de siempre es la de la segunda (camioneta).
+    dicho, real = composicion[CLASES[-1]] if len(CLASES) == 2 else (None, None)
     return {"n": n, "acierto": round(aciertos / n, 4), "clases": filas,
-            "composicion_dicha_pct": round(dicho_pct, 1),
-            "composicion_real_pct": round(real_pct, 1),
-            "composicion_puntos": round(abs(dicho_pct - real_pct), 1)}
+            "composicion": composicion,
+            "composicion_dicha_pct": dicho, "composicion_real_pct": real,
+            "composicion_puntos": round(max(abs(d - r) for d, r in composicion.values()), 1)}
 
 
 def humo():
@@ -162,10 +171,15 @@ def humo():
 
 
 def main():
+    global CLASES
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--datos", default=None,
-                    help="carpeta con auto/ y camioneta/ dentro")
+                    help="carpeta con una subcarpeta por clase (auto/ y camioneta/)")
+    ap.add_argument("--clases", default=",".join(CLASES),
+                    help="subcarpetas a usar como clases, separadas por coma")
+    ap.add_argument("--minimo-prueba-clase", type=int, default=20,
+                    help="ejemplos minimos de cada clase en las horas de prueba")
     ap.add_argument("--salida", default="models/auto_vs_camioneta.pt")
     ap.add_argument("--epocas", type=int, default=30)
     ap.add_argument("--lote", type=int, default=64)
@@ -179,8 +193,10 @@ def main():
                          "etiquetar nada: comprueba que aprende cuando la "
                          "señal existe")
     a = ap.parse_args()
+    CLASES = tuple(c.strip() for c in a.clases.split(",") if c.strip())
 
     if a.humo:
+        CLASES = ("auto", "camioneta")
         a.datos = humo()
     if not a.datos:
         ap.error("hace falta --datos (o --humo para la prueba sintética)")
@@ -192,7 +208,7 @@ def main():
         if n < MINIMO_POR_CLASE:
             print(f"  AVISO: menos de {MINIMO_POR_CLASE}; la medida va a ser ruido")
     if not any(sum(len(v) for v in datos[c].values()) for c in CLASES):
-        sys.exit(f"No hay nada etiquetado en {a.datos}/auto y {a.datos}/camioneta")
+        sys.exit(f"No hay nada etiquetado en {a.datos} ({', '.join(CLASES)})")
 
     horas_prueba = ([h.strip() for h in a.horas_prueba.split(",")]
                     if a.horas_prueba else None)
@@ -210,13 +226,13 @@ def main():
     # script lo dio por bueno, asi que ahora se para: una medida que no
     # puede fallar no es una medida.
     hay = Counter(y for _, y in prueba)
-    flacas = [CLASES[c] for c in range(len(CLASES)) if hay[c] < 20]
+    flacas = [CLASES[c] for c in range(len(CLASES)) if hay[c] < a.minimo_prueba_clase]
     if flacas:
         reparto = {CLASES[c]: hay[c] for c in range(len(CLASES))}
         print()
         print(f"Las horas de prueba solo traen {reparto}.")
         sys.exit(
-            f"Con menos de 20 ejemplos de {', '.join(flacas)} en la prueba, el "
+            f"Con menos de {a.minimo_prueba_clase} ejemplos de {', '.join(flacas)} en la prueba, el "
             "acierto se puede\nsacar diciendo siempre la otra clase, y entonces "
             "no mide nada. Etiqueta esa\nclase en mas horas, o elige otras con "
             "--horas-prueba.")
