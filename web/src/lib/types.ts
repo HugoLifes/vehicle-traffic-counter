@@ -239,6 +239,9 @@ export interface VideoJob {
   processed_frames: number;
   video_start_time: string | null;
   error: string | null;
+  /* Avisos del último conteo: zona que descarta casi todo, vehículos que no
+     cruzaron ninguna línea, archivo cortado. Null si no hubo nada que avisar. */
+  aviso?: string | null;
 }
 
 export interface VehicleCounts {

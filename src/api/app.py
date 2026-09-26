@@ -8,6 +8,7 @@ los conteos por API y sirve el dashboard estático.
 
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.engine.counting_service import CountingService, set_service
 from src.engine.video_job_processor import VideoJobProcessor, set_processor
-from src.storage import traffic_db
+from src.storage import respaldos, traffic_db
 from src.utils import setup_logger
 
 CONFIG_PATH = os.environ.get("PLATFORM_CONFIG", "configs/platform.yaml")
@@ -68,8 +69,13 @@ async def lifespan(app: FastAPI):
     set_processor(video_processor)
     video_processor.start()
 
+    # Una copia comprobada de la base al día (ver src/storage/respaldos.py).
+    parar_respaldos = threading.Event()
+    respaldos.iniciar_automatico(parar_respaldos)
+
     yield
 
+    parar_respaldos.set()
     service.stop()
     video_processor.stop()
 

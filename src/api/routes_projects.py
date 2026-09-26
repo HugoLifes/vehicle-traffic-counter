@@ -10,7 +10,7 @@ de cada intersección a lo largo del tiempo.
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -43,6 +43,9 @@ class ProjectCreate(BaseModel):
     # del archivo de la camara). Se deja encendido por omision porque es
     # como se revisa un aforo nuevo; en un dia entero ya calibrado, apagarlo.
     video_anotado: bool = True
+    # Modelo, input_size, umbral por clase y cajas anidadas de ESTA camara.
+    # Ver src/engine/perfil_deteccion.py; sin perfil cuenta como siempre.
+    perfil_deteccion: Optional[Dict[str, Any]] = None
 
 
 class CopyCalibration(BaseModel):
@@ -59,6 +62,7 @@ class ProjectUpdate(BaseModel):
     nms_agnostico: Optional[bool] = None
     conteo_trayectoria: Optional[bool] = None
     video_anotado: Optional[bool] = None
+    perfil_deteccion: Optional[Dict[str, Any]] = None
 
 
 @router.get("")
@@ -90,6 +94,7 @@ def create_project(project: ProjectCreate):
         nms_agnostico=project.nms_agnostico,
         conteo_trayectoria=project.conteo_trayectoria,
         video_anotado=project.video_anotado,
+        perfil_deteccion=project.perfil_deteccion,
     )
     traffic_db.log_event(project_id, "proyecto", "Se creó la intersección", name)
     return traffic_db.get_project(project_id)

@@ -19,7 +19,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import cv2
 import imageio_ffmpeg
@@ -27,7 +27,7 @@ import imageio_ffmpeg
 from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
-from src.engine import conteo_trayectoria
+from src.engine import conteo_trayectoria, perfil_deteccion
 from src.engine.lanes import build_lane_counters
 from src.engine.velocidad import MedidorVelocidad
 from src.engine.origen_destino import AforoDireccional
@@ -106,6 +106,8 @@ class VideoJobProcessor:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._detector: Optional[VehicleDetector] = None
+        self._detectores: Dict[str, VehicleDetector] = {}
+        self._clasificadores: Dict[str, object] = {}
 
     # --- Ciclo de vida ---------------------------------------------
 
@@ -140,12 +142,16 @@ class VideoJobProcessor:
 
     # --- Internos --------------------------------------------------
 
-    def _get_detector(self) -> VehicleDetector:
-        # Un único modelo cargado, reusado entre videos de la cola
-        if self._detector is None:
-            det_cfg = self.config.get('detector', {})
-            self._detector = VehicleDetector(
-                model_path=self.model_path,
+    def _get_detector(self, modelo: Optional[str] = None,
+                      input_size: Optional[int] = None) -> VehicleDetector:
+        # Un detector por modelo, cargado una vez y reusado entre videos de la
+        # cola. Casi siempre es uno solo, el de platform.yaml; un proyecto con
+        # otro modelo en su perfil de detección carga el suyo al lado.
+        ruta = modelo or self.model_path
+        det_cfg = self.config.get('detector', {})
+        if ruta not in self._detectores:
+            self._detectores[ruta] = VehicleDetector(
+                model_path=ruta,
                 confidence_threshold=self.confidence_threshold,
                 # Estos dos venían del valor por omisión y no de la config:
                 # cambiar input_size en platform.yaml no tenía ningún efecto
@@ -161,7 +167,29 @@ class VideoJobProcessor:
                 device=self.device,
                 config=det_cfg
             )
+        self._detector = self._detectores[ruta]
+        # Resolución y umbral se fijan en cada pedido: el detector se comparte,
+        # y un proyecto a 960 o con motos desde 0.10 no puede dejarlo así al
+        # siguiente (ni al diagnóstico de encuadre, que lo pide sin perfil).
+        self._detector.input_size = input_size or det_cfg.get('input_size', 640)
+        self._detector.confidence_threshold = self.confidence_threshold
         return self._detector
+
+    def _get_clasificador(self, ruta: Optional[str]):
+        """Clasificador de pesados del perfil, cargado una vez. Si no carga
+        se cuenta igual, con la regla del alto: un modelo que falta no puede
+        dejar sin conteo un aforo."""
+        if not ruta:
+            return None
+        if ruta not in self._clasificadores:
+            try:
+                from src.engine.clasificador_pesados import ClasificadorPesados
+                self._clasificadores[ruta] = ClasificadorPesados(ruta)
+            except Exception:
+                logging.exception(f"No se pudo cargar el clasificador de pesados {ruta}; "
+                                  "se clasifica con la regla del alto")
+                self._clasificadores[ruta] = None
+        return self._clasificadores[ruta]
 
     def _run(self):
         while not self._stop_event.is_set():
@@ -230,13 +258,22 @@ class VideoJobProcessor:
         # siguiente aforo por línea contaría con 0.1 sin que nadie lo note.
         umbral_restaurar = None
         try:
-            detector = self._get_detector()
             # El filtro de cajas repetidas entre clases es del PROYECTO, no
             # del detector: el mismo modelo sirve a aforos con vehículos de
             # 15 px y de 150 px, y lo que ayuda en uno borra vehículos en el
-            # otro.
+            # otro. Lo mismo el resto del perfil de detección (modelo,
+            # input_size, umbral por clase, cajas anidadas).
             proyecto = traffic_db.get_project(job.get('project_id')) or {}
+            perfil = perfil_deteccion.leer(proyecto)
+            detector = self._get_detector(perfil.get('modelo'), perfil.get('input_size'))
             detector.nms_agnostico = bool(proyecto.get('nms_agnostico'))
+            # Cada video parte del umbral general: el detector se comparte y
+            # el de otro aforo no puede quedarse pegado a este.
+            detector.confidence_threshold = perfil_deteccion.umbral_de_deteccion(
+                perfil, self.confidence_threshold)
+            if perfil:
+                logging.info(f"Perfil de detección de {job['original_name']}: {perfil}")
+            clasificador = self._get_clasificador(perfil.get('clasificador_pesados'))
             tracker = VehicleTracker(
                 max_age=self.config.get('tracker', {}).get('max_age', 30),
                 min_hits=self.config.get('tracker', {}).get('min_hits', 3),
@@ -382,9 +419,16 @@ class VideoJobProcessor:
                     # Las líneas y el aviso de zonas ven exactamente lo de
                     # antes: solo detecciones a su umbral de siempre.
                     detections = [d for d in detections if d['confidence'] >= umbral_linea]
+                detections = perfil_deteccion.filtrar_por_clase(
+                    detections, perfil, self.confidence_threshold)
                 det_crudas += len(detections)
                 detections = filter_detections(zonas, detections)
                 det_en_zona += len(detections)
+                # Después de medir el filtro de zonas: quitar el frente del
+                # autobús no es una zona mal dibujada.
+                if perfil.get('quitar_anidadas'):
+                    detections = perfil_deteccion.quitar_anidadas(
+                        detections, perfil['quitar_anidadas'])
                 tracks = tracker.update(detections)
                 if por_trayectoria:
                     for tr in tracks:
@@ -462,6 +506,16 @@ class VideoJobProcessor:
                             zone_for_bbox(zonas, track['bbox'])
                             if track and zonas else None
                         )
+                        # La clase fina del pesado sobre su recorte, en el
+                        # cuadro exacto del cruce. Se clasifica todo cruce
+                        # (son ~20 por minuto de video, unos milisegundos
+                        # cada uno) y al leer solo cuenta donde la regla del
+                        # alto dijo pesado.
+                        clase_modelo = prob_modelo = None
+                        if clasificador is not None and track is not None:
+                            r = clasificador.clasificar(frame, track['bbox'])
+                            if r:
+                                clase_modelo, prob_modelo = r
                         # Con conteo por trayectoria el panel del video sigue
                         # mostrando el conteo en vivo, pero lo que se GUARDA
                         # se decide al final, sobre los recorridos completos.
@@ -479,7 +533,9 @@ class VideoJobProcessor:
                                 bbox_width=ancho_caja,
                                 bbox_x=x_caja,
                                 bbox_y=y_caja,
-                                cuadro=frame_count
+                                cuadro=frame_count,
+                                clase_modelo=clase_modelo,
+                                prob_modelo=prob_modelo
                             )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
@@ -623,15 +679,35 @@ class VideoJobProcessor:
                 # Una zona mal dibujada no da error: el video queda "listo"
                 # con la mitad de los vehículos descartados en silencio. Si
                 # el filtro se comió la mayor parte, hay que decirlo.
+                # Los avisos se GUARDAN en el video, no solo en el registro:
+                # quien opera la plataforma no lee el registro del contenedor,
+                # y un aviso que nadie ve es lo mismo que no avisar.
+                avisos = []
                 if zonas and det_crudas:
                     descartado = 1 - det_en_zona / det_crudas
                     if descartado > 0.4:
-                        logging.warning(
-                            f"Las zonas descartaron el {descartado:.0%} de las detecciones de "
-                            f"{job['original_name']} ({det_crudas - det_en_zona} de {det_crudas}). "
+                        avisos.append(
+                            f"Las zonas descartaron el {descartado:.0%} de las detecciones. "
                             "Si el conteo sale bajo, revisa que los polígonos cubran la calzada "
-                            "completa."
-                        )
+                            "completa.")
+                cruces_video = traffic_db.get_connection().execute(
+                    "SELECT COUNT(*) FROM crossings WHERE job_id = ?", (job_id,)).fetchone()[0]
+                # Vehículos en la vía y ni un cruce: la línea no los corta
+                # (mal puesta, al revés de la calzada o atada a otra zona).
+                if lane_counters and cruces_video == 0 and frame_count \
+                        and det_en_zona / frame_count >= 0.5:
+                    avisos.append(
+                        "Hubo vehículos en la vía pero ninguno cruzó una línea de conteo. "
+                        "Revisa que cada línea corte su calzada de lado a lado.")
+                # Un archivo cortado lee menos cuadros de los que declara y no
+                # da error: sus últimos minutos simplemente no se cuentan.
+                if total_frames and frame_count < 0.95 * total_frames:
+                    avisos.append(
+                        f"Se leyeron {frame_count} de los {total_frames} cuadros que declara el "
+                        "archivo: puede estar cortado, y lo que falte no se contó.")
+                for a in avisos:
+                    logging.warning(f"{job['original_name']}: {a}")
+                traffic_db.update_video_job(job_id, aviso=" ".join(avisos) or None)
 
             # Ya no hay nada corriendo: limpiar el cuadro en vivo para que el
             # visor no siga mostrando el último cuadro de un video terminado.

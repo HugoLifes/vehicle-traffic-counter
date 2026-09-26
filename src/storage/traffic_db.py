@@ -143,6 +143,11 @@ def init_schema():
     # Recontar el video borra sus cruces y con ellos la revision.
     _ensure_column(conn, "crossings", "clase_revisada", "TEXT")
     _ensure_column(conn, "crossings", "clase_revisada_por", "TEXT")
+    # Lo que dijo el clasificador de pesados PROPIO sobre el recorte, al
+    # contar (src/engine/clasificador_pesados.py): la misma revision sin
+    # internet, y que no se pierde al recontar porque se vuelve a calcular.
+    _ensure_column(conn, "crossings", "clase_modelo", "TEXT")
+    _ensure_column(conn, "crossings", "prob_modelo", "REAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS video_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -242,6 +247,14 @@ def init_schema():
     # aforo; no para un dia entero ya calibrado.
     _ensure_column(conn, "projects", "video_anotado", "INTEGER NOT NULL DEFAULT 1")
     _ensure_column(conn, "projects", "conteo_trayectoria", "INTEGER DEFAULT 0")
+    # Avisos del ultimo conteo de cada video (zona que descarta casi todo,
+    # vehiculos sin ningun cruce, archivo cortado). Antes iban solo al
+    # registro del contenedor, que quien opera la plataforma nunca lee.
+    _ensure_column(conn, "video_jobs", "aviso", "TEXT")
+    # Perfil de deteccion de la camara de ESTE proyecto (JSON): modelo,
+    # input_size, umbral por clase y quitar cajas anidadas. Vacio cuenta
+    # como platform.yaml. Ver src/engine/perfil_deteccion.py.
+    _ensure_column(conn, "projects", "perfil_deteccion", "TEXT")
     # Segundos que tardó el vehículo en recorrer el tramo de su línea. Se
     # guarda el TIEMPO y no la velocidad: la velocidad sale de la distancia
     # vigente al reportar, así que corregir una distancia mal capturada
@@ -382,16 +395,18 @@ def create_project(name: str, description: Optional[str] = None,
                     address: Optional[str] = None, interval_minutes: int = 15,
                     nms_agnostico: bool = False,
                     conteo_trayectoria: bool = False,
-                    video_anotado: bool = True) -> int:
+                    video_anotado: bool = True,
+                    perfil_deteccion: Optional[Dict] = None) -> int:
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO projects (name, description, latitude, longitude, address,
                                  interval_minutes, nms_agnostico, conteo_trayectoria,
-                                 video_anotado)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                 video_anotado, perfil_deteccion)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (name, description, latitude, longitude, address, interval_minutes,
          1 if nms_agnostico else 0, 1 if conteo_trayectoria else 0,
-         1 if video_anotado else 0)
+         1 if video_anotado else 0,
+         json.dumps(perfil_deteccion) if perfil_deteccion else None)
     )
     conn.commit()
     return cur.lastrowid
@@ -432,8 +447,10 @@ def update_project(project_id: int, **fields):
     # pero no se leen, del otro lado.
     allowed = {"name", "description", "latitude", "longitude", "address",
                "interval_minutes", "nms_agnostico", "conteo_trayectoria",
-               "video_anotado"}
+               "video_anotado", "perfil_deteccion"}
     fields = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if isinstance(fields.get("perfil_deteccion"), dict):
+        fields["perfil_deteccion"] = json.dumps(fields["perfil_deteccion"])
     if not fields:
         return
     conn = get_connection()
@@ -886,7 +903,9 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
                      bbox_width: Optional[int] = None,
                      bbox_x: Optional[int] = None,
                      bbox_y: Optional[int] = None,
-                     cuadro: Optional[int] = None):
+                     cuadro: Optional[int] = None,
+                     clase_modelo: Optional[str] = None,
+                     prob_modelo: Optional[float] = None):
     """
     timestamp: hora REAL del cruce en formato ISO ('YYYY-MM-DD HH:MM:SS').
     En la cámara en vivo se omite (usa la hora del reloj del sistema).
@@ -901,27 +920,25 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
     zone_id: calzada dibujada dentro de la que ocurrió el cruce. Es lo que
     permite separar los sentidos cuando en perspectiva las dos calzadas
     quedan una encima de la otra y la línea de conteo cruza ambas.
+
+    clase_modelo / prob_modelo: lo que dijo el clasificador de pesados sobre
+    el recorte del cruce (src/engine/clasificador_pesados.py), si el perfil
+    del proyecto trae uno. Se usa al leer, solo donde la regla dice pesado.
     """
     conn = get_connection()
+    columnas = ["lane_id", "track_id", "direction", "vehicle_type", "confidence", "job_id",
+                "zone_id", "bbox_height", "bbox_width", "bbox_x", "bbox_y", "cuadro",
+                "clase_modelo", "prob_modelo"]
+    valores = [lane_id, track_id, direction, vehicle_type, confidence, job_id,
+               zone_id, bbox_height, bbox_width, bbox_x, bbox_y, cuadro,
+               clase_modelo, prob_modelo]
+    # Sin hora explícita (cámara en vivo) la pone la columna: el reloj del sistema.
     if timestamp:
-        conn.execute(
-            """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
-                                      confidence, timestamp, job_id, zone_id,
-                                      bbox_height, bbox_width, bbox_x, bbox_y,
-                                      cuadro)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (lane_id, track_id, direction, vehicle_type, confidence, timestamp,
-             job_id, zone_id, bbox_height, bbox_width, bbox_x, bbox_y, cuadro)
-        )
-    else:
-        conn.execute(
-            """INSERT INTO crossings (lane_id, track_id, direction, vehicle_type,
-                                      confidence, job_id, zone_id, bbox_height,
-                                      bbox_width, bbox_x, bbox_y, cuadro)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (lane_id, track_id, direction, vehicle_type, confidence, job_id,
-             zone_id, bbox_height, bbox_width, bbox_x, bbox_y, cuadro)
-        )
+        columnas.append("timestamp")
+        valores.append(timestamp)
+    conn.execute(
+        f"INSERT INTO crossings ({', '.join(columnas)}) "
+        f"VALUES ({', '.join('?' * len(columnas))})", valores)
     conn.commit()
 
 
@@ -1256,7 +1273,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     rows = conn.execute(
         f"""SELECT id, lane_id, direction, vehicle_type, bbox_height, bbox_width,
                    confidence, timestamp, tiempo_tramo_s, zone_id,
-                   clase_revisada FROM crossings
+                   clase_revisada, clase_modelo, prob_modelo FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
@@ -1271,6 +1288,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     # El umbral se saca por CARRIL y no por proyecto: cada carril cuenta
     # sobre una línea fija, o sea a una distancia fija de la cámara, que es
     # justo la condición que hace comparable el alto en píxeles.
+    from src.engine.clasificador_pesados import CLASES_PESADAS_REGLA, PROB_MINIMA_MODELO
     from src.engine.clasificacion import (CONFIANZA_MINIMA, MEDIDO, ESTIMADO,
                                           NO_RESOLUBLE, clasificar,
                                           nivel_de_calzada, perfil_de_calzada)
@@ -1383,9 +1401,16 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
             # La clase revisada sobre el recorte gana sobre la regla.
             # `revision` es la misma cosa sin escribirla: la usa
             # revisar_pesados.py para enseñar el cambio antes de aplicarlo.
-            clase = (revision or {}).get(row["id"]) or row["clase_revisada"] or clasificar(
-                row["vehicle_type"], row["bbox_height"], u_hora,
-                ancho=row["bbox_width"], perfil=perfiles.get(lane["id"]))
+            clase = (revision or {}).get(row["id"]) or row["clase_revisada"]
+            if not clase:
+                clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora,
+                                   ancho=row["bbox_width"], perfil=perfiles.get(lane["id"]))
+                # El clasificador propio decide QUÉ pesado es, y solo donde
+                # la regla del alto ya dijo pesado: la frontera
+                # liviano/pesado es la validada contra el conteo manual.
+                if (clase in CLASES_PESADAS_REGLA and row["clase_modelo"]
+                        and (row["prob_modelo"] or 0) >= PROB_MINIMA_MODELO):
+                    clase = row["clase_modelo"]
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
             # El sentido del informe es la calzada de CADA cruce, no la de la

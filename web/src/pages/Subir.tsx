@@ -246,6 +246,18 @@ function JobRow({
         </IconButton>
       </div>
 
+      {job.status === 'done' && job.aviso && (
+        /* Lo que el conteo encontró raro en este video (zona que descarta
+           casi todo, vehículos que no cruzaron ninguna línea, archivo
+           cortado). Va a la pantalla porque el registro del contenedor no
+           lo lee nadie, y un aviso que nadie ve es lo mismo que no avisar. */
+        <div className="notice-stack">
+          <Notice tone="warning" title="Revisa este video antes de entregar">
+            {job.aviso}
+          </Notice>
+        </div>
+      )}
+
       {d && abierto && (
         /*
           Qué le pasa a este encuadre y qué se puede hacer. El veredicto solo
