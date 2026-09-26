@@ -217,6 +217,8 @@ se podía contestar de otro modo:
 | `calibrar_velocidad.py` | Fijar la distancia del tramo contra el tubo con unas horas y medir las demás; de paso, si los dos tubos miden velocidades compatibles |
 | `recortes_sin_posicion.py` | Recortar cruces contados antes de guardar la posición de la caja, detectando solo su segundo |
 | `revisar_pesados.py` | Revisar la clase de los pesados (autobús, camión, tractor, T-S) sobre su recorte con un modelo de visión, y aplicarla |
+| `prueba_aceptacion.py` | Un comando que dice si todo funciona: regresiones, exactitud contra conteo de campo y salud del equipo, con PASA o FALLA |
+| `probar_perfil_deteccion.py` | Regresión sin GPU del perfil de detección por proyecto, con cajas anidadas reales revisadas a ojo |
 
 ---
 
@@ -1695,6 +1697,124 @@ entrenar el clasificador de automóvil contra camioneta. El exportador ya
 deja recortes utilizables —se ven perfectamente— y de los primeros 12, todos
 marcados `car` por COCO, **al menos 4 son camionetas**, que es exactamente
 el problema que el clasificador viene a resolver.
+
+---
+
+## Hacia la entrega: que funcione sin nosotros (26-sep-2026)
+
+**El proyecto es de un cliente y se cobra al entregarlo.** La meta ya no es
+afinar cifras sino que el dueño lo opere solo y que sea confiable: todo el
+flujo desde la plataforma, sin internet, avisando cuando un resultado no
+sirve, sin perder datos, comprobable con un comando y con manual. Los
+criterios de aceptación están en la página de entrega (ver memoria
+`presentacion-frontal` / artefacto "Entrega del sistema de aforo").
+
+### Lo que se agregó para eso
+
+- **Respaldo diario de la base** (`src/storage/respaldos.py`). No existía
+  ninguno: proyectos, calibraciones, cruces y la revisión de los pesados
+  vivían en un solo `data/traffic.db`. Copia en línea de SQLite (consistente
+  aunque la cola escriba; copiar el archivo no lo es en modo WAL), comprobada
+  con `quick_check`, una al día, se conservan 14 en `data/respaldos/`. Arranca
+  sola con la plataforma. Cómo restaurar: en el encabezado del módulo y en el
+  manual.
+- **Avisos por video en la pantalla** (`video_jobs.aviso`, se muestran en la
+  cola de Subir). Tres revisiones al terminar cada video: la zona descartó
+  más del 40 % de las detecciones; hubo vehículos en la vía pero ningún
+  cruce (línea mal puesta); se leyeron menos del 95 % de los cuadros
+  declarados (archivo cortado). El primero ya existía **solo en el registro
+  del contenedor**, que quien opera nunca lee. Un cambio de `web/` necesita
+  reconstruir la imagen.
+- **Prueba de aceptación** (`tools/prueba_aceptacion.py`): las regresiones
+  sin GPU, la exactitud contra un conteo de campo con criterios explícitos
+  (razón 0.95–1.05, GEH < 5 en 85 % de los cuartos) y la salud del equipo
+  (base íntegra, respaldo reciente, disco, modelo, GPU, API, videos con
+  error). Sale 0 solo si todo lo obligatorio pasa. `--sin-salud` en la PC.
+- **Manual de operación** para el dueño (`docs/MANUAL_DE_OPERACION.md`).
+  `docs/CALIBRATION.md` es una guía genérica vieja que no refleja nada de lo
+  medido aquí; no mandarla al cliente.
+- **Perfil de detección por proyecto** (`projects.perfil_deteccion`, JSON;
+  `src/engine/perfil_deteccion.py`): modelo, `input_size`, umbral por clase,
+  quitar cajas anidadas y clasificador de pesados. Sin perfil el proyecto
+  cuenta exactamente como antes (probado: las lecturas del proyecto 7 no se
+  mueven). Llega por la API de proyectos; el procesador fija resolución y
+  umbral en CADA video (el detector se comparte y un ajuste no puede
+  quedarse pegado al siguiente, ni al diagnóstico de encuadre). Regresión:
+  `tools/probar_perfil_deteccion.py`.
+- **Clasificador de pesados en el equipo** (`src/engine/clasificador_pesados.py`,
+  columnas `crossings.clase_modelo` y `prob_modelo`). Se activa con
+  `clasificador_pesados` en el perfil. Clasifica el recorte de cada cruce en su
+  cuadro exacto (caja + 15 %, igual que los recortes de la revisión) y al leer
+  solo manda donde la regla del alto ya dijo pesado (B, C, PESADO) y con
+  probabilidad ≥ 0.5: la frontera liviano/pesado es la validada. La
+  revisión con el modelo de visión (`clase_revisada`) sigue ganando sobre
+  todo. Se entrena con `entrenar_clasificador.py --clases
+  BUS,SEMI,TRUCK,TRACTOR,CAR` sobre `data/nuevos/clasif_pesados` (879 recortes
+  etiquetados por la revisión, nombre `{cruce}_c{carril}_{HH}h.jpg`). **La
+  inferencia usa PIL como el entrenamiento**: reducir con otra interpolación
+  mueve las probabilidades en los casos frontera.
+
+### Dobles conteos de pesados: el frente del autobús como auto
+
+Con la posición guardada (18:20–24:00), el **17.6 %** de los pesados hacia
+la cámara tenía otro cruce a ≤ 0.6 s con la caja encimada más de la mitad,
+contra 1.3 % de los autos. Revisados a ojo en su cuadro exacto, **9 de 16
+eran el mismo vehículo**: el frente de un autobús detectado aparte como
+`car` (5), el chasis de un tractor (2), la defensa de un tráiler como `car`
+de 63 px, y **el faro de un autobús tomado por `motorcycle`**. Los otros 7
+eran autos reales pasando junto al autobús. Pesa ~0.15 % del total pero
+infla A y MOTO. La corrección candidata es quitar la caja que cae casi
+entera dentro de un autobús o camión de al menos el doble de área
+(`quitar_anidadas`), y la regresión exige que **nunca quite un auto real**.
+
+### Motos de noche hacia la cámara: el tamaño del hueco
+
+Contra el tubo, de 20 a 23 h: 4, 5, 3 y 3 motos por hora nuestras contra
+19, 21, 17 y 15 (a las 19 h todavía 15 contra 19; de día contamos más que
+el tubo: 164 contra 130). **Unas 60 motos en cuatro horas**, ~2.5 % del
+tránsito nocturno de esa calzada. Mirando los recortes, la moto nocturna SÍ
+se ve (faro con el motociclista encima, barrida por el obturador) y el
+detector la marca con 0.25–0.63: las que se escapan están, casi seguro, justo
+por debajo de 0.25.
+
+### Cómo se miden las variantes sin gastar GPU dos veces
+
+`data/nuevos/exp_noche/` en el Jetson: `exp_detectar.py` detecta una vez por
+cuadro con varios modelos a confianza 0.05 y guarda todas las cajas (filtrar
+después a ≥ 0.25 da lo mismo que producción: la NMS solo deja que una caja
+suprima a las de menor confianza); `exp_variantes.py` cuenta cada variante
+por el camino de producción en el CPU. La variante "base" reprodujo lo
+guardado en la base, 8 de 8 videos-carril. **No correr las variantes en
+paralelo con una detección**: 8 procesos de CPU volvieron la detección 5×
+más lenta (121 → 640 s por minuto de video). Se les bajó la prioridad con
+`renice`.
+
+**Resultados, 45 minutos (16:45–16:59 de día, 21:00–21:29 de noche) más los
+13 minutos con dobles conteos conocidos**, revisando a ojo lo que cada
+variante agrega o quita en su cuadro exacto:
+
+| variante | efecto | veredicto |
+|---|---|---|
+| motos desde 0.10 | +7 cruces de noche hacia la cámara en 30 min; de 10 agregados, 7 motos reales, 1 moto contada dos veces, 2 autos | **se adopta** (perfil del frontal) |
+| motos desde 0.15 | la mitad de lo anterior | — |
+| persona como moto | 5 agregados, los 5 motos reales, pero gana poco | no hace falta |
+| cajas anidadas (0.8 o 0.9) | quita 11: 9 pedazos (frente de autobús, chasis, faro como moto), **1 auto real junto al autobús**, 1 dudoso | **apagada**: borra un auto real para ganar ~0.15 % |
+| YOLO26s | +21 vehículos nocturnos casi todos reales, pero −7 reales (3 motos de día, un autobús) y **llama `car` a toda moto de noche** (0 contra 4) | no, sin afinarlo y revalidar |
+
+El clasificador de pesados (`models/pesados_v1.pt`, mobilenet_v3_small a
+160 px, 40 épocas, ~2 min en el Orin) coincide con la revisión del modelo
+de visión en **92.9 %** de los pesados de las horas 13, 16, 19 y 22 (no vistas
+al entrenar) y **93.6 %** con otra partición (12, 15, 18, 21): autobús
+99–100 %, tractocamión 93–98 %, tractor sin caja 86–98 %, camión 75–95 %; lo
+débil es el auto alto que la regla mandó a pesado (solo 42 ejemplos). La
+composición queda a ≤ 3 puntos. La revisión misma acertó ~95 % contra el ojo.
+
+YOLO26s (Ultralytics, NMS integrada) corre a **32 ms por cuadro** en el Orin
+contra 46 del YOLOv8s, a `imgsz` 1280 sobre la franja. Misma licencia
+AGPL-3.0. RF-DETR (Apache 2.0) quedó instalado aparte en
+`data/nuevos/rfdetr_pkgs` (con `--no-deps`: reinstalar torch rompe el
+contenedor; huggingface_hub tiene que ser 1.x por transformers 5) y sus
+pesos en `/root/.roboflow` del contenedor; sin evaluar todavía.
 
 ---
 
