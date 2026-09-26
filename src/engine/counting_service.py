@@ -108,6 +108,18 @@ class CountingService:
         self.status = "starting"
         cap = None
         try:
+            # La cámara se abre ANTES de cargar el detector. Sin cámara en vivo
+            # conectada —el caso normal: la plataforma cuenta videos subidos—
+            # antes se cargaba un modelo en la GPU solo para fallar, y cada
+            # arranque dejaba un error con traceback que parecía una avería.
+            cap, is_live = open_video_source(self.camera_source)
+            if not cap.isOpened():
+                self.status = "error"
+                self.last_error = (f"No hay cámara en vivo en la fuente '{self.camera_source}'. "
+                                   "Los videos subidos se procesan normalmente.")
+                logging.warning(self.last_error)
+                return
+
             self.detector = VehicleDetector(
                 model_path=self.model_path,
                 confidence_threshold=self.confidence_threshold,
@@ -120,10 +132,6 @@ class CountingService:
                 iou_threshold=self.config.get('tracker', {}).get('iou_threshold', 0.3),
                 config=self.config.get('tracker', {})
             )
-
-            cap, is_live = open_video_source(self.camera_source)
-            if not cap.isOpened():
-                raise RuntimeError(f"No se pudo abrir la fuente de video: {self.camera_source}")
 
             self.frame_width = int(cap.get(3)) or 640
             self.frame_height = int(cap.get(4)) or 480
