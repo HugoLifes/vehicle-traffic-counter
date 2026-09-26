@@ -130,6 +130,22 @@ Con un conteo de campo para medir la exactitud:
 docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular python3 tools/prueba_aceptacion.py --proyecto 7 --referencias data/nuevos/aforo_frontal_manual
 ```
 
+**Ajustes por cámara (perfil de detección).** Cada proyecto puede llevar los
+ajustes medidos para su cámara. El de la cámara frontal de Cd. Juárez
+(proyecto 7) es: motos desde confianza 0.10 (recupera motos de noche) y el
+clasificador de pesados propio (autobús, camión, tractocamión y tractor sin
+caja sin internet). Para darle el mismo perfil a un proyecto nuevo con esa
+cámara (cambia `7` por el número del proyecto):
+
+```bash
+curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "clasificador_pesados": "models/pesados_v1.pt"}}'
+```
+
+Sin perfil, un proyecto cuenta con la configuración general, que es la
+validada para la cámara de lado. El perfil solo afecta los videos que se
+cuenten después; lo ya contado no cambia. El modelo `models/pesados_v1.pt`
+vive en el equipo: respáldalo junto con la base.
+
 **Respaldos.** La plataforma respalda la base sola una vez al día en
 `data/respaldos/` y conserva los últimos 14. Para restaurar uno:
 
