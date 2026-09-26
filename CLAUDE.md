@@ -1263,6 +1263,12 @@ quinto escenario (**20 de 20**).
 python tools/comparar_aforo_real.py --proyecto 7 --referencias data/nuevos/aforo_frontal_manual
 ```
 
+Además de los totales, la herramienta imprime el GEH de cada cuarto y de
+cada hora con los cuartos que no pasan, y, contra un conteo manual, las
+clases **por sentido** con las dos lecturas de cada duda del formato (motos
+dentro o fuera de A, tractor sin caja en C o en T-S). Todas las cifras de
+esta sección salen de ese comando.
+
 | | nuestro | manual | razón | sin motos |
 |---|---|---|---|---|
 | Se aleja ↔ OTE-PTE | 7 009 | 6 991 | **1.00×** | 0.98× |

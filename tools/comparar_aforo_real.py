@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import re
 import sqlite3
 import statistics
@@ -460,6 +461,55 @@ def veredicto_reloj(combinado, por_zona, mejora_minima=0.15):
     return None, cero, mejor_e, f"cada sentido pide otro desfase ({detalle}): ruido"
 
 
+def _geh(a: float, b: float) -> float:
+    """GEH de dos flujos horarios: la medida con que los estudios de transito
+    dicen si dos conteos coinciden. Debajo de 5 se toman por iguales, y el
+    criterio pide que lo cumpla el 85 % de los casos."""
+    return math.sqrt(2 * (a - b) ** 2 / (a + b)) if a + b else 0.0
+
+
+def informe_por_cuarto(nuestro, real, pares, bins) -> None:
+    """Cuarto por cuarto y hora por hora, por sentido.
+
+    El total puede cuadrar con errores que se cancelan entre cuartos; esto
+    los deja a la vista, y nombra los cuartos que no pasan para revisarlos
+    uno por uno. Con el frontal salio uno de 54 (16:45 alejandose, 249
+    contra 207), y su minuto mas cargado dio 28 de 28 vehiculos reales.
+
+    El GEH se calcula sobre el flujo horario equivalente (el cuarto por 4),
+    que es la escala para la que esta definido el umbral de 5.
+    """
+    print("\n=== Por cuarto de hora y por hora ===")
+    for zona, (sentido, _) in sorted(pares.items()):
+        if not sentido:
+            continue
+        cuartos = [(b, nuestro[zona].get(b, 0), real[sentido].get(b, 0)) for b in bins]
+        gehs = [(_geh(4 * n, 4 * r), b, n, r) for b, n, r in cuartos]
+        razones = sorted(n / r for _, n, r in cuartos if r)
+        errores = [abs(n - r) / r for _, n, r in cuartos if r]
+        if not razones:
+            continue
+        print(f"{zona} <-> {sentido}: GEH < 5 en {sum(g < 5 for g, *_ in gehs)} de "
+              f"{len(gehs)} cuartos; razon mediana {statistics.median(razones):.2f} "
+              f"(de {razones[0]:.2f} a {razones[-1]:.2f}), error medio "
+              f"{100 * statistics.fmean(errores):.1f} %")
+        fuera = [f"{b // 60:02d}:{b % 60:02d} {n}/{int(r)} (GEH {g:.1f})"
+                 for g, b, n, r in gehs if g >= 5]
+        if fuera:
+            print(f"  cuartos que no pasan: {', '.join(fuera)}")
+        horas = defaultdict(lambda: [0, 0.0, 0])
+        for b, n, r in cuartos:
+            horas[b // 60][0] += n
+            horas[b // 60][1] += r
+            horas[b // 60][2] += 1
+        por_hora = [(h, n / r, _geh(n * 4 / q, r * 4 / q))
+                    for h, (n, r, q) in sorted(horas.items()) if r]
+        if por_hora:
+            print(f"  por hora: razon de {min(x[1] for x in por_hora):.2f} a "
+                  f"{max(x[1] for x in por_hora):.2f}, GEH maximo "
+                  f"{max(x[2] for x in por_hora):.1f} ({len(por_hora)} horas)")
+
+
 def _correlacion(a, b):
     """None cuando no se puede calcular: con pocos intervalos, o cuando una
     de las dos series es constante, la correlacion no esta definida."""
@@ -543,6 +593,75 @@ def composicion_nuestra(bd: Path, proyecto: int, bins) -> dict[str, int]:
             for clase, v in (it.get("by_vehicle_type") or {}).items():
                 comp[clase] += v.get("in", 0) + v.get("out", 0)
     return dict(comp)
+
+
+def composicion_por_calzada(bd: Path, proyecto: int, bins) -> dict[str, dict[str, int]]:
+    """Las mismas clases, separadas por la calzada de CADA cruce.
+
+    Es lo que se compara contra cada sentido del conteo manual, y sale del
+    mismo `get_interval_counts` (con `por_calzada=True`, como la hoja de
+    clasificacion del Excel). Agrupando por linea, una calibracion con fuga
+    reparte los cruces de una calzada en el sentido de la otra.
+    """
+    sys.path.insert(0, str(RAIZ))
+    from src.storage import traffic_db
+    traffic_db.DB_PATH = Path(bd)
+    con = _conectar_ro(bd)
+    nombres = {r["id"]: r["name"] for r in con.execute(
+        "select id, name from zones where project_id=?", (proyecto,))}
+    con.close()
+    datos = traffic_db.get_interval_counts(proyecto, 15, por_calzada=True)
+    comp: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for carril in datos["lanes"]:
+        for it in carril["intervals"]:
+            t = it["start"]
+            medio = int(t[11:13]) * 60 + int(t[14:16]) + 7.5
+            if not any(b <= medio < b + 15 for b in bins):
+                continue
+            for zid, clases in (it.get("by_zone") or {}).items():
+                for clase, v in clases.items():
+                    comp[nombres.get(zid, "sin zona")][clase] += v
+    return {z: dict(c) for z, c in comp.items()}
+
+
+def informe_clases_por_sentido(clases_real, pares, bins, por_zona) -> None:
+    """Cada calzada contra su sentido del conteo manual, clase por clase.
+
+    El formato de la empresa no tiene columna de motos ni de tractor sin
+    caja, y nosotros entregamos las dos. Se imprimen las dos lecturas de
+    cada duda en vez de escoger una: con el frontal (26-sep-2026) A cuadro
+    con las motos dentro (1.00x y 0.99x; sin ellas 0.98x y 0.97x) y C con el
+    tractor (1.02x hacia la camara; en T-S habria dado 1.31x y 2.17x), pero
+    quien lo decide es la empresa.
+    """
+    if any("PESADO" in c for c in por_zona.values()):
+        return      # camara de clases gruesas: A / PESADO, ya comparado arriba
+    print("\n=== Clases por sentido (nuestro / real) ===")
+    for zona, (sentido, _) in sorted(pares.items()):
+        if not sentido or sentido not in clases_real or zona not in por_zona:
+            continue
+        r: dict[str, float] = defaultdict(float)
+        for b in bins:
+            for clase, v in clases_real[sentido].get(b, {}).items():
+                r[clase] += v
+        n: dict[str, int] = defaultdict(int, por_zona[zona])
+        filas = [
+            ("A sin motos", n["A"], r["A"]),
+            ("A + MOTO", n["A"] + n["MOTO"], r["A"]),
+            ("B autobus", n["B"], r["B"]),
+            ("C sola", n["C"], r["C"]),
+            ("C + TRACTOR", n["C"] + n["TRACTOR"], r["C"]),
+            ("T-S + T-S-R", n["T-S"] + n["T-S-R"], r["T-S"] + r["T-S-R"]),
+            ("T-S + TRACTOR", n["T-S"] + n["T-S-R"] + n["TRACTOR"], r["T-S"] + r["T-S-R"]),
+            ("C + T-S + TRACTOR", n["C"] + n["T-S"] + n["T-S-R"] + n["TRACTOR"],
+             r["C"] + r["T-S"] + r["T-S-R"]),
+        ]
+        print(f"{zona} <-> {sentido}")
+        for nombre, a, b in filas:
+            razon = f"{a / b:.2f}x" if b else "-"
+            print(f"    {nombre:<20}{a:>7} / {int(b):<7}{razon:>7}")
+        if n["SIN_RESOLVER"]:
+            print(f"    sin clasificar (noche o vehiculo muy chico): {n['SIN_RESOLVER']}")
 
 
 def informe_clases(clases_real, pares, bins, comp) -> None:
@@ -725,6 +844,8 @@ def main() -> None:
                   "las meten en A,")
             print("  la otra. Hay que preguntarlo.")
 
+    informe_por_cuarto(nuestro, real, pares, bins)
+
     print("\n=== Reparto entre sentidos ===")
     reparto_real = " / ".join(
         f"{100 * sum(real[s].get(b, 0) for b in bins) / tr:.0f}% {s}" for s in sorted(real)
@@ -777,6 +898,11 @@ def main() -> None:
     if clases_real:
         informe_clases(clases_real, pares, bins,
                        composicion_nuestra(a.bd, a.proyecto, bins))
+        # Solo contra el conteo manual: el tubo clasifica por ejes y tiene su
+        # propia herramienta (comparar_clases_tubo.py), con sus grupos.
+        if not ref_con_motos:
+            informe_clases_por_sentido(clases_real, pares, bins,
+                                       composicion_por_calzada(a.bd, a.proyecto, bins))
 
     if a.salida:
         a.salida.parent.mkdir(parents=True, exist_ok=True)
