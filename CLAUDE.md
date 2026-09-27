@@ -1490,6 +1490,22 @@ no aplica, así que tendría que ser por proyecto. Leer el video cuesta
 **23 ms por cuadro** (decodificar 2560×1440 en el CPU): el decodificador de
 hardware del Orin es la otra palanca, sin probar.
 
+**960 por el camino de producción, 12 minutos (27-sep-2026).** El de más
+pesados de cada hora, 12–23 h, con el perfil completo (moto 0.10, pesados,
+livianos) a 1280 y a 960 sobre una copia de la base, revisando a ojo cada
+cruce que cambia:
+
+| | 1280 | 960 |
+|---|---|---|
+| 8 minutos de día (12:26–19:24) | 371 | 370 (quita el remolque de una pickup que se contaba aparte; agrega una "moto" dudosa sobre el techo de un auto) |
+| 4 minutos de noche (20:03–23:40) | 125 | 130, +4 % (casi todos vehículos reales barridos por los faros que 1280 no contaba) |
+| Tiempo de proceso | 1 715 s | 1 530 s (**−11 %**) |
+
+**No se cambió el proyecto 7**: lo validado contra el conteo manual es 1280,
+y la ganancia de noche no se puede confirmar sin el conteo de 19–24 h.
+Cuando llegue, 960 es la primera palanca (`input_size` en el perfil); las
+otras dos, sin probar: TensorRT FP16 y el decodificador de hardware.
+
 **Pegar los 730 minutos en pocos videos no aligera al Jetson**: el trabajo
 es por cuadro, no hay costo por archivo. Lo que sí da es recuperar el
 0.3–0.5 % que se pierde al arrancar cada archivo y una cola más manejable, a
