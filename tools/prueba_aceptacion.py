@@ -141,6 +141,31 @@ def salud(max_horas_respaldo, min_disco):
     except Exception as e:
         anotar("salud", "Modelo del detector", "FALLA", str(e))
 
+    # Un clasificador del perfil que falta no detiene el conteo (el procesador
+    # cae a la regla del alto), pero solo lo dice en el registro del
+    # contenedor: pasa al copiar un proyecto a otro equipo sin `models/`.
+    try:
+        import json as _json
+        import sqlite3
+        faltan = []
+        con = sqlite3.connect(bd)
+        for pid, perfil in con.execute(
+                "select id, perfil_deteccion from projects where perfil_deteccion is not null"):
+            try:
+                datos = _json.loads(perfil) if perfil else {}
+            except ValueError:
+                faltan.append(f"proyecto {pid}: perfil ilegible")
+                continue
+            for clave in ("modelo", "clasificador_pesados", "clasificador_livianos"):
+                ruta = datos.get(clave)
+                if ruta and not (RAIZ / ruta).exists():
+                    faltan.append(f"proyecto {pid}: {ruta}")
+        con.close()
+        anotar("salud", "Modelos de los perfiles", "AVISO" if faltan else "PASA",
+               "; ".join(faltan) if faltan else "todos en el equipo")
+    except Exception as e:
+        anotar("salud", "Modelos de los perfiles", "AVISO", str(e))
+
     try:
         import torch
         gpu = torch.cuda.is_available()

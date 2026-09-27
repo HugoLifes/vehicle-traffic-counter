@@ -142,7 +142,7 @@ Para darle el mismo perfil a un proyecto nuevo con esa cámara (cambia `7`
 por el número del proyecto):
 
 ```bash
-curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "clasificador_pesados": "models/pesados_v1.pt", "clasificador_livianos": "models/livianos_v1.pt"}}'
+curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "clasificador_pesados": "models/pesados_v1.pt", "clasificador_livianos": "models/livianos_v3.pt"}}'
 ```
 
 Con el clasificador de livianos, el Excel trae la hoja **LIVIANOS (15MIN)**:
@@ -152,7 +152,7 @@ A; lo que el modelo no distingue con seguridad va en SIN SUBTIPO.
 Sin perfil, un proyecto cuenta con la configuración general, que es la
 validada para la cámara de lado. El perfil solo afecta los videos que se
 cuenten después; lo ya contado no cambia. Los modelos `models/pesados_v1.pt`
-y `models/livianos_v1.pt` viven en el equipo; hay copia en `data/respaldos/`.
+y `models/livianos_v3.pt` viven en el equipo; hay copia en `data/respaldos/`.
 
 **Respaldos.** La plataforma respalda la base sola una vez al día en
 `data/respaldos/` y conserva los últimos 14. Para restaurar uno:
@@ -197,3 +197,19 @@ docker compose -f docker-compose.jetson.yml restart
 | La cola no avanza | `logs -f`. Si el equipo se reinició, la cola se retoma sola al arrancar. |
 | Un conteo sale muy bajo | Revisar la calibración: línea corta o zona mal dibujada. El sistema avisa en el registro si la zona descarta más del 40 % de las detecciones. |
 | Disco lleno | `docker system df` y la limpieza de arriba. |
+| El equipo deja de responder (ni la página ni `ssh`) | Se calentó o se quedó sin memoria. Con el watchdog activo (abajo) se reinicia solo en un minuto y la cola sigue; sin él, desconectarlo y volver a conectarlo. Revisar que el ventilador no tenga polvo y que el equipo no esté encerrado. |
+
+**Ajustes del equipo, una sola vez al instalar.** El Jetson se congeló una vez
+tras horas de carga continua: miles de alertas de superficie caliente con el
+ventilador en su perfil silencioso, que es el de fábrica. Estos dos ajustes
+lo dejan enfriando a fondo y, si aun así se congela, reiniciándose solo:
+
+```bash
+sudo sed -i 's/FAN_DEFAULT_PROFILE quiet/FAN_DEFAULT_PROFILE cool/' /etc/nvfancontrol.conf && sudo systemctl stop nvfancontrol && sudo rm -f /var/lib/nvfancontrol/status && sudo systemctl start nvfancontrol
+sudo sed -i 's/^#\?RuntimeWatchdogSec=.*/RuntimeWatchdogSec=60/' /etc/systemd/system.conf && sudo systemctl daemon-reexec
+```
+
+Si en el equipo corren otros contenedores con GPU, pónganles techo de memoria
+(`docker update --memory 2g --memory-swap 2g NOMBRE`): en el Jetson la
+memoria de la GPU es la misma RAM, y la que pide CUDA no cuenta dentro del
+límite de 6 GB del contenedor del aforo.

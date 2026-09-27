@@ -1812,6 +1812,28 @@ sin recontar. En conteos nuevos lo pone el procesador con
 PICKUP 38–39 de 40 (una Suburban con caja cerrada y una caja seca sobre
 chasis de pickup, que es A de todos modos).
 
+**El modelo en uso es `models/livianos_v3.pt`** (1 898 recortes etiquetados;
+copia en `data/respaldos/`). Contra el maestro, en horas que no vio:
+
+| | px | acierto | recuerdo CAMIONETA | composición, peor clase |
+|---|---|---|---|---|
+| v1 (1 217 etiquetas) | 160 | 93.2 % | 0.79 | 4.7 puntos |
+| v2 (1 898) | 160 | 93.1 % | 0.79 | 3.6 puntos |
+| **v3 (1 898), horas 13/16/18** | **224** | **95.7 %** | **0.88** | **1.7 puntos** |
+| v3, otra partición (12/15/17) | 224 | 95.4 % | 0.90 | 1.7 puntos |
+
+**Más etiquetas no movieron nada; más resolución sí.** La hoja de fallos
+del v2 lo enseñó: las "camionetas que el modelo llamó AUTO" eran de verdad
+crossovers chicos (Kicks, HR-V, Creta, Trax, RAV4, CR-V), a 0.8–0.97 de
+seguridad. A 160 px el crossover y el hatchback se ven igual. El
+entrenamiento ya equilibraba las clases (`WeightedRandomSampler`), así que
+no era el desbalance.
+
+Aplicado al proyecto 7 (27-sep-2026): 13 895 cruces de día, AUTO 62.6 %,
+CAMIONETA 24.0 %, PICKUP 13.4 % (el maestro: 63.4 / 23.5 / 13.0). En el
+Excel, de 12 a 19 h queda **0.4 %** de la A sin subtipo; de 19 a 24 h va
+toda en SIN SUBTIPO, a propósito.
+
 ### Motos de noche hacia la cámara: el tamaño del hueco
 
 Contra el tubo, de 20 a 23 h: 4, 5, 3 y 3 motos por hora nuestras contra
