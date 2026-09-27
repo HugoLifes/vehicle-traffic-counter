@@ -146,9 +146,8 @@ def salud(max_horas_respaldo, min_disco):
     # contenedor: pasa al copiar un proyecto a otro equipo sin `models/`.
     try:
         import json as _json
-        import sqlite3
         faltan = []
-        con = sqlite3.connect(bd)
+        con = sqlite3.connect(f"file:{bd}?mode=ro", uri=True, timeout=30)
         for pid, perfil in con.execute(
                 "select id, perfil_deteccion from projects where perfil_deteccion is not null"):
             try:
