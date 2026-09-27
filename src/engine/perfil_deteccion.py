@@ -94,11 +94,12 @@ def nacio_dentro_de_pesado(caja, rastros: List[Dict], propio_id=None,
     """Id del autobús o camión dentro del cual APARECE un rastro, o None.
 
     Un pedazo de pesado (su frente, el chasis, un faro) nace cuando el
-    pesado ya está encima, casi entero dentro de su caja; un auto real viene
-    rastreado desde lejos y nace fuera. Medido en la cámara frontal, 58
-    minutos: no contar los rastros nacidos así quitó 8 cruces y los 8 eran
-    pedazos, sin tocar ningún auto real. Quitar la caja anidada cuadro por
-    cuadro, en cambio, borraba el auto que pasa junto al autobús.
+    pesado ya está encima, casi entero dentro de su caja. NO basta para
+    decidir, y por eso `quitar_nacidos_en_pesado` va apagado: un auto que
+    sale de detrás de un tráiler también nace dentro de él. En 58 minutos
+    escogidos por tener dobles conteos quitó 8 pedazos; en 12 minutos sin
+    escoger (el de más pesados de cada hora) quitó 6 cruces y 5 eran autos
+    reales, revisados en su cuadro exacto (27-sep-2026).
     """
     x1, y1, x2, y2 = caja
     area = max(1.0, (x2 - x1) * (y2 - y1))

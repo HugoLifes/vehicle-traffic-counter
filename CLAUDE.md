@@ -1767,14 +1767,25 @@ infla A y MOTO. La corrección candidata es quitar la caja que cae casi
 entera dentro de un autobús o camión de al menos el doble de área
 (`quitar_anidadas`), y la regresión exige que **nunca quite un auto real**.
 
-**Lo que sí funcionó: no contar el rastro que NACE dentro de un pesado**
-(`quitar_nacidos_en_pesado` en el perfil; `perfil_deteccion.nacio_dentro_de_pesado`).
-Un pedazo aparece cuando el autobús ya está encima, casi entero dentro de
-su caja (≥ 0.8, pesado del doble de área); un auto real viene rastreado
-desde lejos. Sobre 58 minutos quitó 8 cruces y **los 8 eran pedazos**
-(frentes de autobús, chasis, la cabina bajo una caja, el faro como moto),
-sin tocar el sedán de las 18:40 que la regla por cuadro sí borraba. Se le
-escapan ~3 de 11. Quitar la caja anidada en cada cuadro queda apagado.
+**No contar el rastro que NACE dentro de un pesado parecía funcionar, y NO
+sirve** (`quitar_nacidos_en_pesado` en el perfil;
+`perfil_deteccion.nacio_dentro_de_pesado`, queda apagado). La idea: un
+pedazo aparece cuando el autobús ya está encima, casi entero dentro de su
+caja (≥ 0.8, pesado del doble de área); un auto real viene rastreado desde
+lejos. Sobre 58 minutos quitó 8 cruces y los 8 eran pedazos — pero esos
+minutos se habían escogido **por tener dobles conteos conocidos**.
+
+Probada después por el camino de producción (`VideoJobProcessor` sobre una
+copia de la base, 27-sep-2026) en 12 minutos que no se escogieron así (el de
+más pesados de cada hora, 12–23 h): quitó 6 y **5 eran autos reales**,
+revisados a ojo en su cuadro exacto. Un auto que sale de detrás de una caja
+de tráiler, o que al aparecer queda encimado con un tractocamión, **nace
+dentro del pesado igual que un pedazo**. La oclusión es mucho más común que
+el pedazo. Solo el de la bomba trasera de una pipa era pedazo. Si se
+retoma, la diferencia está en lo que pasa DESPUÉS de nacer: el pedazo viaja
+dentro de la caja del pesado toda su vida, el auto se separa de ella.
+Quitar la caja anidada en cada cuadro también queda apagado. Los dobles
+conteos de pesados se quedan como límite conocido (~0.15 % del total).
 
 ### Automóvil, camioneta y pickup (subtipos de A)
 
@@ -1795,6 +1806,11 @@ propio (`entrenar_clasificador.py --clases AUTO,CAMIONETA,PICKUP`) y
 `etiquetar_livianos.py aplicar` para escribir el subtipo de los ya contados
 sin recontar. En conteos nuevos lo pone el procesador con
 `clasificador_livianos` en el perfil.
+
+**Las etiquetas del maestro, revisadas a ojo** (`etiquetar_livianos.py hoja`,
+40 por clase): AUTO 40 de 40, CAMIONETA 40 de 40 (SUV, minivans, vans),
+PICKUP 38–39 de 40 (una Suburban con caja cerrada y una caja seca sobre
+chasis de pickup, que es A de todos modos).
 
 ### Motos de noche hacia la cámara: el tamaño del hueco
 

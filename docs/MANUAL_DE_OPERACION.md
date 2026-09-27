@@ -135,8 +135,6 @@ ajustes medidos para su cámara. El de la cámara frontal de Cd. Juárez
 (proyecto 7) es:
 
 - motos desde confianza 0.10 (recupera motos de noche);
-- no contar los pedazos de autobús o camión (el frente o el chasis que el
-  detector ve aparte);
 - clasificador de pesados propio (autobús, camión, tractocamión, tractor sin
   caja) y de livianos (automóvil, camioneta, pickup), sin internet.
 
@@ -144,7 +142,7 @@ Para darle el mismo perfil a un proyecto nuevo con esa cámara (cambia `7`
 por el número del proyecto):
 
 ```bash
-curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "quitar_nacidos_en_pesado": true, "clasificador_pesados": "models/pesados_v1.pt", "clasificador_livianos": "models/livianos_v1.pt"}}'
+curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "clasificador_pesados": "models/pesados_v1.pt", "clasificador_livianos": "models/livianos_v1.pt"}}'
 ```
 
 Con el clasificador de livianos, el Excel trae la hoja **LIVIANOS (15MIN)**:
