@@ -148,6 +148,11 @@ def init_schema():
     # internet, y que no se pierde al recontar porque se vuelve a calcular.
     _ensure_column(conn, "crossings", "clase_modelo", "TEXT")
     _ensure_column(conn, "crossings", "prob_modelo", "REAL")
+    # Subtipo de los livianos (AUTO, CAMIONETA, PICKUP) segun el clasificador
+    # propio. La clase A no cambia —es como la pide la SCT—; el subtipo es
+    # un desglose DENTRO de A que se entrega en su propia hoja.
+    _ensure_column(conn, "crossings", "subtipo_modelo", "TEXT")
+    _ensure_column(conn, "crossings", "prob_subtipo", "REAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS video_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -905,7 +910,9 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
                      bbox_y: Optional[int] = None,
                      cuadro: Optional[int] = None,
                      clase_modelo: Optional[str] = None,
-                     prob_modelo: Optional[float] = None):
+                     prob_modelo: Optional[float] = None,
+                     subtipo_modelo: Optional[str] = None,
+                     prob_subtipo: Optional[float] = None):
     """
     timestamp: hora REAL del cruce en formato ISO ('YYYY-MM-DD HH:MM:SS').
     En la cámara en vivo se omite (usa la hora del reloj del sistema).
@@ -928,10 +935,10 @@ def record_crossing(lane_id: int, track_id: int, direction: str,
     conn = get_connection()
     columnas = ["lane_id", "track_id", "direction", "vehicle_type", "confidence", "job_id",
                 "zone_id", "bbox_height", "bbox_width", "bbox_x", "bbox_y", "cuadro",
-                "clase_modelo", "prob_modelo"]
+                "clase_modelo", "prob_modelo", "subtipo_modelo", "prob_subtipo"]
     valores = [lane_id, track_id, direction, vehicle_type, confidence, job_id,
                zone_id, bbox_height, bbox_width, bbox_x, bbox_y, cuadro,
-               clase_modelo, prob_modelo]
+               clase_modelo, prob_modelo, subtipo_modelo, prob_subtipo]
     # Sin hora explícita (cámara en vivo) la pone la columna: el reloj del sistema.
     if timestamp:
         columnas.append("timestamp")
@@ -1273,7 +1280,8 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     rows = conn.execute(
         f"""SELECT id, lane_id, direction, vehicle_type, bbox_height, bbox_width,
                    confidence, timestamp, tiempo_tramo_s, zone_id,
-                   clase_revisada, clase_modelo, prob_modelo FROM crossings
+                   clase_revisada, clase_modelo, prob_modelo,
+                   subtipo_modelo, prob_subtipo FROM crossings
             WHERE lane_id IN ({placeholders})
             ORDER BY timestamp""",
         lane_ids
@@ -1288,7 +1296,12 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     # El umbral se saca por CARRIL y no por proyecto: cada carril cuenta
     # sobre una línea fija, o sea a una distancia fija de la cámara, que es
     # justo la condición que hace comparable el alto en píxeles.
-    from src.engine.clasificador_pesados import CLASES_PESADAS_REGLA, PROB_MINIMA_MODELO
+    from src.engine.clasificador_pesados import (CLASES_PESADAS_REGLA, PROB_MINIMA_MODELO,
+                                                 PROB_MINIMA_SUBTIPO)
+    from src.engine import perfil_deteccion as _perfil
+    # Automovil/camioneta/pickup solo con luz: de noche, con los faros de
+    # frente, la forma no se ve y el subtipo seria inventado.
+    horas_sub = _perfil.leer(get_project(project_id)).get("horas_subtipo", (7, 19))
     from src.engine.clasificacion import (CONFIANZA_MINIMA, MEDIDO, ESTIMADO,
                                           NO_RESOLUBLE, clasificar,
                                           nivel_de_calzada, perfil_de_calzada)
@@ -1422,6 +1435,17 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
             if por_calzada:
                 pz = bucket.setdefault("by_zone", {}).setdefault(row["zone_id"], {})
                 pz[clase] = pz.get(clase, 0) + 1
+                # Desglose de A: automovil, camioneta, pickup. Solo con
+                # probabilidad suficiente; lo demas se declara SIN_SUBTIPO en
+                # vez de repartirlo, y los subtipos siempre suman la A.
+                if clase == "A":
+                    hora = int(row["timestamp"][11:13])
+                    sub = (row["subtipo_modelo"]
+                           if row["subtipo_modelo"] and (row["prob_subtipo"] or 0)
+                           >= PROB_MINIMA_SUBTIPO and horas_sub[0] <= hora < horas_sub[1]
+                           else "SIN_SUBTIPO")
+                    ps = bucket.setdefault("subtipos_A", {}).setdefault(row["zone_id"], {})
+                    ps[sub] = ps.get(sub, 0) + 1
             # La velocidad solo en las horas medibles: de noche el vehículo
             # es una estela de luz y su rastro no dice a qué velocidad iba.
             if lane.get("tramo") and (lane["id"], row["timestamp"][:13]) in velocidad_valida:

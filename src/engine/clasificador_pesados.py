@@ -21,13 +21,18 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-# Etiqueta del modelo -> clase de la empresa.
-A_CLASE = {"BUS": "B", "TRUCK": "C", "SEMI": "T-S", "TRACTOR": "TRACTOR", "CAR": "A"}
+# Etiqueta del modelo -> clase de la empresa. Las de livianos (AUTO,
+# CAMIONETA, PICKUP) son subtipos DENTRO de A y se guardan aparte.
+A_CLASE = {"BUS": "B", "TRUCK": "C", "SEMI": "T-S", "TRACTOR": "TRACTOR", "CAR": "A",
+           "AUTO": "AUTO", "CAMIONETA": "CAMIONETA", "PICKUP": "PICKUP"}
+SUBTIPOS_A = ("AUTO", "CAMIONETA", "PICKUP")
 # Lo que la regla del alto (src/engine/clasificacion.py) entrega como pesado.
 # Solo ahí manda el modelo; en lo demás la regla, que es la validada.
 CLASES_PESADAS_REGLA = ("B", "C", "PESADO")
 # Por debajo de esta probabilidad el modelo duda y se queda la regla.
 PROB_MINIMA_MODELO = 0.5
+# Subtipo de los livianos (AUTO, CAMIONETA, PICKUP): por debajo, SIN_SUBTIPO.
+PROB_MINIMA_SUBTIPO = 0.5
 # El recorte con que se etiquetó y entrenó (recortes_sin_posicion.py): la caja
 # más un margen del 15 % de su lado mayor. Clasificar otro encuadre sería
 # medir con una regla distinta de la calibrada.
@@ -83,6 +88,11 @@ class ClasificadorPesados:
         rec = recortar(cuadro, bbox)
         if rec is None:
             return None
+        return self.clasificar_recorte(rec)
+
+    def clasificar_recorte(self, rec: np.ndarray) -> Tuple[str, float]:
+        """Lo mismo sobre un recorte ya hecho (caja + 15 %), como los que deja
+        recortes_sin_posicion.py."""
         with self._torch.no_grad():
             x = self._preparar(rec).unsqueeze(0).to(self.device)
             p = self._torch.softmax(self.modelo(x), dim=1)[0].cpu()

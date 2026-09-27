@@ -85,6 +85,18 @@ auto_casi_igual = caja("car", 5, 5, 125, 125)
 comprobar(len(pd.quitar_anidadas([camion_chico, auto_casi_igual], 0.9)) == 2,
           "si la grande no dobla el área no es un pedazo: lo resuelve la NMS")
 
+# --- 5. Rastros nacidos dentro de un pesado ---------------------------------
+bus = dict(caja("bus", 1000, 700, 1600, 960), id=1)
+comprobar(pd.nacio_dentro_de_pesado([1010, 830, 1140, 955], [bus], propio_id=2) == 1,
+          "el frente que aparece dentro del autobús es un pedazo de él")
+comprobar(pd.nacio_dentro_de_pesado([1450, 800, 1700, 960], [bus], propio_id=2) is None,
+          "el auto que aparece a medias fuera del autobús es un vehículo")
+comprobar(pd.nacio_dentro_de_pesado([1010, 830, 1140, 955], [dict(caja("car", 1000, 700, 1600, 960), id=1)],
+                                    propio_id=2) is None,
+          "dentro de un auto grande no cuenta: solo autobús o camión")
+comprobar(pd.leer({"perfil_deteccion": {"quitar_nacidos_en_pesado": True}})
+          == {"quitar_nacidos_en_pesado": True}, "la opción se lee del perfil")
+
 # Cajas reales de la cámara frontal, del mismo cuadro, revisadas a ojo.
 # (grande, chica, es_pedazo, descripción)
 ANIDADAS = []

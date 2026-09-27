@@ -1767,6 +1767,35 @@ infla A y MOTO. La corrección candidata es quitar la caja que cae casi
 entera dentro de un autobús o camión de al menos el doble de área
 (`quitar_anidadas`), y la regresión exige que **nunca quite un auto real**.
 
+**Lo que sí funcionó: no contar el rastro que NACE dentro de un pesado**
+(`quitar_nacidos_en_pesado` en el perfil; `perfil_deteccion.nacio_dentro_de_pesado`).
+Un pedazo aparece cuando el autobús ya está encima, casi entero dentro de
+su caja (≥ 0.8, pesado del doble de área); un auto real viene rastreado
+desde lejos. Sobre 58 minutos quitó 8 cruces y **los 8 eran pedazos**
+(frentes de autobús, chasis, la cabina bajo una caja, el faro como moto),
+sin tocar el sedán de las 18:40 que la regla por cuadro sí borraba. Se le
+escapan ~3 de 11. Quitar la caja anidada en cada cuadro queda apagado.
+
+### Automóvil, camioneta y pickup (subtipos de A)
+
+La A no se toca —es como la pide la SCT—; se abre en su propia hoja del
+Excel, "LIVIANOS (15MIN)", con AUTO, CAMIONETA (SUV, crossover, minivan,
+van de pasajeros), PICKUP y SIN SUBTIPO, que siempre suman la A (probado:
+9 835 y 9 483 en los dos sentidos). `crossings.subtipo_modelo` /
+`prob_subtipo`; en `get_interval_counts` va en `subtipos_A` por calzada y
+solo para cruces que quedaron en A, con probabilidad ≥ 0.5.
+
+Cómo se hizo, igual que con los pesados: recortes de día de cada liviano
+(`recortes_sin_posicion.py --clases car truck --alto-rel-min 0`, que ahora
+**lee el video de corrido**: saltar con `cap.set` a cada cruce decodificaba
+desde el cuadro clave y salían ~6 recortes por minuto; de corrido, ~25), una
+muestra de 1 de cada 7 etiquetada con el modelo de visión
+(`tools/etiquetar_livianos.py etiquetar --cada 7 --seguir`), clasificador
+propio (`entrenar_clasificador.py --clases AUTO,CAMIONETA,PICKUP`) y
+`etiquetar_livianos.py aplicar` para escribir el subtipo de los ya contados
+sin recontar. En conteos nuevos lo pone el procesador con
+`clasificador_livianos` en el perfil.
+
 ### Motos de noche hacia la cámara: el tamaño del hueco
 
 Contra el tubo, de 20 a 23 h: 4, 5, 3 y 3 motos por hora nuestras contra

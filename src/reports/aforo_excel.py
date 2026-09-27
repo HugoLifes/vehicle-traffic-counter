@@ -572,6 +572,101 @@ def _hoja_clases(wb: Workbook, project_id: int, d: Dict) -> None:
         fila += 1
 
 
+SUBTIPOS_A = ("AUTO", "CAMIONETA", "PICKUP", "SIN_SUBTIPO")
+_TITULO_SUBTIPO = {"AUTO": "AUTOMOVIL", "CAMIONETA": "CAMIONETA", "PICKUP": "PICKUP",
+                   "SIN_SUBTIPO": "SIN SUBTIPO"}
+
+
+def _hoja_livianos(wb: Workbook, project_id: int, d: Dict) -> None:
+    """
+    Desglose de la clase A en automóvil, camioneta (SUV, crossover, minivan,
+    van de pasajeros) y pickup, por cuarto de hora y sentido.
+
+    La A de la hoja de clasificacion no cambia: es como la pide la SCT. Esto
+    la abre, y sus columnas SIEMPRE suman la A: lo que el clasificador no
+    distingue con seguridad va en SIN SUBTIPO en vez de repartirse. Solo sale
+    si el proyecto tiene subtipos calculados (clasificador de livianos).
+    """
+    r = traffic_db.get_interval_counts(project_id, 15, por_calzada=True)
+    zonas = {z["id"]: z["name"] for z in traffic_db.list_zones(project_id, active_only=False)}
+    datos = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    for carril in r.get("lanes", []):
+        for iv in carril["intervals"]:
+            t = datetime.strptime(iv["start"], "%Y-%m-%d %H:%M:%S")
+            for zona, subs in iv.get("subtipos_A", {}).items():
+                sentido = zonas.get(zona) or carril["lane_name"]
+                for s, n in subs.items():
+                    datos[sentido][(t.date(), t.hour * 60 + t.minute)][s] += n
+    hay = any(s != "SIN_SUBTIPO" and n for x in datos.values() for q in x.values()
+              for s, n in q.items())
+    if not hay:
+        return
+    ws = wb.create_sheet("LIVIANOS (15MIN)")
+    ws.sheet_view.showGridLines = False
+    _celda(ws, 1, 1, "DESGLOSE DE LA CLASE A POR CUARTOS DE HORA", _TITULO, borde=False)
+    _celda(ws, 2, 1, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 2, 2, d["proyecto"]["name"], _NORMAL, alineacion=_IZQ, borde=False)
+    cols = list(SUBTIPOS_A) + ["TOTAL A"]
+    ancho = len(cols) + 1
+    col = 1
+    for sentido in sorted(datos):
+        fila = 4
+        _celda(ws, fila, col, sentido.upper(), _SUBTITULO, _AZUL)
+        ws.merge_cells(start_row=fila, start_column=col, end_row=fila, end_column=col + ancho - 1)
+        fila += 1
+        for fecha in d["fechas"]:
+            _celda(ws, fila, col, f"{DIAS[fecha.weekday()]} {fecha.day:02d}/"
+                   f"{MESES[fecha.month - 1][:3]}/{fecha.year}", _CABECERA, _GRIS)
+            for i, c in enumerate(cols):
+                _celda(ws, fila, col + 1 + i, _TITULO_SUBTIPO.get(c, c), _CABECERA, _GRIS)
+            fila += 1
+            suma_dia = defaultdict(int)
+            for hora in range(24):
+                suma_hora = defaultdict(int)
+                for q in range(4):
+                    ini = hora * 60 + q * 15
+                    q_datos = datos[sentido].get((fecha, ini), {})
+                    con_video = bool(_cobertura(d, fecha, ini)) or bool(q_datos)
+                    _celda(ws, fila, col, f"{hora:02d}:{q * 15:02d}-{(hora + (q + 1) // 4):02d}:"
+                           f"{((q + 1) * 15) % 60:02d}", _NORMAL)
+                    for i, c in enumerate(cols):
+                        n = sum(q_datos.values()) if c == "TOTAL A" else q_datos.get(c, 0)
+                        _celda(ws, fila, col + 1 + i, n if con_video else "",
+                               _CABECERA if c == "TOTAL A" else _NORMAL)
+                        if con_video:
+                            suma_hora[c] += n
+                    fila += 1
+                _celda(ws, fila, col, f"{hora:02d}:00-{hora + 1:02d}:00", _CABECERA, _GRIS)
+                for i, c in enumerate(cols):
+                    _celda(ws, fila, col + 1 + i, suma_hora.get(c, 0) if suma_hora else "",
+                           _CABECERA, _GRIS)
+                    suma_dia[c] += suma_hora.get(c, 0)
+                fila += 1
+            _celda(ws, fila, col, "TOTAL DEL DIA", _CABECERA, _AZUL)
+            for i, c in enumerate(cols):
+                _celda(ws, fila, col + 1 + i, suma_dia.get(c, 0), _CABECERA, _AZUL)
+            fila += 1
+            total = suma_dia.get("TOTAL A", 0)
+            _celda(ws, fila, col, "% de A", _CABECERA, _AZUL)
+            for i, c in enumerate(cols):
+                _celda(ws, fila, col + 1 + i,
+                       round(100 * suma_dia.get(c, 0) / total, 1) if total else "",
+                       _CABECERA, _AZUL)
+            fila += 2
+        ws.column_dimensions[get_column_letter(col)].width = 14
+        for i in range(ancho - 1):
+            ws.column_dimensions[get_column_letter(col + 1 + i)].width = 11
+        col += ancho + 1
+    fila = ws.max_row + 2
+    for nota in ("AUTOMOVIL: sedan, hatchback, coupe. CAMIONETA: SUV, crossover, minivan y "
+                 "van de pasajeros. PICKUP: caja abierta atras. Las tres son clase A de la SCT.",
+                 "Clasificadas por un modelo propio sobre el recorte de cada vehiculo en la "
+                 "linea de conteo. SIN SUBTIPO: el modelo no lo distingue con seguridad "
+                 "(sobre todo de noche); esta en el total de A."):
+        _celda(ws, fila, 1, nota, _NORMAL, alineacion=_IZQ, borde=False)
+        fila += 1
+
+
 def _hoja_metodo(wb: Workbook, d: Dict):
     """
     De dónde salieron los números.
@@ -964,6 +1059,7 @@ def generar(project_id: int, ruta: str) -> Dict:
         _hoja_totales(wb, d)
         _hoja_cuartos(wb, d)
         _hoja_clases(wb, project_id, d)
+        _hoja_livianos(wb, project_id, d)
     _hoja_velocidad(wb, project_id, d)
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
     if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:

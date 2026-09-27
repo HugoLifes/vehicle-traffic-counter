@@ -102,8 +102,8 @@ Dilo en la entrega; son medidos, no supuestos:
 - **Noche con la cámara frontal**: se cuenta, pero todavía **no hay conteo
   manual nocturno** para validarla. Las **motos que vienen hacia la cámara** de
   noche se pierden en buena parte (el faro de frente las vuelve una mancha).
-- **Automóvil contra camioneta/pickup**: no se separan (van juntas en A, que es
-  como las pide la SCT).
+- **Automóvil, camioneta y pickup**: se separan de día (hoja LIVIANOS). De
+  noche los faros no dejan ver la forma y van en SIN SUBTIPO.
 - **Origen-destino**: solo en cruces planos con todos los brazos a la vista.
   Con un puente o un brazo fuera de cuadro no sirve, con ningún ajuste.
 - **Cámara de lado y baja**: la calzada del fondo queda chica y se pierde
@@ -132,19 +132,29 @@ docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular python3 tool
 
 **Ajustes por cámara (perfil de detección).** Cada proyecto puede llevar los
 ajustes medidos para su cámara. El de la cámara frontal de Cd. Juárez
-(proyecto 7) es: motos desde confianza 0.10 (recupera motos de noche) y el
-clasificador de pesados propio (autobús, camión, tractocamión y tractor sin
-caja sin internet). Para darle el mismo perfil a un proyecto nuevo con esa
-cámara (cambia `7` por el número del proyecto):
+(proyecto 7) es:
+
+- motos desde confianza 0.10 (recupera motos de noche);
+- no contar los pedazos de autobús o camión (el frente o el chasis que el
+  detector ve aparte);
+- clasificador de pesados propio (autobús, camión, tractocamión, tractor sin
+  caja) y de livianos (automóvil, camioneta, pickup), sin internet.
+
+Para darle el mismo perfil a un proyecto nuevo con esa cámara (cambia `7`
+por el número del proyecto):
 
 ```bash
-curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "clasificador_pesados": "models/pesados_v1.pt"}}'
+curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "quitar_nacidos_en_pesado": true, "clasificador_pesados": "models/pesados_v1.pt", "clasificador_livianos": "models/livianos_v1.pt"}}'
 ```
+
+Con el clasificador de livianos, el Excel trae la hoja **LIVIANOS (15MIN)**:
+la clase A abierta en automóvil, camioneta y pickup. Sus columnas suman la
+A; lo que el modelo no distingue con seguridad va en SIN SUBTIPO.
 
 Sin perfil, un proyecto cuenta con la configuración general, que es la
 validada para la cámara de lado. El perfil solo afecta los videos que se
-cuenten después; lo ya contado no cambia. El modelo `models/pesados_v1.pt`
-vive en el equipo: respáldalo junto con la base.
+cuenten después; lo ya contado no cambia. Los modelos `models/pesados_v1.pt`
+y `models/livianos_v1.pt` viven en el equipo; hay copia en `data/respaldos/`.
 
 **Respaldos.** La plataforma respalda la base sola una vez al día en
 `data/respaldos/` y conserva los últimos 14. Para restaurar uno:

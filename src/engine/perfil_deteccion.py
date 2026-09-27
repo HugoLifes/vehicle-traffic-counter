@@ -60,8 +60,15 @@ def leer(proyecto: Optional[Dict]) -> Dict:
     anidadas = perfil.get("quitar_anidadas")
     if isinstance(anidadas, (int, float)) and 0.5 <= anidadas <= 1.0:
         limpio["quitar_anidadas"] = float(anidadas)
-    if isinstance(perfil.get("clasificador_pesados"), str) and perfil["clasificador_pesados"].strip():
-        limpio["clasificador_pesados"] = perfil["clasificador_pesados"].strip()
+    horas = perfil.get("horas_subtipo")
+    if (isinstance(horas, (list, tuple)) and len(horas) == 2
+            and all(isinstance(h, int) and 0 <= h <= 24 for h in horas) and horas[0] < horas[1]):
+        limpio["horas_subtipo"] = (horas[0], horas[1])
+    if perfil.get("quitar_nacidos_en_pesado") is True:
+        limpio["quitar_nacidos_en_pesado"] = True
+    for clave in ("clasificador_pesados", "clasificador_livianos"):
+        if isinstance(perfil.get(clave), str) and perfil[clave].strip():
+            limpio[clave] = perfil[clave].strip()
     return limpio
 
 
@@ -80,6 +87,32 @@ def filtrar_por_clase(detecciones: List[Dict], perfil: Dict,
         return detecciones
     return [d for d in detecciones
             if d["confidence"] >= umbrales.get(d.get("class_name"), umbral_general)]
+
+
+def nacio_dentro_de_pesado(caja, rastros: List[Dict], propio_id=None,
+                           contencion: float = 0.8) -> Optional[int]:
+    """Id del autobús o camión dentro del cual APARECE un rastro, o None.
+
+    Un pedazo de pesado (su frente, el chasis, un faro) nace cuando el
+    pesado ya está encima, casi entero dentro de su caja; un auto real viene
+    rastreado desde lejos y nace fuera. Medido en la cámara frontal, 58
+    minutos: no contar los rastros nacidos así quitó 8 cruces y los 8 eran
+    pedazos, sin tocar ningún auto real. Quitar la caja anidada cuadro por
+    cuadro, en cambio, borraba el auto que pasa junto al autobús.
+    """
+    x1, y1, x2, y2 = caja
+    area = max(1.0, (x2 - x1) * (y2 - y1))
+    for r in rastros:
+        if r.get("id") == propio_id or r.get("class_name") not in GRANDES:
+            continue
+        gx1, gy1, gx2, gy2 = r["bbox"]
+        if (gx2 - gx1) * (gy2 - gy1) < 2 * area:
+            continue
+        ix = max(0.0, min(x2, gx2) - max(x1, gx1))
+        iy = max(0.0, min(y2, gy2) - max(y1, gy1))
+        if ix * iy >= contencion * area:
+            return r.get("id")
+    return None
 
 
 def quitar_anidadas(detecciones: List[Dict], contencion: float) -> List[Dict]:

@@ -113,48 +113,74 @@ def main():
     for c in cruces:
         por_video[c["stored_path"]].append(c)
 
-    indice, sin_pareja = [], 0
+    ruta_indice = os.path.join(a.salida, "indice.json")
+    try:
+        with open(ruta_indice, encoding="utf-8") as fh:
+            indice = json.load(fh)
+    except (OSError, ValueError):
+        indice = []
+    hechos = {e["cruce"] for e in indice}
+    sin_pareja = 0
     for ruta, grupo in sorted(por_video.items()):
+        grupo = [c for c in grupo if c["id"] not in hechos]
+        if not grupo:
+            continue
         cap = cv2.VideoCapture(ruta)
         fps = cap.get(cv2.CAP_PROP_FPS) or 20
         alto_cuadro = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         det.set_detection_band(band_from_zones(zonas, alto_cuadro))
         inicio = datetime.fromisoformat(grupo[0]["video_start_time"])
-        for c in sorted(grupo, key=lambda x: x["timestamp"]):
-            carril = carriles[c["lane_id"]]
-            zona = por_id.get(carril.get("zone_id"))
-            linea = carril["points"][:2]
+        # El segundo del cruce va truncado; se mira un poco a cada lado.
+        ventanas = []
+        for c in grupo:
             seg = (datetime.fromisoformat(c["timestamp"]) - inicio).total_seconds()
-            # El segundo del cruce va truncado; se lee un poco a cada lado.
             primero = max(0, int(seg * fps) - 3)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, primero)
-            mejor = None
-            for k in range(int(fps) + 6):
-                ok, img = cap.read()
-                if not ok:
-                    break
+            ventanas.append((primero, primero + int(fps) + 6, c))
+        # Se lee el video DE CORRIDO y se detecta una sola vez por cuadro,
+        # compartido entre los cruces cuya ventana lo incluye. Saltar con
+        # cap.set a cada cruce obligaba a decodificar desde el ultimo cuadro
+        # clave: a 2560x1440 salian ~6 recortes por minuto (mas de 30 h para
+        # el dia); de corrido, unas 6 h.
+        mejores = {}
+        ultimo = max(v[1] for v in ventanas)
+        n = 0
+        while n < ultimo:
+            ok, img = cap.read()
+            if not ok:
+                break
+            activos = [c for ini, fin, c in ventanas if ini <= n < fin]
+            if activos:
                 dets, _ = det.detect(img)
-                for d in dets:
-                    x1, y1, x2, y2 = d["bbox"]
-                    h, w = y2 - y1, x2 - x1
-                    if abs(h / c["bbox_height"] - 1) > TOL_ALTO:
-                        continue
-                    if c["bbox_width"] and abs(w / c["bbox_width"] - 1) > TOL_ANCHO:
-                        continue
-                    px, py = _punto_de_apoyo(d["bbox"])
-                    if zona and not _contiene(zona["points"], px, py):
-                        continue
-                    pena = (distancia_a_linea(px, py, linea) / c["bbox_height"]
-                            + abs(h / c["bbox_height"] - 1)
-                            + (abs(w / c["bbox_width"] - 1) if c["bbox_width"] else 0))
-                    if mejor is None or pena < mejor[0]:
-                        mejor = (pena, primero + k, (x1, y1, x2, y2), img, d["class_name"])
+                for c in activos:
+                    carril = carriles[c["lane_id"]]
+                    zona = por_id.get(carril.get("zone_id"))
+                    linea = carril["points"][:2]
+                    for d in dets:
+                        x1, y1, x2, y2 = d["bbox"]
+                        h, w = y2 - y1, x2 - x1
+                        if abs(h / c["bbox_height"] - 1) > TOL_ALTO:
+                            continue
+                        if c["bbox_width"] and abs(w / c["bbox_width"] - 1) > TOL_ANCHO:
+                            continue
+                        px, py = _punto_de_apoyo(d["bbox"])
+                        if zona and not _contiene(zona["points"], px, py):
+                            continue
+                        pena = (distancia_a_linea(px, py, linea) / c["bbox_height"]
+                                + abs(h / c["bbox_height"] - 1)
+                                + (abs(w / c["bbox_width"] - 1) if c["bbox_width"] else 0))
+                        previo = mejores.get(c["id"])
+                        if previo is None or pena < previo[0]:
+                            m = int(0.15 * max(w, h))
+                            rec = img[max(0, int(y1) - m):int(y2) + m,
+                                      max(0, int(x1) - m):int(x2) + m].copy()
+                            mejores[c["id"]] = (pena, n, (x1, y1, x2, y2), rec, d["class_name"])
+            n += 1
+        for _, _, c in ventanas:
+            mejor = mejores.get(c["id"])
             if mejor is None or mejor[0] > 0.6:
                 sin_pareja += 1
                 continue
-            pena, cuadro, (x1, y1, x2, y2), img, clase_cuadro = mejor
-            m = int(0.15 * max(x2 - x1, y2 - y1))
-            rec = img[max(0, int(y1) - m):int(y2) + m, max(0, int(x1) - m):int(x2) + m]
+            pena, cuadro, (x1, y1, x2, y2), rec, clase_cuadro = mejor
             nombre = f"{c['id']}.jpg"
             cv2.imwrite(os.path.join(a.salida, nombre), rec, [cv2.IMWRITE_JPEG_QUALITY, 90])
             indice.append({
@@ -166,10 +192,14 @@ def main():
                 "alto_rel": round(c["bbox_height"] / alto_auto[c["lane_id"]], 3),
                 "pena": round(pena, 3)})
         cap.release()
+        # Indice al dia despues de cada video: se puede etiquetar mientras
+        # sigue recortando, y si se corta se reanuda donde iba.
+        with open(ruta_indice, "w", encoding="utf-8") as fh:
+            json.dump(indice, fh, indent=0, ensure_ascii=False)
         print(f"  {os.path.basename(os.path.dirname(ruta))}/{os.path.basename(ruta)}: "
               f"{len(indice)} recortes, {sin_pareja} sin pareja", flush=True)
 
-    with open(os.path.join(a.salida, "indice.json"), "w", encoding="utf-8") as fh:
+    with open(ruta_indice, "w", encoding="utf-8") as fh:
         json.dump(indice, fh, indent=0, ensure_ascii=False)
     print(f"{len(indice)} recortes; {sin_pareja} cruces sin un vehiculo que se parezca")
 

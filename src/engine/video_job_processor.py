@@ -274,6 +274,7 @@ class VideoJobProcessor:
             if perfil:
                 logging.info(f"Perfil de detección de {job['original_name']}: {perfil}")
             clasificador = self._get_clasificador(perfil.get('clasificador_pesados'))
+            clasificador_livianos = self._get_clasificador(perfil.get('clasificador_livianos'))
             tracker = VehicleTracker(
                 max_age=self.config.get('tracker', {}).get('max_age', 30),
                 min_hits=self.config.get('tracker', {}).get('min_hits', 3),
@@ -307,6 +308,8 @@ class VideoJobProcessor:
             # cambio de identidad sobre la línea no cuente dos veces.
             por_trayectoria = bool(proyecto.get('conteo_trayectoria'))
             recorridos = {}
+            quitar_nacidos = bool(perfil.get('quitar_nacidos_en_pesado'))
+            rastros_vistos, nacidos_en_pesado = set(), set()
             clases_rastro = {}
             confianzas_rastro = {}
 
@@ -430,6 +433,17 @@ class VideoJobProcessor:
                     detections = perfil_deteccion.quitar_anidadas(
                         detections, perfil['quitar_anidadas'])
                 tracks = tracker.update(detections)
+                # Donde APARECE cada rastro: si nace casi entero dentro de un
+                # autobús o camión es un pedazo de él (frente, chasis, faro)
+                # y su cruce no se cuenta. Ver perfil_deteccion.
+                if quitar_nacidos:
+                    for tr in tracks:
+                        if tr['id'] not in rastros_vistos:
+                            rastros_vistos.add(tr['id'])
+                            padre = perfil_deteccion.nacio_dentro_de_pesado(
+                                tr['bbox'], tracks, propio_id=tr['id'])
+                            if padre is not None:
+                                nacidos_en_pesado.add(tr['id'])
                 if por_trayectoria:
                     for tr in tracks:
                         x1, y1, x2, y2 = tr['bbox']
@@ -480,6 +494,8 @@ class VideoJobProcessor:
                         for m in medidores[lane_id].observar(frame_count, vistos):
                             velocidades.append((lane_id, m['track_id'], m['segundos']))
                     for crossing in crossings['in'] + crossings['out']:
+                        if crossing['track_id'] in nacidos_en_pesado:
+                            continue
                         track = next(
                             (t for t in vistos if t['id'] == crossing['track_id']),
                             None
@@ -516,6 +532,13 @@ class VideoJobProcessor:
                             r = clasificador.clasificar(frame, track['bbox'])
                             if r:
                                 clase_modelo, prob_modelo = r
+                        # Subtipo de los livianos (automóvil, camioneta,
+                        # pickup); al leer solo cuenta si el cruce quedó en A.
+                        subtipo = prob_subtipo = None
+                        if clasificador_livianos is not None and track is not None:
+                            r = clasificador_livianos.clasificar(frame, track['bbox'])
+                            if r:
+                                subtipo, prob_subtipo = r
                         # Con conteo por trayectoria el panel del video sigue
                         # mostrando el conteo en vivo, pero lo que se GUARDA
                         # se decide al final, sobre los recorridos completos.
@@ -535,7 +558,9 @@ class VideoJobProcessor:
                                 bbox_y=y_caja,
                                 cuadro=frame_count,
                                 clase_modelo=clase_modelo,
-                                prob_modelo=prob_modelo
+                                prob_modelo=prob_modelo,
+                                subtipo_modelo=subtipo,
+                                prob_subtipo=prob_subtipo
                             )
 
                     color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
