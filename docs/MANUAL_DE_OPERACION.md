@@ -209,6 +209,21 @@ sudo sed -i 's/FAN_DEFAULT_PROFILE quiet/FAN_DEFAULT_PROFILE cool/' /etc/nvfanco
 sudo sed -i 's/^#\?RuntimeWatchdogSec=.*/RuntimeWatchdogSec=60/' /etc/systemd/system.conf && sudo systemctl daemon-reexec
 ```
 
+**La red.** Con cable Ethernet no hace falta nada. Por WiFi con repetidores
+(mesh), el 27-sep el equipo cambió de repetidor, el router no le volvió a dar
+dirección y quedó inaccesible aunque seguía funcionando. Si tiene que ir por
+WiFi, fijarle la IP (y reservarla en el router) y poner una revisión que
+reconecte si se pierde la salida a la red:
+
+```bash
+sudo nmcli con mod "NOMBRE-DEL-WIFI" ipv4.method manual ipv4.addresses IP/24 ipv4.gateway ROUTER ipv4.dns ROUTER
+printf '#!/bin/sh\nping -c2 -W3 ROUTER >/dev/null || nmcli con up "NOMBRE-DEL-WIFI"\n' | sudo tee /usr/local/bin/revisar_red
+sudo chmod +x /usr/local/bin/revisar_red
+```
+
+y un temporizador de systemd (`revisar-red.timer`) que la corra cada 2
+minutos. En el Jetson de Cd. Juárez ya está: `systemctl status revisar-red.timer`.
+
 Si en el equipo corren otros contenedores con GPU, pónganles techo de memoria
 (`docker update --memory 2g --memory-swap 2g NOMBRE`): en el Jetson la
 memoria de la GPU es la misma RAM, y la que pide CUDA no cuenta dentro del
