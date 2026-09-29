@@ -10,9 +10,11 @@ Existe porque la velocidad cruce por cruce se guarda al CONTAR (hace falta el
 tramo puesto antes) y el aforo frontal se contó sin tramo: tenerla en el
 Excel de la plataforma cuesta recontar el día entero (~23 h de Jetson). Un
 estudio de velocidad de punto no necesita a todos los vehículos: por norma se
-hace sobre una muestra por periodo. Aquí la muestra son los recorridos de
-tres minutos por hora (xx:10, xx:30, xx:50) que ya se extrajeron para
-calibrar, 64-137 vehículos medidos por hora y sentido.
+hace sobre una muestra por periodo. Aquí la muestra son recorridos de un
+minuto de cada hora (`extraer_trayectorias.py`, uno por archivo HH-MM.json).
+Con los tres por hora que se extrajeron para calibrar salían 16-92
+vehículos medidos por hora y sentido, poco para las horas tranquilas (se
+suele pedir al menos 50); con nueve por hora se triplica.
 
 La distancia del tramo sale de `calibrar_velocidad.py --salida` (fijada contra
 las mangueras con unas horas, comprobada en las demás y cruzada entre los dos

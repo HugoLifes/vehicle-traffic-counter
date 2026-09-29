@@ -572,6 +572,161 @@ def _hoja_clases(wb: Workbook, project_id: int, d: Dict) -> None:
         fila += 1
 
 
+def _hora_maxima_demanda(d: Dict, sentido: Optional[str], fecha) -> Optional[Dict]:
+    """La hora de máxima demanda de un día: los cuatro cuartos CONSECUTIVOS
+    con más vehículos, no la hora de reloj (el pico real puede ir de 17:45 a
+    18:45). FHP = volumen de esa hora / (4 × su cuarto más cargado).
+
+    Solo entran ventanas con los cuatro cuartos medidos: una hora no medible
+    o sin video se lee vacía en las demás hojas, y una ventana a medias
+    subestimaría el pico sin avisar. `sentido=None` suma todos."""
+    sentidos = [sentido] if sentido else d["sentidos"]
+    mejor = None
+    for m in range(0, 1440 - 45, 15):
+        qs = []
+        for k in range(4):
+            ini = m + 15 * k
+            if (fecha.weekday(), ini // 60) in d["no_medibles"]:
+                break
+            cv = _cobertura(d, fecha, ini)
+            n = sum(d["por_cuarto"][s].get(fecha, {}).get(ini, 0) for s in sentidos)
+            if (cv is not None and cv < 0.995) or (cv is None and not n):
+                break
+            qs.append(n)
+        if len(qs) == 4 and (mejor is None or sum(qs) > mejor["volumen"]):
+            mejor = {"inicio": m, "volumen": sum(qs), "cuarto_max": max(qs)}
+    if mejor and mejor["cuarto_max"]:
+        mejor["fhp"] = mejor["volumen"] / (4 * mejor["cuarto_max"])
+    return mejor
+
+
+def _hoja_resumen(wb: Workbook, project_id: int, d: Dict) -> None:
+    """
+    Una hoja al frente con lo que se busca primero en un aforo: cuánto pasó,
+    la hora de máxima demanda con su factor de hora pico, y la composición.
+
+    Todo sale de las mismas fuentes que las demás hojas (conteo por sentido,
+    `get_interval_counts` para las clases), así que no puede contradecirlas.
+    """
+    ws = wb.create_sheet("RESUMEN", 0)
+    ws.sheet_view.showGridLines = False
+    p = d["proyecto"]
+    _celda(ws, 1, 1, "RESUMEN DEL AFORO", _TITULO, borde=False)
+    _celda(ws, 2, 1, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 2, 2, p["name"], _NORMAL, alineacion=_IZQ, borde=False)
+    if d["inicio"]:
+        _celda(ws, 3, 1, "PERIODO:", _ETIQUETA, alineacion=_IZQ, borde=False)
+        _celda(ws, 3, 2, f"{d['inicio']:%d/%m/%Y %H:%M} a {d['fin']:%d/%m/%Y %H:%M}",
+               _NORMAL, alineacion=_IZQ, borde=False)
+
+    fila = 5
+    cab = ["DIA", "SENTIDO", "VEHICULOS", "HORA DE MAXIMA DEMANDA", "VOLUMEN HMD",
+           "FACTOR DE HORA PICO"]
+    for i, t in enumerate(cab):
+        _celda(ws, fila, 1 + i, t, _CABECERA, _GRIS)
+    fila += 1
+    varios = len(d["sentidos"]) > 1
+    for fecha in d["fechas"]:
+        dia = f"{DIAS[fecha.weekday()]} {fecha.day:02d}/{MESES[fecha.month - 1][:3]}/{fecha.year}"
+        for sentido in d["sentidos"] + ([None] if varios else []):
+            ss = [sentido] if sentido else d["sentidos"]
+            total = sum(n for s in ss for m, n in d["por_cuarto"][s].get(fecha, {}).items()
+                        if (fecha.weekday(), m // 60) not in d["no_medibles"])
+            h = _hora_maxima_demanda(d, sentido, fecha)
+            fuente = _CABECERA if sentido is None else _NORMAL
+            relleno = _AZUL if sentido is None else None
+            valores = [dia, (sentido or "AMBOS SENTIDOS").upper(), total]
+            if h:
+                a, b = h["inicio"], h["inicio"] + 60
+                valores += [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}",
+                            h["volumen"], round(h["fhp"], 2) if h.get("fhp") else ""]
+            else:
+                valores += ["", "", ""]
+            for i, v in enumerate(valores):
+                _celda(ws, fila, 1 + i, v, fuente, relleno,
+                       _IZQ if i < 2 else _CENTRO)
+            fila += 1
+
+    # Composición del periodo, por sentido.
+    cl = _clases_por_sentido(project_id)["datos"]
+    if cl:
+        fila += 1
+        presentes = {c for s in cl.values() for q in s.values() for c in q}
+        clases = [c for c in _ORDEN_CLASES if c in presentes] + sorted(
+            presentes - set(_ORDEN_CLASES))
+        _celda(ws, fila, 1, "COMPOSICION VEHICULAR (% del total de cada sentido)",
+               _SUBTITULO, borde=False)
+        fila += 1
+        for i, t in enumerate(["SENTIDO"] + [_TITULO_CLASE.get(c, c) for c in clases]):
+            _celda(ws, fila, 1 + i, t, _CABECERA, _GRIS)
+        fila += 1
+        for sentido in sorted(cl):
+            suma = defaultdict(int)
+            for (f, m), q in cl[sentido].items():
+                if (f.weekday(), m // 60) in d["no_medibles"]:
+                    continue
+                for c, n in q.items():
+                    suma[c] += n
+            tot = sum(suma.values())
+            _celda(ws, fila, 1, sentido.upper(), _NORMAL, alineacion=_IZQ)
+            for i, c in enumerate(clases):
+                _celda(ws, fila, 2 + i, round(100 * suma[c] / tot, 1) if tot else "")
+            fila += 1
+
+    sub = _subtipos_por_sentido(project_id)
+    if any(n for s in sub.values() for q in s.values()
+           for k, n in q.items() if k != "SIN_SUBTIPO"):
+        fila += 1
+        _celda(ws, fila, 1, "CLASE A POR TIPO (% de la A que se pudo distinguir)",
+               _SUBTITULO, borde=False)
+        fila += 1
+        tipos = [t for t in SUBTIPOS_A if t != "SIN_SUBTIPO"]
+        for i, t in enumerate(["SENTIDO"] + [_TITULO_SUBTIPO[t] for t in tipos] + ["SIN SUBTIPO (veh.)"]):
+            _celda(ws, fila, 1 + i, t, _CABECERA, _GRIS)
+        fila += 1
+        for sentido in sorted(sub):
+            suma = defaultdict(int)
+            for q in sub[sentido].values():
+                for k, n in q.items():
+                    suma[k] += n
+            dist = sum(suma[t] for t in tipos)
+            _celda(ws, fila, 1, sentido.upper(), _NORMAL, alineacion=_IZQ)
+            for i, t in enumerate(tipos):
+                _celda(ws, fila, 2 + i, round(100 * suma[t] / dist, 1) if dist else "")
+            _celda(ws, fila, 2 + len(tipos), suma["SIN_SUBTIPO"])
+            fila += 1
+
+    fila += 1
+    notas = ["HMD: los cuatro cuartos de hora consecutivos con más vehículos del día. "
+             "FHP = volumen de la HMD / (4 x su cuarto de hora más cargado).",
+             "Solo cuentan horas medidas y cuartos con video completo; el detalle está en "
+             "las hojas siguientes y el método en METODO."]
+    if d["no_medibles"]:
+        notas.append("Hay horas no medibles (ver METODO): no entran en los totales ni en la HMD.")
+    for nota in notas:
+        _celda(ws, fila, 1, nota, _NORMAL, alineacion=_IZQ, borde=False)
+        fila += 1
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 26
+    for col in range(3, 13):
+        ws.column_dimensions[get_column_letter(col)].width = 13
+
+
+def _subtipos_por_sentido(project_id: int) -> Dict:
+    """{sentido: {(fecha, minuto): {subtipo: n}}} de la clase A."""
+    r = traffic_db.get_interval_counts(project_id, 15, por_calzada=True)
+    zonas = {z["id"]: z["name"] for z in traffic_db.list_zones(project_id, active_only=False)}
+    datos = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    for carril in r.get("lanes", []):
+        for iv in carril["intervals"]:
+            t = datetime.strptime(iv["start"], "%Y-%m-%d %H:%M:%S")
+            for zona, subs in iv.get("subtipos_A", {}).items():
+                sentido = zonas.get(zona) or carril["lane_name"]
+                for s, n in subs.items():
+                    datos[sentido][(t.date(), t.hour * 60 + t.minute)][s] += n
+    return datos
+
+
 SUBTIPOS_A = ("AUTO", "CAMIONETA", "PICKUP", "SIN_SUBTIPO")
 _TITULO_SUBTIPO = {"AUTO": "AUTOMOVIL", "CAMIONETA": "CAMIONETA", "PICKUP": "PICKUP",
                    "SIN_SUBTIPO": "SIN SUBTIPO"}
@@ -587,16 +742,7 @@ def _hoja_livianos(wb: Workbook, project_id: int, d: Dict) -> None:
     distingue con seguridad va en SIN SUBTIPO en vez de repartirse. Solo sale
     si el proyecto tiene subtipos calculados (clasificador de livianos).
     """
-    r = traffic_db.get_interval_counts(project_id, 15, por_calzada=True)
-    zonas = {z["id"]: z["name"] for z in traffic_db.list_zones(project_id, active_only=False)}
-    datos = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    for carril in r.get("lanes", []):
-        for iv in carril["intervals"]:
-            t = datetime.strptime(iv["start"], "%Y-%m-%d %H:%M:%S")
-            for zona, subs in iv.get("subtipos_A", {}).items():
-                sentido = zonas.get(zona) or carril["lane_name"]
-                for s, n in subs.items():
-                    datos[sentido][(t.date(), t.hour * 60 + t.minute)][s] += n
+    datos = _subtipos_por_sentido(project_id)
     hay = any(s != "SIN_SUBTIPO" and n for x in datos.values() for q in x.values()
               for s, n in q.items())
     if not hay:
@@ -1060,6 +1206,7 @@ def generar(project_id: int, ruta: str) -> Dict:
         _hoja_cuartos(wb, d)
         _hoja_clases(wb, project_id, d)
         _hoja_livianos(wb, project_id, d)
+        _hoja_resumen(wb, project_id, d)
     _hoja_velocidad(wb, project_id, d)
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
     if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:
