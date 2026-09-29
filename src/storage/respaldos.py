@@ -21,6 +21,7 @@ Restaurar (con el contenedor detenido):
     docker compose -f docker-compose.jetson.yml start
 """
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -33,6 +34,7 @@ from src.storage import traffic_db
 CONSERVAR = 14
 CADA_HORAS = 24
 PREFIJO = "traffic_"
+_AUTOMATICO = re.compile(r"traffic_\d{4}-\d{2}-\d{2}_\d{4}\.db")
 
 
 def carpeta() -> Path:
@@ -40,8 +42,17 @@ def carpeta() -> Path:
 
 
 def listar() -> List[Path]:
-    """Respaldos existentes, del más viejo al más nuevo."""
-    return sorted(carpeta().glob(f"{PREFIJO}*.db"))
+    """Respaldos automáticos existentes, del más viejo al más nuevo.
+
+    Solo los que tienen el nombre exacto `traffic_AAAA-MM-DD_HHMM.db`. Una
+    copia hecha a mano en la misma carpeta (`traffic_antes_de_algo.db`)
+    ordenaba después de todos por el nombre y pasaba por "la más nueva": el
+    hilo la veía vieja y respaldaba CADA HORA, y la rotación borraba los
+    diarios buenos y nunca esa. Pasó el 28-sep-2026: 14 respaldos que cubrían
+    14 horas en vez de 14 días. Las copias con nombre propio se conservan y
+    no cuentan."""
+    return sorted(p for p in carpeta().glob(f"{PREFIJO}*.db")
+                  if _AUTOMATICO.fullmatch(p.name))
 
 
 def respaldar(conservar: int = CONSERVAR) -> Optional[Path]:

@@ -189,6 +189,8 @@ sudo rm -f data/traffic.db-wal data/traffic.db-shm
 docker compose -f docker-compose.jetson.yml start
 ```
 
+La hora del nombre del respaldo es UTC (6 horas adelante de Cd. Juárez en verano): el de las 08:39 se hizo a las 02:39 de Juárez. Una copia hecha a mano con otro nombre (`traffic_antes_de_algo.db`) se conserva y no cuenta para la rotación de los 14.
+
 Copia de vez en cuando `data/respaldos/` a otro equipo: un respaldo en el
 mismo disco no protege de que se dañe el disco.
 
