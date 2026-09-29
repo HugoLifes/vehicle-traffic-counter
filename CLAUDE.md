@@ -219,6 +219,7 @@ se podía contestar de otro modo:
 | `revisar_pesados.py` | Revisar la clase de los pesados (autobús, camión, tractor, T-S) sobre su recorte con un modelo de visión, y aplicarla |
 | `prueba_aceptacion.py` | Un comando que dice si todo funciona: regresiones, exactitud contra conteo de campo y salud del equipo, con PASA o FALLA |
 | `probar_perfil_deteccion.py` | Regresión sin GPU del perfil de detección por proyecto, con cajas anidadas reales revisadas a ojo |
+| `estudio_velocidad.py` | Estudio de velocidad de punto por hora y sentido en Excel, sobre una muestra de recorridos, sin recontar el aforo |
 
 ---
 
@@ -1437,6 +1438,26 @@ cruce al contar—, unas 20 h de Jetson. El mismo recuento dejaría la posición
 de la caja en los cruces de antes de las 18:20. Y la distancia medida en el
 pavimento para confirmar los 17 m sin depender del tubo.
 
+**Estudio de velocidad por muestreo, sin recontar** (`tools/estudio_velocidad.py`,
+29-sep-2026). Recontar el día con el tramo cuesta ~23 h de Jetson; un estudio
+de velocidad de punto se hace por muestreo de todos modos. Toma los recorridos
+de un minuto por hora (`data/nuevos/vel/tray`, `extraer_trayectorias.py
+--rastreador propio --banda 565 1440`), la distancia de `calibrar_velocidad.py
+--salida` y entrega un Excel por hora y sentido: vehículos medidos, % de los
+que cruzaron, media, mediana, p85, desviación, livianos y pesados, y el tubo al
+lado. Reproduce los p85 de la calibración al décimo. Con 3 minutos por hora
+salían 16–92 vehículos por hora y sentido (de noche, alejándose, 16–30): se
+amplió a 9 minutos (`tools/muestra_velocidad.sh`). No publica las
+horas con menos del 70 % medido (hacia la cámara, 20–23 h).
+
+**Sin medir en el pavimento.** Nadie va a la avenida hasta recoger el equipo,
+así que la escala sale de las mangueras del mismo día, con dos controles que
+no dependen de ellas: las dos calzadas en las mismas filas tienen que dar la
+misma distancia (16.7 y 17.5 m, 0.96), y el alto del automóvil tiene que caer
+en 1.1–2.1 m (`control_distancia`). Para aforos nuevos: medir una losa o dos
+marcas con cinta al instalar o al recoger; `--distancia "Calzada=metros"` la
+toma sin volver a procesar.
+
 **Ajustar el recorrido completo NO mejoró**, y está medido. Es lo que hacen
 Roboflow/supervision y los métodos de BrnoCompSpeed: la distancia real de
 cada punto del piso (Z = K / (y − horizonte), piso plano) ajustada sobre
@@ -1727,6 +1748,7 @@ criterios de aceptación están en la página de entrega (ver memoria
 
 ### Lo que se agregó para eso
 
+- **Hoja RESUMEN al frente del Excel** (`_hoja_resumen`): por día y sentido, total, hora de máxima demanda (cuatro cuartos consecutivos, no la hora de reloj; solo ventanas con los cuatro cuartos medidos y con video completo), su volumen y el factor de hora pico, más la composición y los tipos de A. Proyecto 7: HMD 17:30–18:30, 2 415 veh/h, FHP 0.94.
 - **Respaldo diario de la base** (`src/storage/respaldos.py`). No existía
   ninguno: proyectos, calibraciones, cruces y la revisión de los pesados
   vivían en un solo `data/traffic.db`. Copia en línea de SQLite (consistente

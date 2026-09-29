@@ -17,8 +17,11 @@ por sentido:
 - **Clasificación SCT**: A (automóviles, camionetas y pickups), B (autobús),
   C (camión unitario), T-S (tractocamión), más motocicleta y tractor sin caja
   como clases propias.
-- **Velocidad** (media, mediana y percentil 85) si se calibró un tramo.
-- Un **Excel** en el formato de la empresa y un reporte imprimible.
+- **Velocidad** (media, mediana y percentil 85) si se calibró un tramo, o como
+  estudio por muestreo (ver Mantenimiento).
+- Un **Excel** en el formato de la empresa, con una hoja **RESUMEN** al frente
+  (total, hora de máxima demanda, factor de hora pico y composición), y un
+  reporte imprimible.
 
 **Exactitud medida contra conteo manual** (cámara frontal, 19-sep-2026,
 12:00–19:00): 1.00× en los dos sentidos, 53 de 54 cuartos de hora con
@@ -36,6 +39,7 @@ medido:
 | Calidad de video | **4–8 Mb/s** | A 0.8 Mb/s el compresor borra el detalle |
 | Noche | Exposición baja u obturador rápido | Con obturador lento el vehículo sale barrido |
 | Reloj | Fecha y hora correctas en la grabadora | La hora de cada cruce sale del nombre del archivo |
+| Una medida con cinta | Al instalar o al recoger: el largo de una losa, o la distancia entre dos marcas que crucen la calzada, a la vista de la cámara | Es la escala de la velocidad; sin ella hay que calibrar contra las mangueras |
 
 **Graba un minuto de prueba y revísalo** (paso 4) antes de dejar la cámara
 24 horas.
@@ -153,6 +157,27 @@ Sin perfil, un proyecto cuenta con la configuración general, que es la
 validada para la cámara de lado. El perfil solo afecta los videos que se
 cuenten después; lo ya contado no cambia. Los modelos `models/pesados_v1.pt`
 y `models/livianos_v3.pt` viven en el equipo; hay copia en `data/respaldos/`.
+
+**Estudio de velocidad sin recontar.** La velocidad cruce por cruce solo sale
+si el tramo se puso antes de contar. Si no, se hace un estudio por muestreo
+sobre unos minutos de cada hora (así se hacen los estudios de velocidad de
+punto). Se extraen los recorridos de nueve minutos por hora (unas 2 h por
+cada 12 h de video; no correrlo mientras la cola cuenta):
+
+```bash
+docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular sh tools/muestra_velocidad.sh data/nuevos/20260919 data/nuevos/vel/tray
+```
+
+y con la distancia del tramo (medida con cinta, o calibrada contra las
+mangueras con `tools/calibrar_velocidad.py`):
+
+```bash
+docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular python3 tools/estudio_velocidad.py --proyecto 7 --tray data/nuevos/vel/tray --calibracion data/nuevos/vel/calibracion.json --salida data/nuevos/vel/estudio_velocidad.xlsx
+```
+
+Con una medida de cinta se agrega `--distancia "Calzada alejandose=17.2"`.
+Las horas donde no se alcanza a medir al 70 % de los vehículos (de noche,
+hacia la cámara) salen en gris, sin cifra.
 
 **Respaldos.** La plataforma respalda la base sola una vez al día en
 `data/respaldos/` y conserva los últimos 14. Para restaurar uno:
