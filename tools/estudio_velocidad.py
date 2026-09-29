@@ -161,6 +161,13 @@ def escribir_excel(res, ruta, lugar, fecha):
     borde = Border(bottom=linea)
     centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
+    # Cuántos minutos por hora tiene la muestra, leído de los datos: estaba
+    # escrito "3 minutos" y la muestra se amplió a 9.
+    minutos = sorted({m[3:] for r in res.values() for h in r["horas"] for m in h["muestras"]})
+    por_hora = max(len(h["muestras"]) for r in res.values() for h in r["horas"])
+    texto_muestra = (f"{por_hora} minuto{'s' if por_hora > 1 else ''} de video por hora "
+                     f"(los :{', :'.join(minutos)})")
+
     wb = Workbook()
     ws = wb.active
     ws.title = "VELOCIDAD POR HORA"
@@ -168,7 +175,7 @@ def escribir_excel(res, ruta, lugar, fecha):
     ws["A1"].font = Font(bold=True, size=14, color=TINTA)
     ws["A2"], ws["B2"] = "LUGAR:", lugar
     ws["A3"], ws["B3"] = "FECHA:", fecha
-    ws["A4"] = ("Velocidad en km/h. Muestra: 3 minutos por hora. Las horas marcadas con (c) se usaron "
+    ws["A4"] = (f"Velocidad en km/h. Muestra: {texto_muestra}. Las horas marcadas con (c) se usaron "
                 "para fijar la distancia del tramo contra las mangueras; las demás se miden.")
     ws["A4"].font = Font(italic=True, color=GRIS)
     for c in ("A2", "A3"):
@@ -247,8 +254,8 @@ def escribir_excel(res, ruta, lugar, fecha):
         "CÓMO SE MIDIÓ",
         "Como un contador de mangueras: dos líneas a una distancia conocida sobre cada calzada y el tiempo "
         "que tarda cada vehículo de una a otra, con el punto donde la llanta toca el piso.",
-        "La muestra son tres minutos de video por hora (xx:10, xx:30 y xx:50); un estudio de velocidad de "
-        "punto se hace por muestreo, no sobre todos los vehículos.",
+        f"La muestra son {texto_muestra}; un estudio de velocidad de punto se hace por muestreo, no "
+        "sobre todos los vehículos.",
         "",
         "LA DISTANCIA DEL TRAMO",
     ]
