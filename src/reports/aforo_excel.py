@@ -1130,26 +1130,69 @@ def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
         _celda(ws, fila, 2 + j, f"{nombre.get(o, o)} → {nombre.get(dd, dd)}", _CABECERA, _GRIS)
         ws.column_dimensions[get_column_letter(2 + j)].width = 16
     _celda(ws, fila, 2 + len(movimientos), "TOTAL", _CABECERA, _GRIS)
+    # Un cuarto con video a medias se leía como un bajón del tránsito: en
+    # Entrada y salida Altozano el de 07:00 decía 13 vehículos donde el conteo
+    # manual contó ~250, porque falta el video de 07:06 y el de 06:56 empieza
+    # tarde. Mismo aviso que en las hojas del aforo por línea.
+    tramos = traffic_db._tramos_de_video(project_id)
+    parciales = 0
+    # Videos que el diagnóstico de encuadre calificó en rojo (el de 06:56 de
+    # Altozano es el amanecer: vehículo de 11 px, 0/100). Su tramo se avisa:
+    # lo contado ahí no representa el tránsito.
+    rojos = []
+    for r in traffic_db.get_connection().execute(
+            """SELECT v.video_start_time, v.total_frames, v.fps, d.puntaje
+               FROM diagnosticos d JOIN video_jobs v ON v.id = d.job_id
+               WHERE v.project_id = ? AND d.color = 'rojo'
+                 AND v.total_frames IS NOT NULL AND v.fps > 0""", (project_id,)):
+        ini = datetime.fromisoformat(r[0])
+        rojos.append((ini, ini + timedelta(seconds=r[1] / r[2]), r[3]))
     for intervalo in sorted(por_intervalo):
         fila += 1
-        _celda(ws, fila, 1, intervalo, _NORMAL)
+        cv = None
+        if tramos:
+            a = datetime.strptime(intervalo, "%Y-%m-%d %H:%M")
+            cv = traffic_db.cobertura_de_video(
+                project_id, a, a + timedelta(minutes=od["intervalo_minutos"]), tramos)
+        a0 = datetime.strptime(intervalo, "%Y-%m-%d %H:%M")
+        a1 = a0 + timedelta(minutes=od["intervalo_minutos"])
+        rojo = next((p for i, f, p in rojos if i < a1 and f > a0), None)
+        parcial = (cv is not None and cv < 0.995) or rojo is not None
+        parciales += parcial
+        relleno = _INCOMPLETO if parcial else None
+        _celda(ws, fila, 1, intervalo, _NORMAL, relleno)
         for j, k in enumerate(movimientos):
-            _celda(ws, fila, 2 + j, por_intervalo[intervalo].get(k, 0))
-        _celda(ws, fila, 2 + len(movimientos), sum(por_intervalo[intervalo].values()),
-               _CABECERA, _GRIS)
+            _celda(ws, fila, 2 + j, por_intervalo[intervalo].get(k, 0), relleno=relleno)
+        total = _celda(ws, fila, 2 + len(movimientos), sum(por_intervalo[intervalo].values()),
+                       _CABECERA, _INCOMPLETO if parcial else _GRIS)
+        if parcial:
+            texto = []
+            if cv is not None and cv < 0.995:
+                texto.append(f"Video incompleto: cubre el {100 * cv:.0f} % de este intervalo. "
+                             "El conteo es parcial, no un bajón del tránsito.")
+            if rojo is not None:
+                texto.append(f"Incluye video calificado NO RECOMENDABLE por el diagnóstico de "
+                             f"encuadre ({rojo}/100): lo contado ahí no representa el tránsito.")
+            total.comment = Comment(" ".join(texto), "Aforo vehicular")
+    if parciales:
+        fila += 1
+        n = ws.cell(fila, 1, "En naranja: intervalo con video incompleto o no apto (el conteo no "
+                             "es completo). El motivo va en la nota de la celda del total.")
+        n.font = Font(size=9, italic=True)
 
-    # 3. Mezcla de vehículos por movimiento.
-    clases = sorted({m["vehicle_type"] for m in movs})
+    # 3. Mezcla de vehículos por movimiento, en las clases de la empresa.
+    presentes = {m.get("clase") or m["vehicle_type"] for m in movs}
+    clases = [c for c in _ORDEN_CLASES if c in presentes] + sorted(presentes - set(_ORDEN_CLASES))
     por_clase = defaultdict(lambda: defaultdict(int))
     for m in movs:
-        por_clase[(m["origen_id"], m["destino_id"])][m["vehicle_type"]] += m["total"]
+        por_clase[(m["origen_id"], m["destino_id"])][m.get("clase") or m["vehicle_type"]] += m["total"]
     fila += 3
     _celda(ws, fila, 1, "VEHICULOS POR MOVIMIENTO", _SUBTITULO, _AZUL)
     ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=len(clases) + 2)
     fila += 1
     _celda(ws, fila, 1, "MOVIMIENTO", _CABECERA, _GRIS)
     for j, c in enumerate(clases):
-        _celda(ws, fila, 2 + j, _CLASE_OD.get(c, c), _CABECERA, _GRIS)
+        _celda(ws, fila, 2 + j, _TITULO_CLASE.get(c, _CLASE_OD.get(c, c)), _CABECERA, _GRIS)
     _celda(ws, fila, 2 + len(clases), "TOTAL", _CABECERA, _GRIS)
     for k in movimientos:
         fila += 1
@@ -1157,6 +1200,16 @@ def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
         for j, c in enumerate(clases):
             _celda(ws, fila, 2 + j, por_clase[k].get(c, 0))
         _celda(ws, fila, 2 + len(clases), total_od[k], _CABECERA, _GRIS)
+    notas_clase = []
+    if "PESADO" in clases:
+        notas_clase.append("A: automóviles, camionetas, pickups y motos. PESADO: autobuses y "
+                           "camiones juntos; a este tamaño del vehículo en la imagen no se separan.")
+    if "SIN_RESOLVER" in clases:
+        notas_clase.append("SIN CLASIFICAR: vehículos de un acceso con muy pocos automóviles "
+                           "para tener escala; están en el total.")
+    for t in notas_clase:
+        fila += 1
+        ws.cell(fila, 1, t).font = Font(size=9, italic=True)
 
     # 4. Volumen por acceso: entradas y salidas de cada brazo.
     #

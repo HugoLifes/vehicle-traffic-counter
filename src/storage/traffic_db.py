@@ -822,11 +822,33 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
                if z.get('kind') == 'acceso'}
     filas = conn.execute(
         """SELECT m.id, m.job_id, m.origen_id, m.destino_id, m.vehicle_type, m.timestamp,
-                  m.recorrido, v.video_start_time
+                  m.recorrido, m.bbox_height, v.video_start_time
            FROM movimientos m LEFT JOIN video_jobs v ON v.id = m.job_id
            WHERE m.project_id = ? ORDER BY m.timestamp""",
         (project_id,)
     ).fetchall()
+
+    # Clase de la empresa, con la MISMA regla que el aforo por línea
+    # (src/engine/clasificacion.py): la etiqueta `truck` de COCO mete en un
+    # saco la pickup y el tractocamión, y así el Excel direccional decía
+    # "camión o camioneta". El alto de cada movimiento se mide en su acceso de
+    # origen (origen_destino.py), así que el umbral va por ACCESO: los
+    # vehículos que entran por el mismo brazo se miden a una distancia
+    # parecida de la cámara, que es lo que hace comparable el alto.
+    from src.engine import clasificacion as _cl
+    alturas = defaultdict(list)
+    for f in filas:
+        if f['origen_id'] is not None and f['vehicle_type'] == 'car' and f['bbox_height']:
+            alturas[f['origen_id']].append(f['bbox_height'])
+    umbral_acceso = {a: _cl.nivel_de_calzada(hs)[1] for a, hs in alturas.items()}
+    por_id = {f['id']: f for f in filas}
+
+    def clase(fila, origen):
+        if fila is None:
+            return _cl.SIN_RESOLVER
+        acceso = fila['origen_id'] if fila['origen_id'] is not None else origen
+        return _cl.clasificar(fila['vehicle_type'], fila['bbox_height'],
+                              umbral_acceso.get(acceso))
 
     def intervalo(d):
         m = (d.hour * 60 + d.minute) // interval_minutes * interval_minutes
@@ -848,7 +870,8 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
         decision = _decidir_por_trayectoria(project_id, filas)
         for v in decision['vehiculos']:
             clave_t = intervalo(datetime.fromtimestamp(v['t0']))
-            completos[(clave_t, v['origen_id'], v['destino_id'], v['vehicle_type'])] += 1
+            completos[(clave_t, v['origen_id'], v['destino_id'], v['vehicle_type'],
+                       clase(por_id.get(v.get('clave')), v['origen_id']))] += 1
         for s in decision['sin_decidir']:
             incompletos[(intervalo(datetime.fromtimestamp(s['t0'])),
                          s['origen_id'], s['destino_id'])] += 1
@@ -859,7 +882,8 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
         for f in filas:
             clave_t = intervalo(datetime.fromisoformat(f['timestamp']))
             if f['origen_id'] is not None and f['destino_id'] is not None:
-                completos[(clave_t, f['origen_id'], f['destino_id'], f['vehicle_type'])] += 1
+                completos[(clave_t, f['origen_id'], f['destino_id'], f['vehicle_type'],
+                           clase(f, f['origen_id']))] += 1
             else:
                 incompletos[(clave_t, f['origen_id'], f['destino_id'])] += 1
 
@@ -883,9 +907,12 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
         # Cuántos vehículos se decidieron de cada forma y por qué quedaron
         # los demás sin decidir: el informe lo declara.
         'resumen_metodo': resumen,
+        # `vehicle_type` es la etiqueta de COCO (se conserva para lo que ya la
+        # leía); `clase` es la de la empresa y es la que va al informe.
         'movimientos': [
-            {'intervalo': t, 'origen_id': o, 'destino_id': d, 'vehicle_type': c, 'total': n}
-            for (t, o, d, c), n in sorted(completos.items(), key=lambda kv: str(kv[0]))
+            {'intervalo': t, 'origen_id': o, 'destino_id': d, 'vehicle_type': c,
+             'clase': k, 'total': n}
+            for (t, o, d, c, k), n in sorted(completos.items(), key=lambda kv: str(kv[0]))
         ],
         'incompletos': [
             {'intervalo': t, 'origen_id': o, 'destino_id': d, 'total': n}
