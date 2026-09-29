@@ -1130,10 +1130,11 @@ def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
         _celda(ws, fila, 2 + j, f"{nombre.get(o, o)} → {nombre.get(dd, dd)}", _CABECERA, _GRIS)
         ws.column_dimensions[get_column_letter(2 + j)].width = 16
     _celda(ws, fila, 2 + len(movimientos), "TOTAL", _CABECERA, _GRIS)
-    # Un cuarto con video a medias se leía como un bajón del tránsito: en
-    # Entrada y salida Altozano el de 07:00 decía 13 vehículos donde el conteo
-    # manual contó ~250, porque falta el video de 07:06 y el de 06:56 empieza
-    # tarde. Mismo aviso que en las hojas del aforo por línea.
+    # Un cuarto con video a medias se leía como un conteo completo: en Entrada
+    # y salida Altozano el de 07:00 dice 13 vehículos con el 43 % del cuarto
+    # grabado (falta el video de 07:06, y el de 06:56 es el amanecer); el
+    # manual cuenta 45 en el cuarto entero. Mismo aviso que en las hojas del
+    # aforo por línea.
     tramos = traffic_db._tramos_de_video(project_id)
     parciales = 0
     # Videos que el diagnóstico de encuadre calificó en rojo (el de 06:56 de
