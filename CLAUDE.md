@@ -2193,6 +2193,29 @@ por dónde entró. Medido contra el conteo manual:
 En Blvd Ind falla por lo mismo de siempre, y aquí se ve sin ambigüedad: el
 **acceso 4 da 0 entradas y 0 salidas**. La cámara no lo ve; no es ajuste.
 
+**El Excel direccional, revisado como lo recibiría la empresa (29-sep-2026).**
+Dos cosas que se habrían leído mal:
+
+- **Las clases eran las de COCO** ("camión o camioneta"), la misma trampa del
+  aforo por línea: la pickup y el tractocamión en un saco. Ahora
+  `get_matriz_od` trae `clase` con `clasificacion.clasificar`, con el umbral
+  del **acceso de origen** (el alto de cada movimiento se mide ahí, así que
+  es comparable entre los que entran por el mismo brazo). En Altozano, con el
+  auto a ~52 px, sale A / PESADO: 770 de 774 A en el movimiento principal; el
+  manual no registró autobuses ni camiones en esa hora.
+- **Los intervalos con video incompleto no avisaban.** El de 07:00 dice 13
+  vehículos con 43 % de video (falta el de 07:06 y el de 06:56 es el
+  amanecer, diagnóstico 0/100). Ahora va en naranja con la nota, y si el
+  video tiene diagnóstico rojo (`diagnosticos.color`) también lo dice. Ojo:
+  el manual cuenta 45 en ese cuarto, no ~250 como se escribió de prisa en un
+  commit; de 06:45 a 07:15 el tránsito de esa salida es bajo de verdad.
+
+Para Altozano solo hay **un cuarto de hora** cubierto entero (07:30):
+`comparar_od_real.py` da 266 contra 275 (97 %), 2_3 con GEH 1.0, 3 de 5
+movimientos con GEH < 5; volumen por acceso 5 de 6. Fraccionamientos no se
+puede contrastar: sus dos videos de 10 min no cubren entero ningún cuarto del
+manual.
+
 `get_matriz_od` devuelve `por_acceso`, y lo muestran el endpoint
 `/direccional`, la sección del reporte y la hoja DIRECCIONAL del Excel.
 `data/od/herramientas/comparar_accesos.py` lo contrasta contra el Excel de
