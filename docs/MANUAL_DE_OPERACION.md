@@ -62,6 +62,18 @@ que avanza sola conforme se completa cada paso.
 ## 4. Levantar un aforo
 
 1. **Proyectos → nuevo proyecto.** Un proyecto es una intersección o un tramo.
+   Elige **cómo se ven los vehículos en la cámara**:
+   - *Grandes* (de frente o cercana, la recomendada): separa tractocamión,
+     tractor sin caja y automóvil / camioneta / pickup, y no cuenta dos veces
+     el vehículo que la IA marca con dos clases.
+   - *Chicos* (lejana o de lado): liviano / pesado, sin esas dos cosas, que
+     con vehículos chicos que se enciman borran vehículos distintos.
+   Si te equivocas, no inventa clases: las finas solo salen donde el
+   automóvil mide 100 px o más. Se cambia al editar el proyecto (afecta a lo
+   que se cuente después). La casilla del video anotado sirve para revisar
+   lo contado, pero el proceso tarda ~40 % más.
+   Si la cámara no se movió desde otro aforo, **copia la calibración** de ese
+   proyecto: trae las zonas, las líneas atadas a su calzada y el tramo.
 2. **Subir.** Arrastra los videos. Revisa que el *inicio real* de cada uno sea
    el correcto antes de subir.
 3. **Revisar encuadre** (en Subir, sobre un video). Califica en un minuto si
@@ -138,16 +150,18 @@ Con un conteo de campo para medir la exactitud:
 docker compose -f docker-compose.jetson.yml exec -T aforo-vehicular python3 tools/prueba_aceptacion.py --proyecto 7 --referencias data/nuevos/aforo_frontal_manual
 ```
 
-**Ajustes por cámara (perfil de detección).** Cada proyecto puede llevar los
-ajustes medidos para su cámara. El de la cámara frontal de Cd. Juárez
-(proyecto 7) es:
+**Ajustes finos por cámara (perfil de detección, avanzado).** Lo normal es el
+tipo de cámara de la pantalla. Además, cada proyecto puede llevar ajustes
+medidos para su cámara. El de la cámara frontal de Cd. Juárez (proyecto 7)
+es:
 
 - motos desde confianza 0.10 (recupera motos de noche);
 - clasificador de pesados propio (autobús, camión, tractocamión, tractor sin
   caja) y de livianos (automóvil, camioneta, pickup), sin internet.
 
-Para darle el mismo perfil a un proyecto nuevo con esa cámara (cambia `7`
-por el número del proyecto):
+Los clasificadores ya los pone el tipo "grandes"; el umbral de motos no,
+porque solo se validó con esa cámara de noche. Para darle el perfil completo
+a un proyecto nuevo con esa misma cámara (cambia `7` por su número):
 
 ```bash
 curl -X PUT http://localhost:8080/api/projects/7 -H "Content-Type: application/json" -d '{"perfil_deteccion": {"umbral_clase": {"motorcycle": 0.10}, "clasificador_pesados": "models/pesados_v1.pt", "clasificador_livianos": "models/livianos_v3.pt"}}'

@@ -28,7 +28,8 @@ fuera: `ssh -L 8080:localhost:8080 apia@IP-DEL-EQUIPO` y `http://localhost:8080`
 2. **Medir con cinta** al instalar o al recoger: una losa o la distancia
    entre dos marcas del pavimento visibles en la cámara, **a unos 8–12 m** de
    donde irá la línea de conteo. Foto de las dos marcas.
-3. Nuevo proyecto → **Subir** los videos.
+3. Nuevo proyecto, eligiendo **cómo se ven los vehículos** (grandes si la
+   cámara va de frente o cercana) → **Subir** los videos.
 4. **Revisar encuadre** sobre un video; leer los avisos si no sale bueno.
 5. **Calibrar:** una zona por calzada; una línea de conteo por calzada donde
    el vehículo se vea grande, cruzando la calzada completa; «Medir velocidad

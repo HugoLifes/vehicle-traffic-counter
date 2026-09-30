@@ -10,14 +10,17 @@ cabeza de quien las escribió:
    (clase congelada, rastros partidos, dobles conteos, filas en blanco leídas
    como cero...). Si una falla, un cambio reintrodujo ese defecto.
 2. **Exactitud contra un conteo de campo**, si se le da uno: la razón total y
-   el GEH por cuarto de hora contra criterios explícitos, no a ojo.
+   el GEH por cuarto de hora contra criterios explícitos, no a ojo. Con
+   `--od-proyecto`, también el aforo direccional contra su conteo manual.
 3. **Salud del equipo**: base íntegra, respaldo reciente, disco, modelo, GPU,
    API y videos con error en la cola.
 
     # en el Jetson, dentro del contenedor
     python3 tools/prueba_aceptacion.py
     python3 tools/prueba_aceptacion.py --proyecto 7 \\
-        --referencias data/nuevos/aforo_frontal_manual
+        --referencias data/nuevos/aforo_frontal_manual \\
+        --od-proyecto 5 --od-manual "referencias/aforo_direccional/AFORO ENTRADA Y SALIDA ALTOZANO.xlsx" \\
+        --od-asignacion "Arco=2,Fondo izq=1,Izquierda=3,Abajo=3,Derecha=x"
 
 Sale con código 0 solo si todo lo obligatorio pasa. Los avisos no reprueban:
 dicen algo que conviene atender (por ejemplo, un respaldo de hace tres días).
@@ -40,6 +43,7 @@ REGRESIONES = [
     ("Conteo por trayectoria", "probar_conteo_trayectoria.py"),
     ("Diagnóstico de encuadre", "probar_diagnostico_encuadre.py"),
     ("Perfil de detección por proyecto", "probar_perfil_deteccion.py"),
+    ("Velocidad por tramo", "probar_velocidad.py"),
 ]
 
 resultados = []          # (grupo, nombre, estado, detalle)
@@ -99,6 +103,35 @@ def exactitud(proyecto, referencias, razon_min, razon_max, geh_min):
         anotar("exactitud", f"GEH por cuarto de hora, {zona.strip()}",
                "PASA" if frac >= geh_min else "FALLA",
                f"{ok_q} de {n_q} ({100 * frac:.0f} %); se pide {100 * geh_min:.0f} %")
+
+
+def exactitud_direccional(proyecto, manual, asignacion, razon_min, razon_max):
+    """El aforo direccional contra su conteo manual, por el mismo camino que
+    el informe (comparar_od_real.py lee get_matriz_od). Se piden la razón del
+    total y que el movimiento principal cuadre (GEH < 5): con un solo cuarto
+    de hora comparable, pedir el 85 % de los movimientos chicos sería medir
+    el ruido de 9 o 10 vehículos."""
+    print(f"\n2b. Aforo direccional contra el conteo manual (proyecto {proyecto})")
+    args = [str(RAIZ / "tools" / "comparar_od_real.py"), "--proyecto", str(proyecto),
+            "--manual", manual]
+    if asignacion:
+        args += ["--asignacion", asignacion]
+    codigo, salida = correr(args)
+    total = re.search(r"^TOTAL\s+(\d+)\s+(\d+)", salida, re.M)
+    if codigo != 0 or not total:
+        anotar("exactitud", "Direccional contra el conteo manual", "FALLA",
+               salida.strip().splitlines()[-1] if salida.strip() else "sin salida")
+        return
+    n, m = int(total.group(1)), int(total.group(2))
+    razon = n / m if m else 0.0
+    anotar("exactitud", "Direccional, total de movimientos", "PASA" if razon_min <= razon <= razon_max
+           else "FALLA", f"{razon:.2f}x ({n} contra {m}); se pide {razon_min:.2f}–{razon_max:.2f}")
+    movs = [(mov, int(a), int(b), float(g)) for mov, a, b, g in
+            re.findall(r"^(\w+_\w+)\s+(\d+)\s+(\d+)\s+\S+\s+([\d.]+)", salida, re.M)]
+    if movs:
+        mov, a, b, g = max(movs, key=lambda x: x[2])
+        anotar("exactitud", f"Direccional, movimiento principal ({mov})",
+               "PASA" if g < 5 else "FALLA", f"{a} contra {b}, GEH {g:.1f}; se pide menor que 5")
 
 
 def salud(max_horas_respaldo, min_disco):
@@ -190,6 +223,11 @@ def main():
     ap.add_argument("--razon-max", type=float, default=1.05)
     ap.add_argument("--geh-min", type=float, default=0.85,
                     help="fracción de cuartos de hora con GEH < 5 (criterio usual: 85 %%)")
+    ap.add_argument("--od-proyecto", type=int, help="proyecto direccional a medir")
+    ap.add_argument("--od-manual", help="Excel del conteo manual direccional")
+    ap.add_argument("--od-asignacion", help="acceso=número fijado por geometría")
+    ap.add_argument("--od-razon-min", type=float, default=0.90)
+    ap.add_argument("--od-razon-max", type=float, default=1.10)
     ap.add_argument("--respaldo-horas", type=float, default=48)
     ap.add_argument("--disco-min", type=float, default=0.15)
     ap.add_argument("--sin-salud", action="store_true",
@@ -200,6 +238,9 @@ def main():
     regresiones()
     if a.proyecto:
         exactitud(a.proyecto, a.referencias, a.razon_min, a.razon_max, a.geh_min)
+    if a.od_proyecto and a.od_manual:
+        exactitud_direccional(a.od_proyecto, a.od_manual, a.od_asignacion,
+                              a.od_razon_min, a.od_razon_max)
     if not a.sin_salud:
         salud(a.respaldo_horas, a.disco_min)
 
