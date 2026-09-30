@@ -1450,6 +1450,33 @@ salían 16–92 vehículos por hora y sentido (de noche, alejándose, 16–30): 
 amplió a 9 minutos (`tools/muestra_velocidad.sh`). No publica las
 horas con menos del 70 % medido (hacia la cámara, 20–23 h).
 
+**El tramo corto mide mejor, y recupera la noche (30-sep-2026).** Barrida la
+segunda línea sobre los 107 minutos de recorridos (calibrando con 12–14 h y
+midiendo las otras 9, en la PC con `data/nuevos/vel/tray`):
+
+| segunda línea | tramo | p85, error abs. se aleja / viene | medidos de noche, viene |
+|---|---|---|---|
+| fila 900 | ~5 m | 1.4 / 2.0 km/h | 90 % |
+| **fila 870** | **~8.5 m** | **0.6 / 1.5** (las 9 horas en los dos sentidos) | **79 %** |
+| fila 860 | ~10 m | 1.0 / 1.3 | 73 % |
+| fila 820 (la anterior) | ~17 m | 1.8 / 1.4 (solo 5 horas publicables) | 36 % |
+| fila 780 | ~27 m | 3.4 / 1.7 | 1 % |
+
+De noche los faros parten el rastro entre las dos líneas: cuanto más largo el
+tramo, menos vehículos llegan a la segunda. Con 8.5 m se publican las 24
+horas-sentido (`data/nuevos/vel/calibracion_870.json`: 8.37 y 8.82 m, razón
+0.95). Calibrar recomienda ahora 8–12 m.
+
+Probado por el camino de producción (tramo puesto en las líneas de una copia
+de la base, `VideoJobProcessor` sobre 15:30 y 22:30): p85 53.2 / 76.3 / 51.8 /
+67.9 contra 53.1 / 76.0 / 51.9 / 67.9 del estudio, 90–100 % medidos. Destapó
+dos defectos del Excel que se habrían leído mal en la beta: `control_distancia`
+tomaba el largo entre los puntos medios de las líneas y un tránsito de frente
+"corría de lado" (falsa alarma: "los autos medirían 3.46 m"); ahora mide
+perpendicular a la línea de conteo (lateral de agosto: sigue en 1.55 m,
+coherente). Y decía "medidos en el pavimento" siempre: el tramo lleva ahora
+`origen` (pavimento, mangueras, mapa) y el texto solo lo afirma si se sabe.
+
 **Sin medir en el pavimento.** Nadie va a la avenida hasta recoger el equipo,
 así que la escala sale de las mangueras del mismo día, con dos controles que
 no dependen de ellas: las dos calzadas en las mismas filas tienen que dar la

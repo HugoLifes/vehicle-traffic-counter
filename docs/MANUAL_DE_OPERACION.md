@@ -76,7 +76,11 @@ que avanza sola conforme se completa cada paso.
      calzada**; alargarla un poco hacia la vecina no duplica nada, dejarla
      corta sí pierde vehículos.
    - **Tramo de velocidad** (opcional): una segunda línea sobre una marca
-     del pavimento que cruce la calzada, con la distancia medida con cinta.
+     del pavimento que cruce la calzada, **a unos 8–12 m** de la línea de
+     conteo, con la distancia medida con cinta. Medido en Cd. Juárez: a
+     ~8.5 m el percentil 85 quedó a 0.6–1.5 km/h de las mangueras y de noche
+     se midió al 79 % de los vehículos; a ~17 m, solo al 36 % hacia la
+     cámara, porque los faros cortan el recorrido antes de la segunda línea.
    - "Ver por dónde pasan los vehículos" muestra los rastros para comprobar
      que la línea los corta de través.
 5. **Empezar conteo.** Los videos entran a la cola y se procesan uno por uno.
