@@ -336,15 +336,23 @@ def copy_calibration(project_id: int, data: CopyCalibration):
             "para no terminar con dos juegos de líneas encimadas contando doble."
         )
 
+    # Primero las zonas, para saber qué id nuevo le toca a cada una: la línea
+    # tiene que quedar atada a SU calzada. La primera versión copiaba las
+    # líneas sin zona (y sin tramo de velocidad), y una línea sin calzada
+    # cuenta también los vehículos de la otra: lo destapó la prueba de
+    # punta a punta de la beta (30-sep-2026), copiando del proyecto 7.
+    nueva_zona = {}
+    for zone in origen_zones:
+        nueva_zona[zone["id"]] = traffic_db.create_zone(
+            project_id=project_id, name=zone["name"],
+            points=zone["points"], kind=zone["kind"],
+        )
     for lane in origen_lanes:
         traffic_db.create_lane(
             camera_source=destino["name"], project_id=project_id,
             name=lane["name"], line_type=lane["line_type"], points=lane["points"],
-        )
-    for zone in origen_zones:
-        traffic_db.create_zone(
-            project_id=project_id, name=zone["name"],
-            points=zone["points"], kind=zone["kind"],
+            zone_id=nueva_zona.get(lane.get("zone_id")),
+            tramo=lane.get("tramo"),
         )
     origen = traffic_db.get_project(data.from_project_id)
     traffic_db.log_event(
