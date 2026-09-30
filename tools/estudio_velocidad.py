@@ -81,7 +81,9 @@ def medir_muestra(ruta, poligono, linea_a, linea_b, distancia):
     for c in sorted(por_cuadro):
         for m in med.observar(c, por_cuadro[c]):
             r = rastros.get(int(m["track_id"]))
-            if r is not None and MIN_KMH <= m["kmh"] <= MAX_KMH:
+            # Fuera de 3-160 km/h el medidor la devuelve con kmh=None
+            # (valida=False): es un rastro mal armado, no una velocidad.
+            if r is not None and m.get("valida") and MIN_KMH <= m["kmh"] <= MAX_KMH:
                 r["kmh"] = m["kmh"]
     return list(rastros.values())
 
