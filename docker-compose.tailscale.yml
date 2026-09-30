@@ -1,7 +1,7 @@
 # Dirección pública fija para la plataforma, sin tocar el router ni usar sudo.
 #
 #   docker compose -f docker-compose.tailscale.yml up -d
-#   docker compose -f docker-compose.tailscale.yml logs      # enlace para iniciar sesión (1a vez)
+#   docker exec tailscale tailscale up --hostname=aforo       # da el enlace para iniciar sesión (1a vez)
 #   docker exec tailscale tailscale funnel --bg 8080          # publicar la plataforma
 #   docker exec tailscale tailscale funnel status             # la dirección https://aforo.<red>.ts.net
 #
@@ -18,6 +18,13 @@
 # ANTES de publicar, la plataforma tiene que pedir usuario y contraseña
 # (tools/poner_acceso.sh): sin eso cualquiera con la dirección podría borrar
 # proyectos. El estado (la sesión de la cuenta) vive en data/tailscale.
+#
+# Se arranca tailscaled directo y no el arranque de la imagen (containerboot):
+# ese, sin una clave de autenticación, espera el inicio de sesión solo 60 s y
+# después se reinicia con una identidad NUEVA, así que el enlace que ya se le
+# había dado a quien iba a entrar dejaba de servir (30-sep-2026: 18 reinicios,
+# y un inicio de sesión "exitoso" que cayó en una identidad ya muerta). Así el
+# enlace espera lo que haga falta y la sesión queda guardada en data/tailscale.
 services:
   tailscale:
     image: tailscale/tailscale:stable
@@ -25,10 +32,8 @@ services:
     hostname: aforo
     network_mode: host
     restart: unless-stopped
-    environment:
-      - TS_USERSPACE=true
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_HOSTNAME=aforo
+    entrypoint: ["tailscaled"]
+    command: ["--tun=userspace-networking", "--statedir=/var/lib/tailscale"]
     volumes:
       - ./data/tailscale:/var/lib/tailscale
     # Poco: un proceso de red. Que nunca le quite memoria al conteo.
