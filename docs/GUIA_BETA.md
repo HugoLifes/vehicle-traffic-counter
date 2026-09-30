@@ -25,8 +25,9 @@ el aforo validado (386 de 386, minuto por minuto).
 
 ## Entrar
 
-`http://IP-DEL-EQUIPO:8080` en la misma red (hoy `10.197.1.156`). Desde
-fuera: `ssh -L 8080:localhost:8080 apia@IP-DEL-EQUIPO` y `http://localhost:8080`.
+**https://aforo.tail2bdded.ts.net** desde cualquier lugar, con el usuario y la
+contraseña que te pasen (el navegador los pide una vez). En la oficina también
+`http://10.197.1.156:8080`, con los mismos datos.
 
 ## Prueba 1: aforo por sección con velocidad
 
