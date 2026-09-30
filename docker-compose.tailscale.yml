@@ -1,0 +1,35 @@
+# Dirección pública fija para la plataforma, sin tocar el router ni usar sudo.
+#
+#   docker compose -f docker-compose.tailscale.yml up -d
+#   docker compose -f docker-compose.tailscale.yml logs      # enlace para iniciar sesión (1a vez)
+#   docker exec tailscale tailscale funnel --bg 8080          # publicar la plataforma
+#   docker exec tailscale tailscale funnel status             # la dirección https://aforo.<red>.ts.net
+#
+# Por qué así: la plataforma no se puede alojar en Vercel ni en GitHub Pages
+# (el conteo necesita la GPU, los videos y la base del Jetson), así que lo
+# que se publica es una dirección que llega al Jetson. Tailscale la abre
+# desde dentro (el Jetson se conecta hacia afuera), con HTTPS y un nombre que
+# no cambia; quien la abre no instala nada.
+#
+# En espacio de usuario (TS_USERSPACE) y en su propio contenedor: no hace
+# falta sudo ni tocar la red del equipo. Con la red del anfitrión, el
+# 127.0.0.1:8080 que publica es el de la plataforma.
+#
+# ANTES de publicar, la plataforma tiene que pedir usuario y contraseña
+# (tools/poner_acceso.sh): sin eso cualquiera con la dirección podría borrar
+# proyectos. El estado (la sesión de la cuenta) vive en data/tailscale.
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: tailscale
+    hostname: aforo
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - TS_USERSPACE=true
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_HOSTNAME=aforo
+    volumes:
+      - ./data/tailscale:/var/lib/tailscale
+    # Poco: un proceso de red. Que nunca le quite memoria al conteo.
+    mem_limit: 256m
