@@ -30,7 +30,12 @@ import type { Project } from '../lib/types';
 /* --- Tarjeta de intersección -------------------------------------------- */
 
 function ProjectCard({ p }: { p: Project }) {
-  const contado = p.crossing_count > 0;
+  /* Un aforo direccional cuenta movimientos, no cruces de línea: sin esto
+     su tarjeta decía "sin contar todavía" con 1 081 movimientos contados. */
+  const movimientos = p.movement_count ?? 0;
+  const direccional = p.crossing_count === 0 && movimientos > 0;
+  const contado = p.crossing_count > 0 || direccional;
+  const cifra = direccional ? movimientos : p.crossing_count;
   return (
     /*
       La tarjeta entera es el enlace, no solo un botón dentro de ella:
@@ -59,9 +64,13 @@ function ProjectCard({ p }: { p: Project }) {
         {/* La cifra que importa, sola y grande. Las demás la acompañan
             una línea abajo, en el tamaño del texto corriente. */}
         <div className={`pc-figure${contado ? '' : ' is-empty'}`}>
-          <span className="pc-figure-n">{contado ? formatNumber(p.crossing_count) : '—'}</span>
+          <span className="pc-figure-n">{contado ? formatNumber(cifra) : '—'}</span>
           <span className="pc-figure-label">
-            {contado ? 'vehículos contados' : 'sin contar todavía'}
+            {direccional
+              ? 'movimientos contados'
+              : contado
+                ? 'vehículos contados'
+                : 'sin contar todavía'}
           </span>
         </div>
       </div>
@@ -71,7 +80,9 @@ function ProjectCard({ p }: { p: Project }) {
           <IconVideo size={14} />
           {plural(p.video_count, 'video', 'videos')}
           <span className="pc-sep" aria-hidden="true">·</span>
-          {plural(p.lane_count, 'carril', 'carriles')}
+          {p.lane_count === 0 && (p.access_count ?? 0) > 0
+            ? plural(p.access_count ?? 0, 'acceso', 'accesos')
+            : plural(p.lane_count, 'carril', 'carriles')}
           {p.awaiting_count > 0 && (
             <span className="pc-badge">{formatNumber(p.awaiting_count)} sin calibrar</span>
           )}

@@ -432,7 +432,13 @@ def list_projects() -> List[Dict]:
                (SELECT COUNT(*) FROM lane_configs l WHERE l.project_id = p.id AND l.active = 1) AS lane_count,
                (SELECT COUNT(*) FROM crossings c
                     JOIN lane_configs l ON c.lane_id = l.id
-                    WHERE l.project_id = p.id) AS crossing_count
+                    WHERE l.project_id = p.id) AS crossing_count,
+               -- Un aforo direccional no tiene cruces de linea sino
+               -- movimientos: sin esto la tarjeta decia "sin contar
+               -- todavia" de Altozano, con 1 081 movimientos contados.
+               (SELECT COUNT(*) FROM movimientos m WHERE m.project_id = p.id) AS movement_count,
+               (SELECT COUNT(*) FROM zones z WHERE z.project_id = p.id
+                    AND z.kind = 'acceso' AND z.active = 1) AS access_count
         FROM projects p
         ORDER BY p.name
     """).fetchall()
