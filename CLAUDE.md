@@ -219,6 +219,7 @@ se podía contestar de otro modo:
 | `revisar_pesados.py` | Revisar la clase de los pesados (autobús, camión, tractor, T-S) sobre su recorte con un modelo de visión, y aplicarla |
 | `prueba_aceptacion.py` | Un comando que dice si todo funciona: regresiones, exactitud contra conteo de campo y salud del equipo, con PASA o FALLA |
 | `probar_perfil_deteccion.py` | Regresión sin GPU del perfil de detección por proyecto, con cajas anidadas reales revisadas a ojo |
+| `probar_velocidad.py` | Regresión sin GPU de la velocidad por tramo: interpolación, sentido, horas representativas y el control de la distancia |
 | `estudio_velocidad.py` | Estudio de velocidad de punto por hora y sentido en Excel, sobre una muestra de recorridos, sin recontar el aforo |
 
 ---
@@ -1818,6 +1819,33 @@ criterios de aceptación están en la página de entrega (ver memoria
   etiquetados por la revisión, nombre `{cruce}_c{carril}_{HH}h.jpg`). **La
   inferencia usa PIL como el entrenamiento**: reducir con otra interpolación
   mueve las probabilidades en los casos frontera.
+
+### Cerrar la beta: que un proyecto nuevo salga como el validado (30-sep-2026)
+
+Todo lo validado del aforo frontal —cajas repetidas entre clases
+(`nms_agnostico`), clasificador de pesados y de livianos— **solo se encendía
+por la API o con curl**. La pantalla no ofrecía ninguna de esas opciones, así
+que un proyecto creado desde ella salía sin tractocamión ni tractor, sin
+automóvil / camioneta / pickup, y con la misma camioneta contada como auto y
+como camión. Se cerró así:
+
+- **Tipo de cámara en el formulario** («cómo se ven los vehículos»: grandes o
+  chicos) y la casilla del video anotado. `perfil_deteccion.aplicar_tipo_camara`
+  lo traduce a lo validado con cada cámara y conserva el resto del perfil (el
+  umbral de motos del proyecto 7 sigue ahí). Por omisión, grandes.
+- **Candado de tamaño a los clasificadores** (`clasificador_pesados.clase_final`
+  y `subtipo_final`): solo mandan donde la calzada da para clases finas (auto
+  mediano ≥ `ALTO_FINO` = 100 px). Mientras solo se encendían a mano en el
+  proyecto 7 no hacía falta; ofrecidos en cualquier proyecto, equivocarse de
+  tipo habría puesto clases finas sobre vehículos de 15 px.
+- **Copiar la calibración dejaba las líneas sin su calzada** y sin tramo: la
+  línea sin calzada cuenta los vehículos de la otra. Ahora crea las zonas
+  primero y ata cada línea a la suya. Lo destapó la prueba de punta a punta
+  de la beta, que hizo exactamente lo que haría un usuario.
+- **La tarjeta de un direccional decía «sin contar todavía»** con 1 081
+  movimientos: solo sumaba cruces de línea.
+- **La prueba de aceptación cubre las cuatro partes**: `probar_velocidad.py`
+  (9 casos sin GPU) y `--od-proyecto` contra el conteo manual direccional.
 
 ### Dobles conteos de pesados: el frente del autobús como auto
 
