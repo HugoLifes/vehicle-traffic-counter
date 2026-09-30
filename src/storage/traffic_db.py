@@ -1323,8 +1323,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     # El umbral se saca por CARRIL y no por proyecto: cada carril cuenta
     # sobre una línea fija, o sea a una distancia fija de la cámara, que es
     # justo la condición que hace comparable el alto en píxeles.
-    from src.engine.clasificador_pesados import (CLASES_PESADAS_REGLA, PROB_MINIMA_MODELO,
-                                                 PROB_MINIMA_SUBTIPO)
+    from src.engine.clasificador_pesados import clase_final, subtipo_final
     from src.engine import perfil_deteccion as _perfil
     # Automovil/camioneta/pickup solo con luz: de noche, con los faros de
     # frente, la forma no se ve y el subtipo seria inventado.
@@ -1446,11 +1445,11 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
                 clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora,
                                    ancho=row["bbox_width"], perfil=perfiles.get(lane["id"]))
                 # El clasificador propio decide QUÉ pesado es, y solo donde
-                # la regla del alto ya dijo pesado: la frontera
-                # liviano/pesado es la validada contra el conteo manual.
-                if (clase in CLASES_PESADAS_REGLA and row["clase_modelo"]
-                        and (row["prob_modelo"] or 0) >= PROB_MINIMA_MODELO):
-                    clase = row["clase_modelo"]
+                # la regla del alto ya dijo pesado (la frontera
+                # liviano/pesado es la validada contra el conteo manual) y
+                # donde la calzada da para clases finas.
+                clase = clase_final(clase, row["clase_modelo"], row["prob_modelo"],
+                                    bool((perfiles.get(lane["id"]) or {}).get("fino")))
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
             # El sentido del informe es la calzada de CADA cruce, no la de la
@@ -1466,11 +1465,9 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
                 # probabilidad suficiente; lo demas se declara SIN_SUBTIPO en
                 # vez de repartirlo, y los subtipos siempre suman la A.
                 if clase == "A":
-                    hora = int(row["timestamp"][11:13])
-                    sub = (row["subtipo_modelo"]
-                           if row["subtipo_modelo"] and (row["prob_subtipo"] or 0)
-                           >= PROB_MINIMA_SUBTIPO and horas_sub[0] <= hora < horas_sub[1]
-                           else "SIN_SUBTIPO")
+                    sub = subtipo_final(row["subtipo_modelo"], row["prob_subtipo"],
+                                        int(row["timestamp"][11:13]), horas_sub,
+                                        bool((perfiles.get(lane["id"]) or {}).get("fino")))
                     ps = bucket.setdefault("subtipos_A", {}).setdefault(row["zone_id"], {})
                     ps[sub] = ps.get(sub, 0) + 1
             # La velocidad solo en las horas medibles: de noche el vehículo

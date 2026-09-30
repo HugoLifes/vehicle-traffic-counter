@@ -10,7 +10,7 @@ de cada intersección a lo largo del tiempo.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -46,6 +46,10 @@ class ProjectCreate(BaseModel):
     # Modelo, input_size, umbral por clase y cajas anidadas de ESTA camara.
     # Ver src/engine/perfil_deteccion.py; sin perfil cuenta como siempre.
     perfil_deteccion: Optional[Dict[str, Any]] = None
+    # Lo que se elige en la pantalla: si el vehiculo se ve grande o chico.
+    # Manda sobre nms_agnostico y los clasificadores del perfil (ver
+    # perfil_deteccion.aplicar_tipo_camara).
+    tipo_camara: Optional[Literal["grandes", "chicos"]] = None
 
 
 class CopyCalibration(BaseModel):
@@ -63,11 +67,22 @@ class ProjectUpdate(BaseModel):
     conteo_trayectoria: Optional[bool] = None
     video_anotado: Optional[bool] = None
     perfil_deteccion: Optional[Dict[str, Any]] = None
+    tipo_camara: Optional[Literal["grandes", "chicos"]] = None
+
+
+RAIZ = Path(__file__).resolve().parents[2]
+
+
+def _con_tipo(p: Optional[Dict]) -> Optional[Dict]:
+    if p is not None:
+        from src.engine.perfil_deteccion import tipo_camara
+        p["tipo_camara"] = tipo_camara(p)
+    return p
 
 
 @router.get("")
 def list_projects():
-    return traffic_db.list_projects()
+    return [_con_tipo(p) for p in traffic_db.list_projects()]
 
 
 @router.post("")
@@ -80,6 +95,10 @@ def create_project(project: ProjectCreate):
     if existing:
         raise HTTPException(409, f"Ya existe un proyecto llamado '{name}'")
 
+    nms, perfil = project.nms_agnostico, project.perfil_deteccion
+    if project.tipo_camara:
+        from src.engine.perfil_deteccion import aplicar_tipo_camara
+        nms, perfil = aplicar_tipo_camara(project.tipo_camara, perfil, RAIZ)
     project_id = traffic_db.create_project(
         name=name,
         description=project.description,
@@ -91,13 +110,13 @@ def create_project(project: ProjectCreate):
         # silencio, asi que un proyecto creado por la API salia siempre con
         # los valores por omision. Es la trampa de los valores que existen
         # pero no se leen, otra vez.
-        nms_agnostico=project.nms_agnostico,
+        nms_agnostico=nms,
         conteo_trayectoria=project.conteo_trayectoria,
         video_anotado=project.video_anotado,
-        perfil_deteccion=project.perfil_deteccion,
+        perfil_deteccion=perfil,
     )
     traffic_db.log_event(project_id, "proyecto", "Se creó la intersección", name)
-    return traffic_db.get_project(project_id)
+    return _con_tipo(traffic_db.get_project(project_id))
 
 
 @router.get("/{project_id}")
@@ -105,7 +124,7 @@ def get_project(project_id: int):
     project = traffic_db.get_project(project_id)
     if project is None:
         raise HTTPException(404, "Proyecto no encontrado")
-    return project
+    return _con_tipo(project)
 
 
 @router.put("/{project_id}")
@@ -115,6 +134,13 @@ def update_project(project_id: int, project: ProjectUpdate):
         raise HTTPException(404, "Proyecto no encontrado")
 
     cambios = project.model_dump(exclude_none=True)
+    tipo = cambios.pop("tipo_camara", None)
+    if tipo:
+        from src.engine.perfil_deteccion import aplicar_tipo_camara
+        nms, perfil = aplicar_tipo_camara(
+            tipo, cambios.get("perfil_deteccion", antes.get("perfil_deteccion")), RAIZ)
+        cambios["nms_agnostico"] = nms
+        cambios["perfil_deteccion"] = perfil
     traffic_db.update_project(project_id, **cambios)
 
     # Se anota QUÉ cambió, no solo que hubo un cambio: "se editó el
@@ -126,7 +152,7 @@ def update_project(project_id: int, project: ProjectUpdate):
     )
     if detalle:
         traffic_db.log_event(project_id, "proyecto", "Se editaron los datos", detalle)
-    return traffic_db.get_project(project_id)
+    return _con_tipo(traffic_db.get_project(project_id))
 
 
 @router.delete("/{project_id}")

@@ -33,6 +33,32 @@ CLASES_PESADAS_REGLA = ("B", "C", "PESADO")
 PROB_MINIMA_MODELO = 0.5
 # Subtipo de los livianos (AUTO, CAMIONETA, PICKUP): por debajo, SIN_SUBTIPO.
 PROB_MINIMA_SUBTIPO = 0.5
+
+
+def clase_final(clase_regla: str, clase_modelo, prob_modelo, fino: bool) -> str:
+    """La clase que se entrega: la de la regla, salvo que el clasificador
+    propio diga QUÉ pesado es.
+
+    Solo manda en una calzada que da para clases finas (`fino`: automóvil
+    mediano de al menos clasificacion.ALTO_FINO px). El modelo se entrenó con
+    vehículos de 115-150 px de la cámara frontal; con uno de 15 px la regla
+    dice PESADO y el recorte ya no dice nada. Mientras los clasificadores
+    solo se encendían a mano en ese proyecto no hacía falta el candado; al
+    ofrecerlos en cualquier proyecto nuevo, sí.
+    """
+    if (fino and clase_regla in CLASES_PESADAS_REGLA and clase_modelo
+            and (prob_modelo or 0) >= PROB_MINIMA_MODELO):
+        return clase_modelo
+    return clase_regla
+
+
+def subtipo_final(subtipo, prob, hora: int, horas, fino: bool) -> str:
+    """Subtipo de un cruce que quedó en A, o SIN_SUBTIPO: sin calzada fina,
+    sin luz (fuera de `horas`) o sin probabilidad suficiente no se adivina."""
+    if (fino and subtipo and (prob or 0) >= PROB_MINIMA_SUBTIPO
+            and horas[0] <= hora < horas[1]):
+        return subtipo
+    return "SIN_SUBTIPO"
 # El recorte con que se etiquetó y entrenó (recortes_sin_posicion.py): la caja
 # más un margen del 15 % de su lado mayor. Clasificar otro encuadre sería
 # medir con una regla distinta de la calibrada.

@@ -31,7 +31,13 @@ export interface Project {
   lane_count: number;
   crossing_count: number;
   awaiting_count: number;
+  /* Si el vehículo se ve grande (cámara de frente o cercana) o chico
+     (lejana o de lado). Lo decide el servidor a partir de lo guardado. */
+  tipo_camara?: TipoCamara;
+  video_anotado?: number | boolean;
 }
+
+export type TipoCamara = 'grandes' | 'chicos';
 
 export interface ProjectCreate {
   name: string;
@@ -40,6 +46,8 @@ export interface ProjectCreate {
   longitude?: number | null;
   address?: string | null;
   interval_minutes?: number;
+  tipo_camara?: TipoCamara;
+  video_anotado?: boolean;
 }
 
 export interface Lane {

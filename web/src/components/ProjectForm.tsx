@@ -19,7 +19,7 @@ import { Button, Card, Notice, SelectField, TextField } from './ui';
 import { IconSearch } from './Icons';
 import { errorMessage, geoReverse, geoSearch } from '../lib/api';
 import { cargarLeaflet } from '../lib/leaflet';
-import type { Project, ProjectCreate } from '../lib/types';
+import type { Project, ProjectCreate, TipoCamara } from '../lib/types';
 
 const INTERVALS = [5, 10, 15, 30, 60];
 
@@ -144,6 +144,14 @@ export function ProjectForm({
   const [name, setName] = useState(project?.name ?? '');
   const [description, setDescription] = useState(project?.description ?? '');
   const [interval, setInterval] = useState(project?.interval_minutes ?? 15);
+  /* Lo único de la detección que se pregunta: si el vehículo se ve grande o
+     chico. Cada respuesta aplica lo que se validó con esa cámara (ver
+     src/engine/perfil_deteccion.py). Por omisión, grande: es la cámara que
+     se recomienda para aforar. */
+  const [tipoCamara, setTipoCamara] = useState<TipoCamara>(project?.tipo_camara ?? 'grandes');
+  const [videoAnotado, setVideoAnotado] = useState<boolean>(
+    project ? Boolean(project.video_anotado ?? true) : true,
+  );
   const [nameError, setNameError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [location, setLocation] = useState<Location>({
@@ -253,6 +261,8 @@ export function ProjectForm({
       longitude: location.longitude,
       address: location.address,
       interval_minutes: interval,
+      tipo_camara: tipoCamara,
+      video_anotado: videoAnotado,
     });
   }
 
@@ -294,6 +304,36 @@ export function ProjectForm({
               </option>
             ))}
           </SelectField>
+        </div>
+
+        <div className="form-row">
+          <SelectField
+            label="Cómo se ven los vehículos en la cámara"
+            value={tipoCamara}
+            hint={
+              tipoCamara === 'grandes'
+                ? 'Separa tractocamión, tractor sin caja y automóvil / camioneta / pickup, y evita contar dos veces un vehículo que la IA marca con dos clases.'
+                : 'Para cámaras lejanas o de lado, donde los vehículos se enciman: clases liviano / pesado.'
+            }
+            onChange={(e) => setTipoCamara(e.target.value as TipoCamara)}
+          >
+            <option value="grandes">Grandes — cámara de frente o cercana (recomendada)</option>
+            <option value="chicos">Chicos — cámara lejana o de lado</option>
+          </SelectField>
+        </div>
+
+        <div className="form-row">
+          <label className="toggle-heat">
+            <input
+              type="checkbox"
+              checked={videoAnotado}
+              onChange={(e) => setVideoAnotado(e.target.checked)}
+            />
+            <span>
+              Guardar el video con los conteos dibujados (sirve para revisar; el proceso tarda ~40 %
+              más)
+            </span>
+          </label>
         </div>
 
         <div className="form-row">

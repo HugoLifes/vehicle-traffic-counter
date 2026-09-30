@@ -97,6 +97,46 @@ comprobar(pd.nacio_dentro_de_pesado([1010, 830, 1140, 955], [dict(caja("car", 10
 comprobar(pd.leer({"perfil_deteccion": {"quitar_nacidos_en_pesado": True}})
           == {"quitar_nacidos_en_pesado": True}, "la opción se lee del perfil")
 
+# --- 6. Tipo de cámara (lo que se elige en la pantalla) ---------------------
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+raiz = Path(tempfile.mkdtemp())
+(raiz / "models").mkdir()
+for ruta in pd.MODELOS_CAMARA_GRANDE.values():
+    (raiz / ruta).write_bytes(b"x")
+nms, perfil = pd.aplicar_tipo_camara("grandes", None, raiz)
+comprobar(nms and perfil == pd.MODELOS_CAMARA_GRANDE,
+          "cámara de vehículos grandes: cajas entre clases y los dos clasificadores")
+nms, perfil = pd.aplicar_tipo_camara(
+    "grandes", json.dumps({"umbral_clase": {"motorcycle": 0.1}}), raiz)
+comprobar(perfil.get("umbral_clase") == {"motorcycle": 0.1} and "clasificador_pesados" in perfil,
+          "elegir el tipo no borra lo demás del perfil (el umbral de motos)")
+nms, perfil = pd.aplicar_tipo_camara("chicos", perfil, raiz)
+comprobar(not nms and perfil == {"umbral_clase": {"motorcycle": 0.1}},
+          "cámara de vehículos chicos: quita la comparación entre clases y los clasificadores")
+vacia = Path(tempfile.mkdtemp())
+nms, perfil = pd.aplicar_tipo_camara("grandes", None, vacia)
+comprobar(nms and perfil == {}, "sin los modelos en el equipo no se piden clasificadores")
+comprobar(pd.tipo_camara({"nms_agnostico": 1}) == "grandes"
+          and pd.tipo_camara({"nms_agnostico": 0}) == "chicos", "el tipo se lee del proyecto")
+
+# --- 7. Los clasificadores solo mandan donde la calzada da para clases finas
+from src.engine.clasificador_pesados import clase_final, subtipo_final  # noqa: E402
+
+comprobar(clase_final("PESADO", "T-S", 0.9, fino=False) == "PESADO",
+          "en una calzada de vehículo chico el clasificador de pesados no cambia nada")
+comprobar(clase_final("C", "T-S", 0.9, fino=True) == "T-S",
+          "en una calzada fina decide qué pesado es")
+comprobar(clase_final("A", "T-S", 0.9, fino=True) == "A",
+          "nunca convierte un liviano en pesado: la frontera es la de la regla")
+comprobar(clase_final("B", "TRACTOR", 0.4, fino=True) == "B",
+          "con probabilidad baja se queda la regla")
+comprobar(subtipo_final("PICKUP", 0.8, 13, (7, 19), fino=True) == "PICKUP"
+          and subtipo_final("PICKUP", 0.8, 13, (7, 19), fino=False) == "SIN_SUBTIPO"
+          and subtipo_final("PICKUP", 0.8, 21, (7, 19), fino=True) == "SIN_SUBTIPO",
+          "el subtipo de A solo con calzada fina y con luz")
+
 # Cajas reales de la cámara frontal, del mismo cuadro, revisadas a ojo.
 # (grande, chica, es_pedazo, descripción)
 ANIDADAS = []

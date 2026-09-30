@@ -72,6 +72,54 @@ def leer(proyecto: Optional[Dict]) -> Dict:
     return limpio
 
 
+# --- Tipo de cámara: lo que se elige al crear el proyecto -------------------
+#
+# Quien levanta un aforo no sabe qué es "NMS agnóstica" ni tiene terminal,
+# pero sí sabe si en su cámara el vehículo se ve grande o chico. Hasta la
+# beta, todo lo validado del aforo frontal (cajas repetidas entre clases y
+# clasificadores propios) solo se encendía con curl, así que un proyecto nuevo
+# desde la pantalla salía sin tractocamión ni tractor, sin automóvil /
+# camioneta / pickup, y con la misma camioneta contada como auto y como
+# camión. Cada tipo aplica exactamente lo que se validó con esa cámara:
+#
+# - "grandes" (de frente o cercana, como la de Cd. Juárez del 19-sep):
+#   comparar cajas entre clases y los dos clasificadores. Los clasificadores
+#   solo mandan donde la calzada da para clases finas
+#   (clasificador_pesados.clase_final), así que equivocarse de tipo no
+#   inventa clases en una cámara lejana.
+# - "chicos" (lejana o de lado, como la de agosto): ni lo uno ni lo otro;
+#   ahí comparar entre clases borra vehículos distintos que se enciman.
+MODELOS_CAMARA_GRANDE = {"clasificador_pesados": "models/pesados_v1.pt",
+                         "clasificador_livianos": "models/livianos_v3.pt"}
+TIPOS_CAMARA = ("grandes", "chicos")
+
+
+def aplicar_tipo_camara(tipo: str, perfil_actual, raiz) -> tuple:
+    """(nms_agnostico, perfil) para un tipo de cámara, conservando lo demás
+    del perfil que ya tenga el proyecto (un umbral de motos, un modelo)."""
+    from pathlib import Path
+    if tipo not in TIPOS_CAMARA:
+        raise ValueError(f"Tipo de cámara desconocido: {tipo}")
+    perfil = leer({"perfil_deteccion": perfil_actual}) if perfil_actual else {}
+    if isinstance(perfil.get("horas_subtipo"), tuple):
+        perfil["horas_subtipo"] = list(perfil["horas_subtipo"])
+    if tipo == "grandes":
+        for clave, ruta in MODELOS_CAMARA_GRANDE.items():
+            # Solo si el modelo está en el equipo: un clasificador que falta
+            # no detiene el conteo, pero sí llena el registro de errores.
+            if clave not in perfil and (Path(raiz) / ruta).exists():
+                perfil[clave] = ruta
+        return True, perfil
+    for clave in MODELOS_CAMARA_GRANDE:
+        perfil.pop(clave, None)
+    return False, perfil
+
+
+def tipo_camara(proyecto: Optional[Dict]) -> str:
+    """El tipo que corresponde a lo que ya tiene el proyecto."""
+    return "grandes" if (proyecto or {}).get("nms_agnostico") else "chicos"
+
+
 def umbral_de_deteccion(perfil: Dict, umbral_general: float) -> float:
     """El detector corre al umbral más bajo que pida alguna clase; después
     `filtrar_por_clase` deja a cada una en el suyo. Bajar el umbral no cambia
