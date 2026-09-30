@@ -641,7 +641,9 @@ def _hoja_resumen(wb: Workbook, project_id: int, d: Dict) -> None:
                 valores += [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}",
                             h["volumen"], round(h["fhp"], 2) if h.get("fhp") else ""]
             else:
-                valores += ["", "", ""]
+                # En blanco parecía un error: con 10 minutos de video no hay
+                # cuatro cuartos seguidos completos de donde sacar la hora.
+                valores += ["sin una hora completa de video", "", ""]
             for i, v in enumerate(valores):
                 _celda(ws, fila, 1 + i, v, fuente, relleno,
                        _IZQ if i < 2 else _CENTRO)
