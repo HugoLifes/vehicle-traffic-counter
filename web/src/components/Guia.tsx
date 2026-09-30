@@ -54,9 +54,11 @@ const STEPS: Step[] = [
   {
     id: 'calibrar',
     title: 'Marca los carriles',
-    body: 'Dibuja la línea cruzando el carril completo, justo donde pasan los vehículos, y presiona "Empezar conteo".',
+    body: 'Dibuja la línea cruzando el carril completo, justo donde pasan los vehículos, y presiona "Empezar conteo". Para un aforo direccional, un acceso por brazo.',
     action: { label: 'Calibrar', to: '/calibrar' },
-    done: (s) => (s.project?.lane_count ?? 0) > 0,
+    // Un aforo direccional se calibra con accesos, no con líneas: con solo
+    // lane_count la guía se quedaba pidiendo carriles en Altozano.
+    done: (s) => (s.project?.lane_count ?? 0) > 0 || (s.project?.access_count ?? 0) >= 2,
   },
   {
     id: 'reporte',
