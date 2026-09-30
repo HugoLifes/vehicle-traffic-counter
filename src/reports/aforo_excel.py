@@ -887,6 +887,13 @@ def _hoja_metodo(wb: Workbook, d: Dict):
                    end_row=len(filas) + 6, end_column=2)
 
 
+_ORIGEN_TRAMO = {
+    "pavimento": ", medidos en el pavimento",
+    "mangueras": ", calibrados contra el contador de mangueras del mismo día",
+    "mapa": ", medidos en un mapa satelital",
+}
+
+
 def _hoja_velocidad(wb: Workbook, project_id: int, d: Dict) -> int:
     """
     Velocidad de punto por cuarto de hora y por sentido, como el reporte del
@@ -1007,7 +1014,8 @@ def _hoja_velocidad(wb: Workbook, project_id: int, d: Dict) -> int:
         "Método: tiempo que tarda cada vehículo en recorrer un tramo de distancia "
         "conocida entre dos líneas, como las dos mangueras de un contador de ejes.",
     ] + [
-        f"Tramo de '{l['name']}': {l['tramo']['distancia_m']:g} m medidos en el pavimento."
+        f"Tramo de '{l['name']}': {l['tramo']['distancia_m']:.2f} m entre la línea de conteo y "
+        "la segunda línea" + _ORIGEN_TRAMO.get(l["tramo"].get("origen"), "") + "."
         + _nota_control(controles.get(l["id"]))
         for l in tramos
     ] + [

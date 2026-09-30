@@ -53,6 +53,9 @@ from src.engine.velocidad import (FRACCION_MINIMA, MAX_KMH, MIN_KMH,  # noqa: E4
 # en la misma linea (a distancia fija de la camara).
 MULTIPLO_PESADO = 1.58
 RANGOS = [(lo, lo + 10) for lo in range(0, 120, 10)]
+# Un estudio de velocidad de punto suele pedir al menos 50 vehículos por
+# periodo; con menos la hora se publica marcada como orientativa.
+MUESTRA_MINIMA = 50
 
 
 def medir_muestra(ruta, poligono, linea_a, linea_b, distancia):
@@ -152,6 +155,7 @@ def estudio(proyecto, tray, calibracion, distancias):
 # ------------------------------------------------------------------ Excel
 def escribir_excel(res, ruta, lugar, fecha):
     from openpyxl import Workbook
+    from openpyxl.comments import Comment
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
@@ -217,6 +221,11 @@ def escribir_excel(res, ruta, lugar, fecha):
                 if not h["publica"]:
                     c.fill = PatternFill("solid", fgColor=NO)
                     c.font = Font(color=GRIS)
+                elif j == 2 and t["n"] < MUESTRA_MINIMA:
+                    c.fill = PatternFill("solid", fgColor="FCE4D6")
+                    c.comment = Comment(
+                        f"Muestra de {t['n']} vehículos, menos de {MUESTRA_MINIMA}: la cifra de "
+                        "esta hora es orientativa.", "Estudio de velocidad")
             fila += 1
         d = r["dia"]
         for j, v in enumerate(["Horas publicadas", d["n"], None, d.get("media"), d.get("p50"),
@@ -278,6 +287,8 @@ def escribir_excel(res, ruta, lugar, fecha):
         "la velocidad de los pocos medidos no representa al resto. Esas horas salen en gris.",
         "El percentil 15: la cola lenta del reparto medido no es confiable.",
         "La mediana de pesados con menos de 5 medidos en la hora.",
+        f"En naranja, las horas con menos de {MUESTRA_MINIMA} vehículos medidos: se publican, pero la "
+        "cifra es orientativa.",
         "",
         "CLASES",
         f"Pesado: autobús, o camión de al menos {MULTIPLO_PESADO} veces el alto del automóvil mediano de su "

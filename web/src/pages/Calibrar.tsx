@@ -230,7 +230,7 @@ export default function Calibrar() {
     setPoints([]);
     setWarnings([]);
     setHint(
-      `Marca la segunda línea del tramo de "${lane.name}": cruzando la misma calzada, a una distancia que puedas medir en el pavimento.`,
+      `Marca la segunda línea del tramo de "${lane.name}": cruzando la misma calzada, a unos 8–12 m de la de conteo, sobre algo que se pueda medir en el pavimento (una junta de losa, una raya). Un tramo más largo pierde vehículos, sobre todo de noche.`,
     );
   }
 

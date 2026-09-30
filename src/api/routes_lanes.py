@@ -8,7 +8,7 @@ que el usuario elija "horizontal" o "vertical" — solo dibuja la línea
 donde de verdad cruzan los vehículos en su cámara.
 """
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -28,6 +28,10 @@ class Tramo(BaseModel):
     """
     linea: List[List[float]]
     distancia_m: float = Field(gt=0, le=500)
+    # De dónde salió la distancia, para que el informe no afirme "medida en
+    # el pavimento" cuando se calibró contra las mangueras (el aforo frontal
+    # de Cd. Juárez nunca se midió con cinta). Sin él, el informe no dice.
+    origen: Optional[Literal["pavimento", "mangueras", "mapa"]] = None
 
 
 class LaneCreate(BaseModel):

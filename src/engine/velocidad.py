@@ -225,12 +225,27 @@ MAX_INCLINACION_GRADOS = 30
 
 def control_distancia(altos_auto_px: List[float], linea_a: Sequence[Punto],
                       linea_b: Sequence[Punto], distancia_m: float) -> Dict:
+    """El vehículo cruza las dos líneas de través, así que el sentido de
+    avance es PERPENDICULAR a la línea de conteo y el largo del tramo es la
+    distancia de la segunda línea a esa recta.
+
+    La primera versión los sacaba de los puntos medios de las dos líneas, y
+    en la cámara frontal de Cd. Juárez eso la engañaba: la línea de conteo va
+    de x=200 a 980 y la del tramo de x=612 a 1179 (cortada a lo ancho de la
+    calzada en otra fila), los puntos medios quedan corridos de lado y un
+    tránsito que viene de frente "corría de lado" a 16°. Resultado: el Excel
+    decía que los automóviles medirían 3.46 m y pedía revisar una distancia
+    que estaba bien."""
     import math
-    m1 = ((linea_a[0][0] + linea_a[1][0]) / 2, (linea_a[0][1] + linea_a[1][1]) / 2)
+    ux, uy = linea_a[1][0] - linea_a[0][0], linea_a[1][1] - linea_a[0][1]
+    largo_a = math.hypot(ux, uy)
+    if largo_a == 0:
+        return {'estado': 'no_aplica', 'alto_auto_m': None}
     m2 = ((linea_b[0][0] + linea_b[1][0]) / 2, (linea_b[0][1] + linea_b[1][1]) / 2)
-    dx, dy = abs(m2[0] - m1[0]), abs(m2[1] - m1[1])
-    largo_px = math.hypot(dx, dy)
-    if largo_px == 0 or math.degrees(math.atan2(dy, dx)) > MAX_INCLINACION_GRADOS:
+    largo_px = abs(ux * (m2[1] - linea_a[0][1]) - uy * (m2[0] - linea_a[0][0])) / largo_a
+    # Inclinación del AVANCE respecto a la horizontal = 90° menos la de la línea.
+    inclinacion = 90 - math.degrees(math.atan2(abs(uy), abs(ux)))
+    if largo_px == 0 or inclinacion > MAX_INCLINACION_GRADOS:
         return {'estado': 'no_aplica', 'alto_auto_m': None}
     altos = [a for a in altos_auto_px if a]
     if len(altos) < MIN_AUTOS_CONTROL:
