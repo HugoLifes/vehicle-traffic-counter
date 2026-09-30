@@ -16,6 +16,13 @@ en [MANUAL_DE_OPERACION.md](MANUAL_DE_OPERACION.md).
 Todo sale en el Excel de la plataforma, con una hoja RESUMEN al frente. Corre
 en el equipo, sin internet.
 
+## Para empezar: el proyecto de ejemplo
+
+En la plataforma está «Ejemplo beta — aforo frontal con velocidad (15 min)»:
+un aforo terminado, con zonas, líneas, tramo de velocidad y el Excel completo.
+Conviene abrirlo antes de levantar uno propio. Cuenta exactamente lo mismo que
+el aforo validado (386 de 386, minuto por minuto).
+
 ## Entrar
 
 `http://IP-DEL-EQUIPO:8080` en la misma red (hoy `10.197.1.156`). Desde

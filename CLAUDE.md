@@ -1846,6 +1846,20 @@ como camión. Se cerró así:
   movimientos: solo sumaba cruces de línea.
 - **La prueba de aceptación cubre las cuatro partes**: `probar_velocidad.py`
   (9 casos sin GPU) y `--od-proyecto` contra el conteo manual direccional.
+  En el Jetson: **20 de 20, aceptado**.
+
+**Probado de punta a punta como lo haría un usuario** (`data/nuevos/beta_prueba.sh`
+y `verificar_beta.py`): proyecto nuevo por la API con «grandes», calibración
+copiada del 7, tramo de 8.5 m con `origen` mangueras, 15 minutos de buena vista
+(16:10–16:19 y 22:30–22:34, ya revisados a ojo), conteo y Excel. **386 de 386
+cruces, idéntico minuto por minuto y por calzada** al proyecto 7; velocidad en
+372 (96 %), con p85 72.8 / 55.8 km/h a las 16 h contra 72.1 / 54.6 de las
+mangueras; el clasificador del equipo coincide con la revisión del modelo de
+visión en 10 de 11 pesados. Queda en la plataforma como proyecto 9, «Ejemplo
+beta — aforo frontal con velocidad (15 min)», para que quien pruebe vea un
+aforo terminado. La prueba destapó el defecto de copiar la calibración y que
+el resumen dejaba en blanco la hora de máxima demanda sin una hora completa
+de video (ahora lo dice).
 
 ### Dobles conteos de pesados: el frente del autobús como auto
 
