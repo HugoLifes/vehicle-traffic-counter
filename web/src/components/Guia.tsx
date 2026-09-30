@@ -17,6 +17,7 @@ import { Link } from 'react-router-dom';
 import { IconCheck, IconClose } from './Icons';
 import { IconButton } from './ui';
 import type { Project } from '../lib/types';
+import { contados } from '../lib/types';
 
 const DISMISSED_KEY = 'guia-dismissed';
 
@@ -62,7 +63,7 @@ const STEPS: Step[] = [
     title: 'Consulta el reporte',
     body: 'Volumen por intervalo, hora de máxima demanda y factor de hora pico (FHP).',
     action: { label: 'Ver reporte', to: '/reporte' },
-    done: (s) => (s.project?.crossing_count ?? 0) > 0,
+    done: (s) => (s.project ? contados(s.project) : 0) > 0,
   },
 ];
 

@@ -33,6 +33,7 @@ import {
 } from '../lib/queries';
 import { plural } from '../lib/format';
 import type { Project } from '../lib/types';
+import { contados, esDireccional } from '../lib/types';
 
 /* --- Qué toca ahora ------------------------------------------------------
    Los mismos cuatro pasos que la guía, pero aquí en el contexto del
@@ -62,17 +63,19 @@ function Progreso({ p, base }: { p: Project; base: string }) {
     },
     {
       titulo: 'Contar',
-      hecho: p.crossing_count > 0,
+      hecho: contados(p) > 0,
       detalle:
-        p.crossing_count > 0
-          ? plural(p.crossing_count, 'cruce registrado', 'cruces registrados')
+        contados(p) > 0
+          ? esDireccional(p)
+            ? plural(contados(p), 'movimiento registrado', 'movimientos registrados')
+            : plural(p.crossing_count, 'cruce registrado', 'cruces registrados')
           : 'El conteo arranca desde Calibrar, con los carriles ya puestos.',
       a: `${base}/calibrar`,
       accion: 'Ir a calibrar',
     },
     {
       titulo: 'Leer el reporte',
-      hecho: p.crossing_count > 0,
+      hecho: contados(p) > 0,
       detalle: 'Volumen por intervalo, hora de máxima demanda y FHP.',
       a: `${base}/reporte`,
       accion: 'Ver reporte',

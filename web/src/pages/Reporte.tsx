@@ -465,7 +465,7 @@ export default function Reporte() {
   // el selector solo lo cambia para esta vista, sin tocar el proyecto.
   const effective = minutes ?? project?.interval_minutes ?? 15;
   const { data: m, isLoading, isError, error } = useMetrics(projectId, effective);
-  const { data: od } = useDireccional(projectId, effective);
+  const { data: od, isLoading: cargandoOd } = useDireccional(projectId, effective);
   const hayDireccional = (od?.movimientos.length ?? 0) + (od?.incompletos.length ?? 0) > 0;
 
   return (
@@ -532,7 +532,14 @@ export default function Reporte() {
 
       {od && hayDireccional && <Direccional d={od} />}
 
-      {m && m.lanes.length === 0 && !hayDireccional && (
+      {/* La primera matriz por trayectoria tarda unos segundos en el equipo;
+          mientras, decir que no hay carriles hacía creer que el aforo
+          direccional estaba vacío. */}
+      {m && m.lanes.length === 0 && cargandoOd && (
+        <EmptyState title="Calculando el aforo direccional…" />
+      )}
+
+      {m && m.lanes.length === 0 && !hayDireccional && !cargandoOd && (
         <EmptyState
           title="Esta intersección todavía no tiene carriles"
           body="Un carril es la línea que los vehículos cruzan para ser contados. Sin al menos uno, no hay nada que reportar."

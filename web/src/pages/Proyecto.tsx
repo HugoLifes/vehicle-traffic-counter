@@ -30,6 +30,7 @@ import { IconPin } from '../components/Icons';
 import { useProjects } from '../lib/queries';
 import { formatNumber } from '../lib/format';
 import type { Project } from '../lib/types';
+import { contados, esDireccional } from '../lib/types';
 
 /*
   Las tres primeras van numeradas porque son el flujo de un aforo, en
@@ -61,8 +62,10 @@ function Resumen({ p }: { p: Project }) {
           2.1× de diferencia. Antes las tres iban al mismo tamaño y la
           cabecera no decía cuál era el dato del estudio. */}
       <div className="proj-stat is-principal">
-        <span className="ps-value">{formatNumber(p.crossing_count)}</span>
-        <span className="ps-label">Vehículos contados</span>
+        <span className="ps-value">{formatNumber(contados(p))}</span>
+        <span className="ps-label">
+          {esDireccional(p) ? 'Movimientos contados' : 'Vehículos contados'}
+        </span>
       </div>
       <div className="proj-stat-menores">
         <div className="proj-stat">
@@ -70,8 +73,10 @@ function Resumen({ p }: { p: Project }) {
           <span className="ps-label">Videos</span>
         </div>
         <div className="proj-stat">
-          <span className="ps-value">{formatNumber(p.lane_count)}</span>
-          <span className="ps-label">Carriles</span>
+          <span className="ps-value">
+            {formatNumber(esDireccional(p) ? (p.access_count ?? 0) : p.lane_count)}
+          </span>
+          <span className="ps-label">{esDireccional(p) ? 'Accesos' : 'Carriles'}</span>
         </div>
       </div>
     </div>

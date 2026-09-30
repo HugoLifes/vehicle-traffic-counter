@@ -42,6 +42,16 @@ export interface Project {
 
 export type TipoCamara = 'grandes' | 'chicos';
 
+/** Un aforo solo direccional cuenta movimientos, no cruces de línea. */
+export function esDireccional(p: Pick<Project, 'crossing_count' | 'movement_count'>): boolean {
+  return p.crossing_count === 0 && (p.movement_count ?? 0) > 0;
+}
+
+/** Lo contado en la intersección: cruces de línea o movimientos. */
+export function contados(p: Pick<Project, 'crossing_count' | 'movement_count'>): number {
+  return esDireccional(p) ? (p.movement_count ?? 0) : p.crossing_count;
+}
+
 export interface ProjectCreate {
   name: string;
   description?: string | null;
