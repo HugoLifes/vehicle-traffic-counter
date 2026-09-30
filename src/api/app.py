@@ -82,6 +82,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Aforo Vehicular - Plataforma", lifespan=lifespan)
 
+# Usuario y contraseña, solo si están en el entorno (el .env del Jetson). Sin
+# ellos la plataforma queda como siempre, para usarla dentro de la oficina.
+from src.api.acceso import AccesoBasico  # noqa: E402
+
+if os.environ.get("AFORO_USUARIO") and os.environ.get("AFORO_CONTRASENA"):
+    app.add_middleware(AccesoBasico, usuario=os.environ["AFORO_USUARIO"],
+                       contrasena=os.environ["AFORO_CONTRASENA"])
+
 from src.api.routes_counts import router as counts_router  # noqa: E402
 from src.api.routes_videos import router as videos_router  # noqa: E402
 from src.api.routes_camera import router as camera_router  # noqa: E402

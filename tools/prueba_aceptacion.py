@@ -44,6 +44,7 @@ REGRESIONES = [
     ("Diagnóstico de encuadre", "probar_diagnostico_encuadre.py"),
     ("Perfil de detección por proyecto", "probar_perfil_deteccion.py"),
     ("Velocidad por tramo", "probar_velocidad.py"),
+    ("Usuario y contraseña", "probar_acceso.py"),
 ]
 
 resultados = []          # (grupo, nombre, estado, detalle)

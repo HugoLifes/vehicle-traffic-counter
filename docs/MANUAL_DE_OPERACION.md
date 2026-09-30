@@ -59,6 +59,43 @@ ssh -L 8080:localhost:8080 apia@IP-DEL-JETSON
 y luego `http://localhost:8080`. La plataforma trae una guía de primeros pasos
 que avanza sola conforme se completa cada paso.
 
+### Compartir la plataforma por internet
+
+Para que alguien fuera de la red la use con una dirección normal y fija
+(`https://aforo.<tu-red>.ts.net`), sin túnel de Cloudflare y sin tocar el
+router. La plataforma no se puede alojar en un servicio como Vercel: el
+conteo necesita la GPU, los videos y la base del Jetson; lo que se publica es
+una dirección que llega a él.
+
+1. **Primero, usuario y contraseña.** Sin esto, quien tenga la dirección
+   puede ver los aforos, subir videos y borrar proyectos:
+
+   ```bash
+   bash tools/poner_acceso.sh
+   ```
+
+2. **Instalar Tailscale** (una vez) e iniciar sesión con la cuenta que vaya a
+   administrar el equipo; el comando da un enlace para entrar:
+
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up --hostname=aforo
+   ```
+
+3. **Publicar la plataforma:**
+
+   ```bash
+   sudo tailscale funnel --bg 8080
+   ```
+
+   La primera vez da un enlace para activar HTTPS y Funnel en la cuenta; se
+   abre, se activa y se repite el comando. `tailscale funnel status` enseña la
+   dirección. Queda puesta aunque el equipo se reinicie.
+
+Quien la abre no instala nada: el navegador pide el usuario y la contraseña
+una vez. Para dejar de compartirla: `sudo tailscale funnel --bg 8080 off`.
+Para cambiar la contraseña, otra vez `bash tools/poner_acceso.sh`.
+
 ## 4. Levantar un aforo
 
 1. **Proyectos → nuevo proyecto.** Un proyecto es una intersección o un tramo.
