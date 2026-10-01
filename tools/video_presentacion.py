@@ -69,7 +69,7 @@ CLASES = [
 NOMBRE = {k: n for k, n, _ in CLASES}
 COLOR = {k: c for k, _, c in CLASES}
 # A sin subtipo (el clasificador dudó): se cuenta como liviano sin más.
-NOMBRE["A"] = "Liviano"
+NOMBRE["A"] = "Otro liviano"
 COLOR["A"] = (220, 220, 220)
 
 
@@ -112,15 +112,15 @@ def pastilla(d, x, y, texto, color, f):
 def panel(d, x, y, titulo, subtitulo, conteo, recien, fuentes):
     """Marcador de un sentido: total grande y el desglose por clase."""
     f_tit, f_sub, f_total, f_fila = fuentes
-    w, h = 400, 470
-    d.rounded_rectangle((x, y, x + w, y + h), radius=16, fill=(14, 18, 24, 200))
-    d.text((x + 22, y + 18), titulo, font=f_tit, fill=(255, 255, 255, 255))
-    d.text((x + 22, y + 52), subtitulo, font=f_sub, fill=(170, 180, 190, 255))
+    filas = len(CLASES) + (1 if conteo.get("A") else 0)
+    w, h = 380, 132 + 29 * filas
+    d.rounded_rectangle((x, y, x + w, y + h), radius=14, fill=(14, 18, 24, 190))
+    d.text((x + 20, y + 14), titulo, font=f_tit, fill=(255, 255, 255, 255))
     total = sum(conteo.values())
-    d.text((x + 22, y + 82), f"{total}", font=f_total, fill=(255, 255, 255, 255))
-    d.text((x + 24 + d.textlength(f"{total}", font=f_total), y + 122), "vehículos",
+    d.text((x + 20, y + 44), f"{total}", font=f_total, fill=(255, 255, 255, 255))
+    d.text((x + 24 + d.textlength(f"{total}", font=f_total), y + 74), subtitulo,
            font=f_sub, fill=(170, 180, 190, 255))
-    yy = y + 168
+    yy = y + 118
     for clave, nombre, color in CLASES + [("A", NOMBRE["A"], COLOR["A"])]:
         n = conteo.get(clave, 0)
         if clave == "A" and not n:
@@ -128,15 +128,15 @@ def panel(d, x, y, titulo, subtitulo, conteo, recien, fuentes):
         brillo = 255 if n else 110
         resaltar = recien.get(clave, 0) > 0
         if resaltar:
-            d.rounded_rectangle((x + 12, yy - 4, x + w - 12, yy + 30), radius=6,
-                                fill=color + (70,))
-        d.rounded_rectangle((x + 22, yy + 4, x + 40, yy + 22), radius=4,
+            d.rounded_rectangle((x + 10, yy - 3, x + w - 10, yy + 25), radius=6,
+                                fill=color + (80,))
+        d.rounded_rectangle((x + 20, yy + 3, x + 36, yy + 19), radius=4,
                             fill=color + ((255,) if n else (90,)))
-        d.text((x + 52, yy), nombre, font=f_fila, fill=(brillo, brillo, brillo, 255))
+        d.text((x + 48, yy), nombre, font=f_fila, fill=(brillo, brillo, brillo, 255))
         txt = str(n)
-        d.text((x + w - 24 - d.textlength(txt, font=f_fila), yy), txt, font=f_fila,
+        d.text((x + w - 22 - d.textlength(txt, font=f_fila), yy), txt, font=f_fila,
                fill=(brillo, brillo, brillo, 255))
-        yy += 36
+        yy += 29
 
 
 def main():
@@ -148,6 +148,10 @@ def main():
     ap.add_argument("--segundos", type=float, default=30.0)
     ap.add_argument("--salida", required=True)
     ap.add_argument("--lugar", default="Blvd. Miguel de la Madrid · Cd. Juárez")
+    ap.add_argument("--tapar", default=None,
+                    help="x1,y1,x2,y2 del clip (1920x1080) a difuminar: la leyenda de "
+                         "la cámara, que en el frontal dice otra fecha y otra hora "
+                         "(ver revisar_reloj.py)")
     a = ap.parse_args()
 
     traffic_db.init_schema()
@@ -200,14 +204,16 @@ def main():
          "-pix_fmt", "yuv420p", "-movflags", "+faststart", a.salida],
         stdin=subprocess.PIPE)
 
-    f_tit, f_sub = fuente(26, True), fuente(19)
-    f_total, f_fila = fuente(64, True), fuente(22)
+    f_tit, f_sub = fuente(24, True), fuente(18)
+    f_total, f_fila = fuente(54, True), fuente(20)
     f_etq, f_cab, f_reloj = fuente(20, True), fuente(30, True), fuente(24)
     # Sentido de cada línea por su calzada, con el nombre que lleva el Excel.
     sentidos = {}
     for lane_id, m in meta.items():
         nombre = m["name"].replace("Carril ", "")
-        sentidos[lane_id] = nombre[:1].upper() + nombre[1:].replace("camara", "cámara").replace("alejandose", "alejándose")
+        nombre = nombre.replace("camara", "cámara").replace("alejandose", "alejándose")
+        sentidos[lane_id] = nombre[:1].upper() + nombre[1:]
+    destello = {lid: (0, None) for lid in meta}   # cuadros que le quedan, color
     conteo = {lid: Counter() for lid in meta}
     recien = {lid: Counter() for lid in meta}
     contados = {}   # track_id -> (clase, cuadro del cruce)
@@ -252,29 +258,40 @@ def main():
                 contados[tr["id"]] = (clase, n)
                 conteo[lid][clase] += 1
                 recien[lid][clase] = int(fps * 0.8)
+                destello[lid] = (int(fps * 0.4), COLOR.get(clase, (255, 255, 255)))
         if n < cuadro_ini:
             n += 1
             continue
 
-        img = Image.fromarray(cv2.cvtColor(cv2.resize(frame, (ANCHO, ALTO), interpolation=cv2.INTER_AREA),
-                                           cv2.COLOR_BGR2RGB)).convert("RGBA")
+        cuadro = cv2.resize(frame, (ANCHO, ALTO), interpolation=cv2.INTER_AREA)
+        if a.tapar:
+            tx1, ty1, tx2, ty2 = (int(v) for v in a.tapar.split(","))
+            cuadro[ty1:ty2, tx1:tx2] = cv2.GaussianBlur(cuadro[ty1:ty2, tx1:tx2], (0, 0), 14)
+        img = Image.fromarray(cv2.cvtColor(cuadro, cv2.COLOR_BGR2RGB)).convert("RGBA")
         capa = Image.new("RGBA", img.size, (0, 0, 0, 0))
         d = ImageDraw.Draw(capa)
         # Líneas de conteo, sobre la calzada de cada sentido.
         for lid, m in meta.items():
             (ax, ay), (bx, by) = m["points"][0], m["points"][-1]
-            d.line((ax * s, ay * s, bx * s, by * s), fill=(255, 255, 255, 200), width=4)
+            quedan, col = destello[lid]
+            if quedan:
+                d.line((ax * s, ay * s, bx * s, by * s), fill=col + (255,), width=9)
+                destello[lid] = (quedan - 1, col)
+            else:
+                d.line((ax * s, ay * s, bx * s, by * s), fill=(255, 255, 255, 210), width=4)
         for tr in tracks:
             x1, y1, x2, y2 = (v * s for v in tr["bbox"])
             if tr["id"] in contados:
                 clase, _ = contados[tr["id"]]
                 col = COLOR.get(clase, (220, 220, 220))
                 d.rounded_rectangle((x1, y1, x2, y2), radius=4, outline=col + (255,), width=3)
-                pastilla(d, x1, y1, NOMBRE.get(clase, clase), col, f_etq)
+                # Lejos, la etiqueta tapa a los vecinos y ya no se lee.
+                if y2 - y1 >= 45:
+                    pastilla(d, x1, y1, NOMBRE.get(clase, clase), col, f_etq)
             else:
                 d.rounded_rectangle((x1, y1, x2, y2), radius=4, outline=(255, 255, 255, 110), width=2)
         # Encabezado: qué es, dónde y la hora real del video.
-        d.rounded_rectangle((ANCHO // 2 - 380, 18, ANCHO // 2 + 380, 112), radius=16,
+        d.rounded_rectangle((ANCHO // 2 - 380, 18, ANCHO // 2 + 380, 112), radius=14,
                             fill=(14, 18, 24, 200))
         cab = "Aforo vehicular automático"
         d.text((ANCHO // 2 - d.textlength(cab, font=f_cab) / 2, 30), cab, font=f_cab,
@@ -284,8 +301,8 @@ def main():
                fill=(190, 200, 210, 255))
         orden = sorted(meta, key=lambda lid: "alej" in meta[lid]["name"])
         for i, lid in enumerate(orden):
-            x = 24 if i == 0 else ANCHO - 24 - 400
-            panel(d, x, 136, sentidos[lid], "Cruces en la línea, por clase",
+            x = 24 if i == 0 else ANCHO - 24 - 380
+            panel(d, x, 18, sentidos[lid], "vehículos",
                   conteo[lid], recien[lid], (f_tit, f_sub, f_total, f_fila))
             for k in list(recien[lid]):
                 recien[lid][k] = max(0, recien[lid][k] - 1)
