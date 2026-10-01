@@ -227,8 +227,10 @@ class VideoJobProcessor:
                 str(tmp), ancho=None, clasificadores=clasificadores,
                 detener=self._stop_event.is_set, progreso=avance)
         except InterruptedError:
+            # Se detuvo el servicio (un reinicio): vuelve a 'en_cola' para que
+            # start() lo retome. Con None se perdía de la cola sin aviso.
             tmp.unlink(missing_ok=True)
-            traffic_db.update_video_job(job_id, anotado_estado=None)
+            traffic_db.update_video_job(job_id, anotado_estado='en_cola', anotado_avance=0)
             return
         except Exception:
             tmp.unlink(missing_ok=True)
