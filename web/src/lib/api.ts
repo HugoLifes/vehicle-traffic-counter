@@ -261,6 +261,104 @@ export function uploadVideoConProgreso(
   });
 }
 
+/*
+  Subida por pedazos de 16 MB. Un video de campo pesa 3.3 GB y por internet
+  sube a ~1 MB/s: casi una hora en una sola petición, y cualquier corte (un
+  reinicio de la plataforma, un tropiezo de la red) la tiraba entera con un
+  502 sin que nada llegara al servidor (1-oct-2026). Así un corte cuesta un
+  pedazo: se reintenta solo ese, con espera creciente, y si el servidor ya lo
+  tenía responde 409 con lo que tiene y se sigue desde ahí. Volver a elegir
+  el mismo archivo después de cerrar la página continúa donde se quedó.
+*/
+const PEDAZO = 16 * 1024 * 1024;
+const REINTENTOS = 6;
+
+function subirPedazo(
+  url: string,
+  pedazo: Blob,
+  onProgress: (cargado: number) => void,
+): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = (e) => onProgress(e.loaded);
+    xhr.onload = () => {
+      let body: unknown = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        /* sin JSON */
+      }
+      resolve({ status: xhr.status, body });
+    };
+    // Corte de red: status 0, se reintenta.
+    xhr.onerror = () => resolve({ status: 0, body: null });
+    xhr.ontimeout = () => resolve({ status: 0, body: null });
+    xhr.send(pedazo);
+  });
+}
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function subirVideoPorPedazos(
+  archivo: File,
+  projectId: number,
+  inicio: string | null,
+  onProgress: (cargado: number, total: number, reintentando: boolean) => void,
+): Promise<{ accepted: VideoJob[]; rejected: { filename: string; reason: string }[] }> {
+  const datos = {
+    project_id: projectId,
+    nombre: archivo.name,
+    tamano: archivo.size,
+    modificado: archivo.lastModified,
+    inicio,
+  };
+  const { subida_id, recibido } = await request<{ subida_id: string; recibido: number }>(
+    '/api/videos/subida/iniciar',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) },
+  );
+  let offset = recibido;
+  onProgress(offset, archivo.size, false);
+  let fallos = 0;
+  while (offset < archivo.size) {
+    const pedazo = archivo.slice(offset, Math.min(archivo.size, offset + PEDAZO));
+    const r = await subirPedazo(
+      `/api/videos/subida/${subida_id}?offset=${offset}`,
+      pedazo,
+      (cargado) => onProgress(offset + cargado, archivo.size, fallos > 0),
+    );
+    if (r.status === 200) {
+      offset = (r.body as { recibido: number }).recibido;
+      fallos = 0;
+      onProgress(offset, archivo.size, false);
+      continue;
+    }
+    if (r.status === 409) {
+      // El servidor tiene otra cosa (un reintento de un pedazo que sí llegó).
+      const det = (r.body as { detail?: { recibido?: number } } | null)?.detail;
+      if (typeof det?.recibido === 'number') {
+        offset = det.recibido;
+        continue;
+      }
+    }
+    if (r.status === 401) throw new ApiError('La sesión pide usuario y contraseña de nuevo.', 401);
+    fallos += 1;
+    if (fallos > REINTENTOS) {
+      throw new ApiError(
+        `Se cortó la conexión varias veces seguidas. Lo subido se conserva: vuelve a elegir ${archivo.name} y sigue donde se quedó.`,
+        r.status,
+      );
+    }
+    onProgress(offset, archivo.size, true);
+    await esperar(Math.min(30000, 2000 * 2 ** (fallos - 1)));
+  }
+  return request<{ accepted: VideoJob[]; rejected: { filename: string; reason: string }[] }>(
+    `/api/videos/subida/${subida_id}/terminar`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) },
+  );
+}
+
 export const getMetrics = (projectId: number, minutes: number) =>
   request<ProjectMetrics>(`/api/videos/metrics?project_id=${projectId}&minutes=${minutes}`);
 

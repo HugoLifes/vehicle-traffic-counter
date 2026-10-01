@@ -121,6 +121,123 @@ async def upload_videos(
     return {"accepted": accepted, "rejected": rejected}
 
 
+# --- Subida por pedazos --------------------------------------------------
+#
+# Un video de campo pesa 3.3 GB y por la dirección pública sube a ~1 MB/s:
+# casi una hora en UNA petición. Cualquier corte —un reinicio de la
+# plataforma, un tropiezo de la red— la tiraba entera y la pantalla decía
+# "el servidor respondió 502" sin que nada llegara (1-oct-2026). Por pedazos,
+# un corte cuesta un pedazo: el navegador lo reintenta, y si se cierra la
+# página, volver a elegir el mismo archivo sigue donde se quedó.
+
+PARCIALES = UPLOAD_DIR / "parciales"
+PEDAZO_MAXIMO = 64 * 1024 * 1024
+# Lo que quedó a medias y nadie retomó en este tiempo se borra.
+VIGENCIA_PARCIAL_S = 3 * 24 * 3600
+_ID_SUBIDA = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _ruta_parcial(subida_id: str) -> Path:
+    if not _ID_SUBIDA.match(subida_id):
+        raise HTTPException(400, "Identificador de subida inválido")
+    return PARCIALES / f"{subida_id}.part"
+
+
+def _limpiar_parciales():
+    import time
+    ahora = time.time()
+    for p in PARCIALES.glob("*"):
+        try:
+            if ahora - p.stat().st_mtime > VIGENCIA_PARCIAL_S:
+                p.unlink()
+        except OSError:
+            pass
+
+
+@router.post("/subida/iniciar")
+def iniciar_subida(datos: dict):
+    """Abre (o retoma) la subida de un archivo. Devuelve cuántos bytes ya
+    tiene el servidor: 0 si es nueva, más si se está retomando.
+
+    La identidad sale del proyecto, el nombre, el tamaño y la fecha del
+    archivo en el equipo de quien sube: el mismo archivo elegido otra vez
+    cae en la misma subida."""
+    import hashlib
+    proyecto_id = int(datos.get("project_id") or 0)
+    nombre = str(datos.get("nombre") or "")
+    tamano = int(datos.get("tamano") or 0)
+    if traffic_db.get_project(proyecto_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    ext = Path(nombre).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(415, f"Formato '{ext or 'desconocido'}' no soportado. "
+                                 f"Formatos aceptados: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+    if tamano <= 0:
+        raise HTTPException(400, "El archivo está vacío")
+    PARCIALES.mkdir(parents=True, exist_ok=True)
+    _limpiar_parciales()
+    clave = f"{proyecto_id}|{nombre}|{tamano}|{datos.get('modificado') or ''}"
+    subida_id = hashlib.sha256(clave.encode()).hexdigest()[:32]
+    ruta = _ruta_parcial(subida_id)
+    recibido = ruta.stat().st_size if ruta.exists() else 0
+    if recibido > tamano:
+        ruta.unlink()
+        recibido = 0
+    return {"subida_id": subida_id, "recibido": recibido}
+
+
+@router.put("/subida/{subida_id}")
+async def recibir_pedazo(subida_id: str, offset: int, request: Request):
+    """Un pedazo del archivo, que tiene que caer justo donde termina lo que
+    ya hay. Si no (un reintento de un pedazo que sí había llegado), responde
+    409 con lo que el servidor tiene, y el navegador sigue desde ahí."""
+    ruta = _ruta_parcial(subida_id)
+    actual = ruta.stat().st_size if ruta.exists() else 0
+    if offset != actual:
+        raise HTTPException(409, detail={"recibido": actual})
+    escrito = 0
+    with open(ruta, "ab") as f:
+        async for trozo in request.stream():
+            escrito += len(trozo)
+            if escrito > PEDAZO_MAXIMO:
+                f.truncate(actual)
+                raise HTTPException(413, "Pedazo demasiado grande")
+            f.write(trozo)
+    return {"recibido": actual + escrito}
+
+
+@router.post("/subida/{subida_id}/terminar")
+def terminar_subida(subida_id: str, datos: dict):
+    """Cierra la subida y registra el video como lo hace /upload."""
+    ruta = _ruta_parcial(subida_id)
+    proyecto_id = int(datos.get("project_id") or 0)
+    nombre = str(datos.get("nombre") or "")
+    tamano = int(datos.get("tamano") or 0)
+    project = traffic_db.get_project(proyecto_id)
+    if project is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    if not ruta.exists():
+        raise HTTPException(404, "No hay una subida con ese identificador")
+    recibido = ruta.stat().st_size
+    if recibido != tamano:
+        raise HTTPException(409, detail={"recibido": recibido,
+                                         "mensaje": f"Faltan {tamano - recibido} bytes"})
+    destino = _safe_stored_path(nombre)
+    ruta.replace(destino)
+    job_id = traffic_db.create_video_job(
+        original_name=nombre,
+        stored_path=str(destino),
+        size_bytes=recibido,
+        source_label=project["name"],
+        project_id=proyecto_id,
+        video_start_time=datos.get("inicio") or None,
+        interval_minutes=project["interval_minutes"],
+        status="awaiting_calibration",
+    )
+    traffic_db.log_event(proyecto_id, "video", "Se subió un video", nombre)
+    return {"accepted": [traffic_db.get_video_job(job_id)], "rejected": []}
+
+
 @router.get("")
 def list_videos(project_id: Optional[int] = None):
     return traffic_db.list_video_jobs(project_id=project_id)

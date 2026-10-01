@@ -22,7 +22,7 @@ import {
   useVideos,
 } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { errorMessage, frameUrl, uploadVideoConProgreso, videoUrl } from '../lib/api';
+import { errorMessage, frameUrl, subirVideoPorPedazos, videoUrl } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   JOB_STATUS_LABEL,
@@ -419,7 +419,7 @@ export default function Subir() {
   const qc = useQueryClient();
   /* Avance de cada video mientras sube, uno por uno. */
   const [progreso, setProgreso] = useState<
-    Record<string, { cargado: number; total: number; estado: 'subiendo' | 'error' }>
+    Record<string, { cargado: number; total: number; estado: 'subiendo' | 'reintentando' | 'error' }>
   >({});
   const [subiendo, setSubiendo] = useState(false);
 
@@ -490,18 +490,16 @@ export default function Subir() {
         ...p,
         [entry.id]: { cargado: 0, total: entry.file.size, estado: 'subiendo' },
       }));
-      const form = new FormData();
-      form.append('files', entry.file);
-      form.append('project_id', String(projectId));
-      form.append(
-        'start_times',
-        JSON.stringify(
-          entry.date && entry.time ? { [entry.file.name]: `${entry.date} ${entry.time}` } : {},
-        ),
-      );
       try {
-        const r = await uploadVideoConProgreso(form, (cargado, total) =>
-          setProgreso((p) => ({ ...p, [entry.id]: { cargado, total, estado: 'subiendo' } })),
+        const r = await subirVideoPorPedazos(
+          entry.file,
+          projectId,
+          entry.date && entry.time ? `${entry.date} ${entry.time}` : null,
+          (cargado, total, reintentando) =>
+            setProgreso((p) => ({
+              ...p,
+              [entry.id]: { cargado, total, estado: reintentando ? 'reintentando' : 'subiendo' },
+            })),
         );
         if (r.rejected?.length) setRejections((x) => [...x, ...r.rejected]);
         subidos += r.accepted?.length ?? 0;
@@ -681,6 +679,7 @@ export default function Subir() {
                           )}{' '}
                           % · {formatSize(progreso[entry.id].cargado)} de{' '}
                           {formatSize(progreso[entry.id].total)}
+                          {progreso[entry.id].estado === 'reintentando' && ' · se cortó, reintentando…'}
                         </span>
                       </>
                     )}
@@ -692,9 +691,10 @@ export default function Subir() {
 
           {subiendo && (
             <p className="field-hint">
-              Subiendo un video a la vez. No cierres esta página hasta que termine: la velocidad
-              depende del internet de este equipo, y por internet un video de 10 minutos puede
-              tardar de 10 a 20 minutos.
+              Subiendo un video a la vez, en pedazos. No cierres esta página hasta que termine: la
+              velocidad depende del internet de este equipo, y por internet 1 GB tarda de 15 a 30
+              minutos. Si la conexión se corta, el pedazo se reintenta solo; si se cierra la página,
+              vuelve a elegir el mismo archivo y sigue donde se quedó.
             </p>
           )}
 
