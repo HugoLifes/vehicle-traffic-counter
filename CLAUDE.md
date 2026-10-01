@@ -1889,6 +1889,23 @@ Excel, y el dueño lo notó al comparar con el clip.
   escala de los cruces ya guardados; un proyecto nuevo la aprende de sus
   primeros 30 automóviles. De noche la A sale "Otro liviano": el subtipo
   solo se da con luz (`horas_subtipo`).
+- **Por internet todo pasa por el relevo de Tailscale, ~4.5 Mb/s medidos.**
+  La mesa de trabajo pedía cada cuadro como imagen (2.6 s por cuadro de
+  2560x1440 por la dirección pública) y el video se veía en cámara lenta;
+  ahora reproduce con un `<video>` (`/api/videos/{id}/original` y el anotado)
+  y solo en pausa pide el cuadro exacto. El anotado de la plataforma lleva
+  tope de 2 Mb/s; las respuestas JSON van comprimidas (`src/api/compresion.py`:
+  la lista de 731 videos, de 400 a 25 KB) y la cola se refresca cada 3 s solo
+  con algo en marcha.
+- **Revisar encuadre va por la cola de la GPU** (`video_jobs.diag_estado`).
+  Antes respondía 409 mientras algo se contaba o se generaba, y desde la
+  pantalla parecía que el botón no servía. La cola tiene prioridad:
+  revisión, video con detecciones, conteo; no interrumpe lo que ya corre.
+- **Renombrar una línea NO es recalibrar.** `update_lane` subía `updated_at`
+  también con el nombre: al poner los rumbos en el 7, la pantalla declaró
+  los 731 videos de una calibración anterior y ofreció recontarlos, lo que
+  habría borrado la revisión de los 879 pesados. "Volver a contar todo" dice
+  ahora cuánto tarda y cuántos pesados revisados se pierden.
 - Arreglo de paso: `draw_zones` pinta sobre el cuadro que recibe, y el
   procesador lo llamaba sobre el mismo cuadro del que después recortan los
   clasificadores. Con el anotado encendido, los recortes llevaban las zonas
