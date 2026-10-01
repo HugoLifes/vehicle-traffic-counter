@@ -221,6 +221,7 @@ se podía contestar de otro modo:
 | `probar_perfil_deteccion.py` | Regresión sin GPU del perfil de detección por proyecto, con cajas anidadas reales revisadas a ojo |
 | `probar_velocidad.py` | Regresión sin GPU de la velocidad por tramo: interpolación, sentido, horas representativas y el control de la distancia |
 | `estudio_velocidad.py` | Estudio de velocidad de punto por hora y sentido en Excel, sobre una muestra de recorridos, sin recontar el aforo |
+| `video_presentacion.py` | Clip de presentación (30 s, 1 min) con el mismo dibujo de la plataforma, comprobado contra lo guardado |
 
 ---
 
@@ -1860,6 +1861,38 @@ beta — aforo frontal con velocidad (15 min)», para que quien pruebe vea un
 aforo terminado. La prueba destapó el defecto de copiar la calibración y que
 el resumen dejaba en blanco la hora de máxima demanda sin una hora completa
 de video (ahora lo dice).
+
+### Un solo dibujo del aforo: el de los clips de presentación (01-oct-2026)
+
+`src/engine/presentacion.py` dibuja el visor en vivo, el video con
+detecciones de la plataforma y los clips (`tools/video_presentacion.py`):
+cada vehículo con la clase que se entrega (automóvil, camioneta, pickup,
+moto, autobús, camión, tractocamión, tractor; liviano/pesado donde la
+calzada no da para clases finas), un marcador por sentido con su desglose y
+la hora real. El anotado de antes ponía la etiqueta de COCO ("truck") y un
+recuadro por línea: servía para calibrar, pero no enseñaba lo que va en el
+Excel, y el dueño lo notó al comparar con el clip.
+
+- El título de cada marcador es el **nombre de la línea** (en el 7 y el 9:
+  "Poniente → Oriente" la que viene hacia la cámara, "Oriente → Poniente" la
+  que se aleja) y el encabezado lleva la **dirección del proyecto**.
+- `perfil_deteccion.tapar_leyenda` difumina la leyenda de la cámara frontal,
+  que dice 28-ago y otra hora (en el 7 y el 9: `[1960, 1333, 2520, 1437]`).
+- **"Generar video con detecciones"** en Subir, para un video ya contado: lo
+  cuenta en memoria y solo dibuja (`presentacion.generar_video`); **no
+  recuenta**, porque recontar borra la revisión de los pesados. Va por la
+  cola de la GPU (`('anotar', id)`), con `video_jobs.anotado_estado` y
+  `anotado_avance`. Reproduce lo guardado: 15/10 y 34/17 en el minuto de las
+  14:56. A 1920 tarda ~4 min por minuto de video en el Orin.
+- La clase dibujada es la lectura en vivo (regla del alto + clasificadores);
+  el Excel además aplica la revisión del modelo de visión si la hay. Con la
+  escala de los cruces ya guardados; un proyecto nuevo la aprende de sus
+  primeros 30 automóviles. De noche la A sale "Otro liviano": el subtipo
+  solo se da con luz (`horas_subtipo`).
+- Arreglo de paso: `draw_zones` pinta sobre el cuadro que recibe, y el
+  procesador lo llamaba sobre el mismo cuadro del que después recortan los
+  clasificadores. Con el anotado encendido, los recortes llevaban las zonas
+  teñidas encima. El dibujo nuevo trabaja sobre una copia.
 
 ### Dobles conteos de pesados: el frente del autobús como auto
 
