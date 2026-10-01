@@ -13,7 +13,16 @@
      contó bien. Es el mismo reproductor con los mismos controles, así
      que se puede parar en el cuadro exacto de un cruce y comparar.
 
-  Cómo se reproduce, y por qué no es un <video>: los aforos llegan en
+  Cómo se reproduce. Al darle reproducir, si el archivo lo admite (el video
+  con detecciones siempre; el original si es .mp4/.mov/.webm), con un
+  <video> de verdad que el navegador transmite por partes. Pedirlo cuadro
+  por cuadro funcionaba en la red local, pero por internet cada cuadro de
+  2560x1440 tarda 2.6 s y el video se veía en cámara lenta (medido el
+  1-oct-2026 por la dirección pública). En pausa se vuelve al cuadro exacto
+  del servidor, que es lo que hace falta para calibrar y para avanzar de
+  uno en uno.
+
+  Por qué no es SOLO un <video>: los aforos llegan en
   .mkv, .avi o .wmv, que los navegadores no reproducen de forma fiable, y
   un video todavía sin procesar no tiene versión en H.264 — ese
   transcodificado ocurre después de contar, y calibrar va antes. Así que
@@ -43,7 +52,7 @@ import {
   IconJumpBack,
   IconJumpForward,
 } from './Icons';
-import { frameUrl, getFrameDetections } from '../lib/api';
+import { frameUrl, getFrameDetections, originalUrl, videoUrl } from '../lib/api';
 import type { FrameDetection, FuenteVideo, Lane, Point, VideoSegment, Zone } from '../lib/types';
 
 /* Colores de carril: se dibujan sobre el video, no sobre la interfaz, así
@@ -140,7 +149,15 @@ export function VideoWorkspace({
   const [loadError, setLoadError] = useState(false);
 
   const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /* Reproduciendo con el <video> (true) o mostrando el cuadro exacto. */
+  const [modoVideo, setModoVideo] = useState(false);
+  const modoVideoRef = useRef(false);
+  modoVideoRef.current = modoVideo;
+  /* El navegador no pudo con el archivo (códec raro): cuadro por cuadro. */
+  const [videoFallo, setVideoFallo] = useState(false);
+  const [bufferizando, setBufferizando] = useState(false);
 
   /* Detecciones del cuadro que se está viendo. Cada una cuesta una
      inferencia de GPU (~50 ms), así que solo se piden con el video en
@@ -158,6 +175,16 @@ export function VideoWorkspace({
   const total = segment?.total_frames ?? 0;
   const fps = segment?.fps ?? 15;
   const hayProcesado = segment?.tiene_procesado ?? false;
+  const fuenteVideo =
+    jobId === null || videoFallo
+      ? null
+      : fuente === 'procesado'
+        ? hayProcesado
+          ? videoUrl(jobId)
+          : null
+        : segment?.original_reproducible
+          ? originalUrl(jobId)
+          : null;
 
   // Al cambiar de segmento se vuelve al principio y se detiene: seguir
   // reproduciendo en un punto arbitrario de otro video desorienta.
@@ -167,6 +194,7 @@ export function VideoWorkspace({
     setTerminado(false);
     setLoadError(false);
     setTamano(null);
+    setVideoFallo(false);
   }, [jobId]);
 
   // Si el segmento elegido no tiene versión con detecciones, se vuelve al
@@ -222,6 +250,9 @@ export function VideoWorkspace({
   );
 
   useEffect(() => {
+    // Durante la reproducción con <video> el cuadro avanza solo; pedir la
+    // imagen de cada uno sería volver a lo que se quería evitar.
+    if (modoVideoRef.current) return;
     void loadFrame(frame);
   }, [frame, loadFrame]);
 
@@ -233,8 +264,72 @@ export function VideoWorkspace({
      Encadenado, no por intervalo: cada cuadro espera a que el anterior
      haya llegado. Con un setInterval, un tirón de red encolaría
      peticiones y el video se aceleraría de golpe al recuperarse. */
+  /* Reproducción con <video>. El contador y la barra siguen al video; al
+     pausar se pide el cuadro exacto donde quedó, y solo cuando llega se
+     esconde el video, para que no haya un hueco negro en medio. */
   useEffect(() => {
-    if (!playing || jobId === null || !total) return;
+    const v = videoRef.current;
+    if (!playing || !fuenteVideo || !v || !total) return;
+    let cancelado = false;
+    setModoVideo(true);
+    modoVideoRef.current = true;
+    v.playbackRate = speed;
+    const inicio = frameRef.current / fps;
+    // Sin metadatos todavía, mover la posición no tiene efecto y el video
+    // arrancaría desde el principio en vez de donde estaba el cuadro.
+    const fijarInicio = () => {
+      if (Math.abs(v.currentTime - inicio) > 0.5 / fps) v.currentTime = inicio;
+    };
+    if (v.readyState >= 1) fijarInicio();
+    else v.addEventListener('loadedmetadata', fijarInicio, { once: true });
+    v.play().catch((e: unknown) => {
+      // AbortError = se pausó antes de arrancar; no es una falla del archivo.
+      if (cancelado || (e instanceof DOMException && e.name === 'AbortError')) return;
+      setVideoFallo(true);
+    });
+    let raf = 0;
+    const seguir = () => {
+      if (cancelado) return;
+      const n = Math.min(total - 1, Math.floor(v.currentTime * fps));
+      if (n !== frameRef.current) {
+        frameRef.current = n;
+        setFrame(n);
+      }
+      raf = requestAnimationFrame(seguir);
+    };
+    raf = requestAnimationFrame(seguir);
+    const alTerminar = () => {
+      setPlaying(false);
+      setTerminado(true);
+    };
+    v.addEventListener('ended', alTerminar);
+    return () => {
+      cancelado = true;
+      cancelAnimationFrame(raf);
+      v.removeEventListener('ended', alTerminar);
+      v.pause();
+      const n = Math.max(0, Math.min(total - 1, Math.round(v.currentTime * fps)));
+      frameRef.current = n;
+      setFrame(n);
+      void loadFrame(n).then(() => {
+        modoVideoRef.current = false;
+        setModoVideo(false);
+      });
+    };
+    // La velocidad y la repetición se aplican aparte: cambiarlas no debe
+    // detener y volver a arrancar el video.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, fuenteVideo, fps, total, loadFrame]);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = speed;
+  }, [speed]);
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.loop = repetir;
+  }, [repetir]);
+
+  useEffect(() => {
+    if (!playing || fuenteVideo || jobId === null || !total) return;
     let cancelled = false;
     let timer = 0;
 
@@ -276,7 +371,7 @@ export function VideoWorkspace({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [playing, jobId, total, fps, speed, repetir, loadFrame]);
+  }, [playing, fuenteVideo, jobId, total, fps, speed, repetir, loadFrame]);
 
   // Dibujar exige una imagen quieta: al empezar a marcar puntos se pausa.
   useEffect(() => {
@@ -667,7 +762,33 @@ export function VideoWorkspace({
            tarjeta no salte de alto y mueva los controles bajo el cursor. */
         style={{ aspectRatio: ancho && alto ? `${ancho} / ${alto}` : '16 / 9' }}
       >
-        <img ref={imgRef} alt={`Cuadro ${frame + 1} de ${segment.nombre}`} />
+        <img
+          ref={imgRef}
+          alt={`Cuadro ${frame + 1} de ${segment.nombre}`}
+          className={modoVideo ? 'is-oculto' : undefined}
+        />
+        {fuenteVideo && (
+          <video
+            ref={videoRef}
+            key={fuenteVideo}
+            src={fuenteVideo}
+            className={modoVideo ? undefined : 'is-oculto'}
+            muted
+            playsInline
+            preload="metadata"
+            loop={repetir}
+            aria-hidden="true"
+            onWaiting={() => setBufferizando(true)}
+            onPlaying={() => setBufferizando(false)}
+            onPause={() => setBufferizando(false)}
+            onError={() => {
+              // Formato que el navegador no reproduce: se sigue cuadro por
+              // cuadro, como antes.
+              setVideoFallo(true);
+              setModoVideo(false);
+            }}
+          />
+        )}
         {/* El lienzo solo pinta; los clics los recoge el contenedor, que
             es quien conoce la escala entre píxeles del video y de pantalla. */}
         <canvas ref={canvasRef} aria-hidden="true" />
@@ -678,6 +799,7 @@ export function VideoWorkspace({
         {/* Detectar cuesta una inferencia: sin este aviso, el medio segundo
             entre pausar y ver las cajas parece que no pasó nada. */}
         {cargandoDet && <span className="ws-badge">Detectando…</span>}
+        {modoVideo && bufferizando && <span className="ws-badge">Cargando video…</span>}
 
         {drawMode && (
           <span className="ws-badge ws-badge-draw">

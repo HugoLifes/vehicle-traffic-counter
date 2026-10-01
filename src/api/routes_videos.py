@@ -176,7 +176,7 @@ def leer_diagnostico(job_id: int):
     return d
 
 
-@router.post("/{job_id}/diagnostico")
+@router.post("/{job_id}/diagnostico", status_code=202)
 def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
                  minutos: float = 1.0):
     """
@@ -188,72 +188,26 @@ def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
     mejor a un cruce que después falló (41 px pero con un puente tapando dos
     accesos) que al único que funcionó.
 
-    **No corre si hay videos contándose.** Dos trabajos de GPU a la vez en el
-    Orin dan `NvMapMemAllocInternalTagged error 12` y dejan cuadros sin
-    detección: pasó de verdad, y arruina las dos medidas. Mejor pedir que
-    espere que devolver un diagnóstico inventado.
+    Entra a la cola de la GPU y responde enseguida; el avance se lee en
+    `video_jobs.diag_estado` y el resultado en GET .../diagnostico. Antes se
+    calculaba aquí mismo y, para no correr dos trabajos de GPU a la vez
+    (NvMapMemAllocInternalTagged error 12 en el Orin), se rechazaba con 409
+    mientras hubiera algo contándose: desde la pantalla parecía que el botón
+    no servía. Va delante de los conteos en la cola, así que no espera a que
+    termine un aforo entero.
     """
-    from src.engine.diagnostico_encuadre import (calificar, calificar_rastreo,
-                                                 combinar, medir_imagen)
-
     job = traffic_db.get_video_job(job_id)
     if job is None:
         raise HTTPException(404, "Video no encontrado")
     if not Path(job["stored_path"]).exists():
         raise HTTPException(409, "El archivo de este video ya no está en disco")
-
-    ocupados = traffic_db.get_queued_video_jobs()
-    if ocupados:
-        raise HTTPException(
-            409,
-            f"Hay {len(ocupados)} videos en la cola de conteo. El diagnóstico usa la misma "
-            "GPU y correr los dos a la vez estropea ambos: inténtalo cuando la cola termine."
-        )
-    if traffic_db.get_connection().execute(
-            "SELECT 1 FROM video_jobs WHERE anotado_estado IN ('en_cola', 'generando')").fetchone():
-        raise HTTPException(
-            409, "Se está generando un video con detecciones, que usa la misma GPU: "
-                 "inténtalo cuando termine.")
-
+    if job.get("diag_estado") in ("en_cola", "revisando"):
+        return {"job_id": job_id, "diag_estado": job["diag_estado"]}
     procesador = get_processor()
     if procesador is None:
         raise HTTPException(503, "El procesador de video no está disponible")
-    detector = procesador._get_detector()
-    umbral = detector.confidence_threshold
-    banda = getattr(detector, "detection_band", None)
-    try:
-        detector.set_detection_band(None)
-        # Con la intersección calibrada se mide solo dentro de sus zonas: el
-        # tránsito de un estacionamiento o de una calle que no se cuenta
-        # hundía el alto mediano y el veredicto.
-        from src.engine.zones import load_zones
-        zonas = [z["points"] for z in load_zones(job.get("project_id"))
-                 if z.get("kind") in ("calzada", "acceso")] or None
-        medidas = medir_imagen(job["stored_path"], detector, zonas=zonas)
-        medidas.pop("_ejemplo", None)
-        # Un archivo que no se deja leer no es un encuadre malo: calificarlo
-        # daba "no sirve, puede estar de noche o desenfocado".
-        if medidas.get("error"):
-            raise HTTPException(422, "No se pudo leer el video (¿archivo dañado o formato "
-                                     "no soportado?). No es un veredicto sobre el encuadre.")
-        imagen = calificar(medidas, direccional=direccional)
-
-        medidas_rastreo = None
-        if rastreo and imagen["puntaje"] > 0:
-            from src.engine.diagnostico_encuadre import medir_rastreo
-            from src.engine.rastreo_bytetrack import RastreadorBytetrack
-            detector.confidence_threshold = min(umbral, RastreadorBytetrack.CONF_MINIMA)
-            medidas_rastreo = medir_rastreo(job["stored_path"], detector, minutos, zonas=zonas)
-            medidas_rastreo.update(calificar_rastreo(
-                medidas_rastreo, medidas.get("detecciones_por_cuadro")))
-    finally:
-        detector.confidence_threshold = umbral
-        detector.set_detection_band(banda)
-
-    d = {"medidas": medidas, "rastreo": medidas_rastreo,
-         "diagnostico": combinar(imagen, medidas_rastreo)}
-    traffic_db.guardar_diagnostico(job_id, job.get("project_id"), d)
-    return d
+    procesador.diagnosticar(job_id, rastreo=rastreo, direccional=direccional, minutos=minutos)
+    return {"job_id": job_id, "diag_estado": "en_cola"}
 
 
 @router.post("/{job_id}/anotar", status_code=202)
@@ -305,15 +259,41 @@ def live_frame():
 @router.get("/{job_id}/video")
 def get_video(job_id: int, request: Request):
     """
-    Sirve el video anotado (cajas, IDs, línea de conteo) para que el
-    usuario vea qué detectó la IA. Soporta 'Range' porque el <video>
-    del navegador lo necesita para poder adelantar/atrasar.
+    Sirve el video con detecciones para que el usuario vea qué contó la IA.
+    Soporta 'Range' porque el <video> del navegador lo necesita para poder
+    adelantar/atrasar.
     """
     job = traffic_db.get_video_job(job_id)
     if job is None or not job.get("output_video_path"):
         raise HTTPException(404, "Todavía no hay video procesado para este trabajo")
+    return _servir_video(Path(job["output_video_path"]), request)
 
-    path = Path(job["output_video_path"])
+
+# Contenedores que un navegador reproduce. Si el códec de adentro no le sirve
+# (un .mp4 en H.265), la mesa de trabajo lo nota al cargarlo y vuelve a pedir
+# cuadro por cuadro; por eso basta con la extensión y no se abre el archivo.
+VIDEO_NAVEGADOR = {".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime",
+                   ".webm": "video/webm"}
+
+
+@router.get("/{job_id}/original")
+def get_original(job_id: int, request: Request):
+    """
+    La grabación original, para reproducirla en la mesa de trabajo como
+    video. Pedirla cuadro por cuadro no da: por internet cada cuadro de
+    2560x1440 tarda 2.6 s y el video se veía en cámara lenta (1-oct-2026).
+    """
+    job = traffic_db.get_video_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Video no encontrado")
+    path = Path(job["stored_path"])
+    tipo = VIDEO_NAVEGADOR.get(path.suffix.lower())
+    if tipo is None:
+        raise HTTPException(415, "El navegador no reproduce este formato; se ve cuadro por cuadro")
+    return _servir_video(path, request, tipo)
+
+
+def _servir_video(path: Path, request: Request, media_type: str = "video/mp4"):
     if not path.exists():
         raise HTTPException(404, "El archivo de video ya no existe en disco")
 
@@ -328,8 +308,11 @@ def get_video(job_id: int, request: Request):
             if match.group(1):
                 start = int(match.group(1))
             if match.group(2):
-                end = int(match.group(2))
+                end = min(int(match.group(2)), file_size - 1)
             status_code = 206
+    if start >= file_size:
+        raise HTTPException(416, "Rango fuera del archivo",
+                            headers={"Content-Range": f"bytes */{file_size}"})
 
     chunk_size = end - start + 1
 
@@ -345,8 +328,10 @@ def get_video(job_id: int, request: Request):
                 yield data
 
     headers = {
-        "Content-Range": f"bytes {start}-{end}/{file_size}",
         "Accept-Ranges": "bytes",
         "Content-Length": str(chunk_size),
     }
-    return StreamingResponse(iterfile(), status_code=status_code, media_type="video/mp4", headers=headers)
+    if status_code == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    return StreamingResponse(iterfile(), status_code=status_code, media_type=media_type,
+                             headers=headers)

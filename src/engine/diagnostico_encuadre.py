@@ -491,3 +491,53 @@ def resumen_texto(d: Dict) -> str:
         a, b = d['razon_esperada']
         partes.append(f"exactitud esperable {a:.2f}x-{b:.2f}x del conteo real")
     return ' · '.join(partes)
+
+
+class VideoIlegible(Exception):
+    """El archivo no se deja leer: no es un veredicto sobre el encuadre."""
+
+
+def diagnosticar_trabajo(job: Dict, detector, rastreo: bool = True,
+                         direccional: bool = False, minutos: float = 1.0) -> Dict:
+    """Las dos etapas sobre un video de la plataforma, con el detector de la
+    cola (VideoJobProcessor), y el resultado como lo guarda la base.
+
+    Corre dentro de la cola de la GPU y no en la petición: antes el endpoint
+    lo calculaba en el momento y lo rechazaba con 409 si había algo
+    contándose o generándose, y desde la pantalla parecía que el botón no
+    servía (1-oct-2026). Dos trabajos de GPU a la vez en el Orin dan
+    NvMapMemAllocInternalTagged error 12, así que la espera es necesaria;
+    lo que no hacía falta era que la tuviera que hacer el usuario.
+    """
+    from src.engine.zones import load_zones
+    umbral = detector.confidence_threshold
+    banda = getattr(detector, "detection_band", None)
+    try:
+        detector.set_detection_band(None)
+        # Con la intersección calibrada se mide solo dentro de sus zonas: el
+        # tránsito de un estacionamiento o de una calle que no se cuenta
+        # hundía el alto mediano y el veredicto.
+        zonas = [z["points"] for z in load_zones(job.get("project_id"))
+                 if z.get("kind") in ("calzada", "acceso")] or None
+        medidas = medir_imagen(job["stored_path"], detector, zonas=zonas)
+        medidas.pop("_ejemplo", None)
+        # Un archivo que no se deja leer no es un encuadre malo: calificarlo
+        # daba "no sirve, puede estar de noche o desenfocado".
+        if medidas.get("error"):
+            raise VideoIlegible("No se pudo leer el video (¿archivo dañado o formato no "
+                                "soportado?). No es un veredicto sobre el encuadre.")
+        imagen = calificar(medidas, direccional=direccional)
+
+        medidas_rastreo = None
+        if rastreo and imagen["puntaje"] > 0:
+            from src.engine.rastreo_bytetrack import RastreadorBytetrack
+            detector.confidence_threshold = min(umbral, RastreadorBytetrack.CONF_MINIMA)
+            medidas_rastreo = medir_rastreo(job["stored_path"], detector, minutos, zonas=zonas)
+            medidas_rastreo.update(calificar_rastreo(
+                medidas_rastreo, medidas.get("detecciones_por_cuadro")))
+    finally:
+        detector.confidence_threshold = umbral
+        detector.set_detection_band(banda)
+
+    return {"medidas": medidas, "rastreo": medidas_rastreo,
+            "diagnostico": combinar(imagen, medidas_rastreo)}

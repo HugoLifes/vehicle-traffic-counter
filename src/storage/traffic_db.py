@@ -262,6 +262,10 @@ def init_schema():
     # pendiente.
     _ensure_column(conn, "video_jobs", "anotado_estado", "TEXT")
     _ensure_column(conn, "video_jobs", "anotado_avance", "INTEGER")
+    # Revision del encuadre pedida y todavia no hecha: 'en_cola', 'revisando'
+    # o 'error' (con su motivo). El resultado va en la tabla diagnosticos.
+    _ensure_column(conn, "video_jobs", "diag_estado", "TEXT")
+    _ensure_column(conn, "video_jobs", "diag_error", "TEXT")
     # Perfil de deteccion de la camara de ESTE proyecto (JSON): modelo,
     # input_size, umbral por clase y quitar cajas anidadas. Vacio cuenta
     # como platform.yaml. Ver src/engine/perfil_deteccion.py.

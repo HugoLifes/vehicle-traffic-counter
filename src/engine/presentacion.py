@@ -349,7 +349,7 @@ def lugar_del_proyecto(proyecto: Dict) -> str:
 def generar_video(job: Dict, detector, config: Dict, salida: str, ancho: int = 1920,
                   desde: float = 0.0, segundos: Optional[float] = None,
                   clasificadores: Tuple = (None, None), lugar: Optional[str] = None,
-                  detener=None, progreso=None) -> Dict[int, Counter]:
+                  detener=None, progreso=None, para_web: bool = True) -> Dict[int, Counter]:
     """Video con el aforo dibujado (H.264, listo para el navegador), SIN
     escribir en la base: detecta, rastrea y cuenta por el mismo camino que
     VideoJobProcessor._process_job y solo dibuja. Sirve para darle su video
@@ -420,8 +420,12 @@ def generar_video(job: Dict, detector, config: Dict, salida: str, ancho: int = 1
     ff = subprocess.Popen(
         [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
          "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{ancho}x{alto}", "-r", f"{fps}",
-         "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-         "-pix_fmt", "yuv420p", "-movflags", "+faststart", salida],
+         "-i", "-", "-c:v", "libx264", "-preset", "medium"]
+        # Para verlo en la plataforma, tope de 2 Mb/s: por la dirección
+        # pública llegan ~4.5 Mb/s (medido) y a 3.4 el video se atoraba. El
+        # clip de presentación, que se descarga, va a calidad completa.
+        + (["-crf", "23", "-maxrate", "2M", "-bufsize", "4M"] if para_web else ["-crf", "18"])
+        + ["-pix_fmt", "yuv420p", "-movflags", "+faststart", salida],
         stdin=subprocess.PIPE)
     quitar_nacidos = bool(perfil.get("quitar_nacidos_en_pesado"))
     vistos_ids, nacidos = set(), set()

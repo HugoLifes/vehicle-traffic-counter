@@ -244,6 +244,12 @@ def _metadatos(job: Dict) -> Optional[Dict]:
         "tiene_procesado": bool(
             job.get("output_video_path") and _Path(job["output_video_path"]).exists()
         ),
+        # Si el original se puede reproducir como video en el navegador
+        # (routes_videos.get_original). Se decide por la extensión; si el
+        # códec no le sirve al navegador, la mesa de trabajo vuelve sola a
+        # pedir cuadro por cuadro.
+        "original_reproducible": _Path(job["stored_path"]).suffix.lower()
+        in (".mp4", ".m4v", ".mov", ".webm"),
     }
 
 

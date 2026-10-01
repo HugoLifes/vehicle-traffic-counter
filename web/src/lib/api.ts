@@ -269,6 +269,7 @@ export const getDireccional = (projectId: number, minutes: number) =>
   request<AforoDireccional>(`/api/projects/${projectId}/direccional?interval_minutes=${minutes}`);
 
 export const videoUrl = (jobId: number) => `/api/videos/${jobId}/video`;
+export const originalUrl = (jobId: number) => `/api/videos/${jobId}/original`;
 
 export const getDiagnostico = (jobId: number) =>
   request<DiagnosticoGuardado>(`/api/videos/${jobId}/diagnostico`);
@@ -281,8 +282,10 @@ export const anotarVideo = (jobId: number) =>
     method: 'POST',
   });
 
+/* Entra a la cola de la GPU y responde enseguida; el resultado se lee con
+   getDiagnostico cuando `diag_estado` del video se vacía. */
 export const diagnosticarVideo = (jobId: number, direccional = false) =>
-  request<{ diagnostico: DiagnosticoEncuadre }>(
+  request<{ job_id: number; diag_estado: string }>(
     `/api/videos/${jobId}/diagnostico?rastreo=true&direccional=${direccional}`,
     { method: 'POST' },
   );

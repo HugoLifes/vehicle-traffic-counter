@@ -11,6 +11,7 @@ ya lo subió él mismo, esto no es "grabar" una cámara en vivo, es dejar
 ver el resultado de procesar algo que ya era suyo.
 """
 
+import itertools
 import logging
 from collections import Counter
 import queue
@@ -43,6 +44,10 @@ from src.visualizer import Visualizer
 # acotarlo. El anotado es para MIRARLO —revisar líneas, zonas y cruces—, y a
 # 1280 de ancho se revisa igual. La detección sigue usando el cuadro
 # completo, así que el conteo no cambia.
+# Orden en la cola de la GPU: menor sale primero.
+PRIORIDAD_DIAGNOSTICO = 0
+PRIORIDAD_ANOTAR = 1
+PRIORIDAD_CONTEO = 2
 ANCHO_MAXIMO_ANOTADO = 1280
 
 
@@ -102,7 +107,13 @@ class VideoJobProcessor:
         self._live_job_id = None
         self._live_lock = threading.Lock()
 
-        self._queue = queue.Queue()
+        # Cola con prioridad: lo que alguien está esperando frente a la
+        # pantalla (revisar un encuadre, un minuto; el video con detecciones
+        # de UN video) pasa delante de los conteos, que pueden ser un aforo
+        # de 730 videos y 20 horas. Todo sigue en un solo hilo: nunca dos
+        # trabajos de GPU a la vez.
+        self._queue = queue.PriorityQueue()
+        self._turno = itertools.count()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._detector: Optional[VehicleDetector] = None
@@ -117,13 +128,19 @@ class VideoJobProcessor:
         for job in traffic_db.get_queued_video_jobs():
             if job['status'] == 'processing':
                 traffic_db.update_video_job(job['id'], status='queued', processed_frames=0)
-            self._queue.put(job['id'])
-        # Lo mismo con los videos con detecciones pedidos: la cola vive en
-        # memoria y sin esto se quedaban "en cola" para siempre.
-        for job_id, in traffic_db.get_connection().execute(
+            self._poner(PRIORIDAD_CONTEO, job['id'])
+        # Lo mismo con los videos con detecciones y las revisiones de
+        # encuadre pedidos: la cola vive en memoria y sin esto se quedaban
+        # "en cola" para siempre.
+        conn = traffic_db.get_connection()
+        for job_id, in conn.execute(
                 "SELECT id FROM video_jobs WHERE anotado_estado IN ('en_cola', 'generando')"
                 " ORDER BY id").fetchall():
             self.anotar(job_id)
+        for job_id, in conn.execute(
+                "SELECT id FROM video_jobs WHERE diag_estado IN ('en_cola', 'revisando')"
+                " ORDER BY id").fetchall():
+            self.diagnosticar(job_id)
 
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -131,7 +148,7 @@ class VideoJobProcessor:
 
     def stop(self):
         self._stop_event.set()
-        self._queue.put(None)
+        self._poner(-1, None)
         if self._thread:
             self._thread.join(timeout=5)
 
@@ -143,13 +160,39 @@ class VideoJobProcessor:
                 return None, None
             return self._live_frame.copy(), self._live_job_id
 
+    def _poner(self, prioridad: int, trabajo):
+        # El turno desempata: a igual prioridad, en el orden en que llegaron.
+        self._queue.put((prioridad, next(self._turno), trabajo))
+
     def enqueue(self, job_id: int):
-        self._queue.put(job_id)
+        self._poner(PRIORIDAD_CONTEO, job_id)
 
     def anotar(self, job_id: int):
         """Pide el video con detecciones de un video ya contado."""
         traffic_db.update_video_job(job_id, anotado_estado='en_cola', anotado_avance=0)
-        self._queue.put(('anotar', job_id))
+        self._poner(PRIORIDAD_ANOTAR, ('anotar', job_id))
+
+    def diagnosticar(self, job_id: int, rastreo: bool = True, direccional: bool = False,
+                     minutos: float = 1.0):
+        """Pide la revisión del encuadre de un video (diagnostico_encuadre)."""
+        traffic_db.update_video_job(job_id, diag_estado='en_cola', diag_error=None)
+        self._poner(PRIORIDAD_DIAGNOSTICO,
+                    ('diagnostico', job_id, {'rastreo': rastreo, 'direccional': direccional,
+                                             'minutos': minutos}))
+
+    def _diagnosticar_job(self, job_id: int, opciones: dict):
+        from src.engine.diagnostico_encuadre import VideoIlegible, diagnosticar_trabajo
+        job = traffic_db.get_video_job(job_id)
+        if job is None:
+            return
+        traffic_db.update_video_job(job_id, diag_estado='revisando')
+        try:
+            d = diagnosticar_trabajo(job, self._get_detector(), **opciones)
+        except VideoIlegible as e:
+            traffic_db.update_video_job(job_id, diag_estado='error', diag_error=str(e))
+            return
+        traffic_db.guardar_diagnostico(job_id, job.get('project_id'), d)
+        traffic_db.update_video_job(job_id, diag_estado=None, diag_error=None)
 
     def _anotar_job(self, job_id: int):
         """Dibuja el aforo sobre un video ya contado SIN recontarlo: recontar
@@ -254,10 +297,21 @@ class VideoJobProcessor:
     def _run(self):
         while not self._stop_event.is_set():
             try:
-                job_id = self._queue.get(timeout=1)
+                _, _, job_id = self._queue.get(timeout=1)
             except queue.Empty:
                 continue
             if job_id is None:
+                continue
+            if isinstance(job_id, tuple) and job_id[0] == 'diagnostico':
+                try:
+                    self._diagnosticar_job(job_id[1], job_id[2])
+                except Exception as e:
+                    logging.exception(f"No se pudo revisar el encuadre del video {job_id[1]}")
+                    try:
+                        traffic_db.update_video_job(job_id[1], diag_estado='error',
+                                                    diag_error=str(e)[:300])
+                    except Exception:
+                        pass
                 continue
             if isinstance(job_id, tuple):
                 # ('anotar', id): video con detecciones de un video ya

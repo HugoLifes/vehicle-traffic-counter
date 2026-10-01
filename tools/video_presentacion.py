@@ -64,7 +64,8 @@ def main():
 
     os.makedirs(os.path.dirname(os.path.abspath(a.salida)), exist_ok=True)
     conteo = generar_video(job, det, cfg, a.salida, ancho=1920, desde=a.desde,
-                           segundos=a.segundos, clasificadores=clasif, lugar=a.lugar)
+                           segundos=a.segundos, clasificadores=clasif, lugar=a.lugar,
+                           para_web=False)
 
     # Lo que guardó la plataforma en ese tramo, para comprobar.
     inicio = datetime.fromisoformat(job["video_start_time"])

@@ -156,6 +156,23 @@ function JobRow({
      que el backend lo rechaza mientras haya videos contándose. */
   const { data: diag } = useDiagnostico(job.id);
   const diagnosticar = useDiagnosticar();
+  const qcFila = useQueryClient();
+  /* La revisión corre en la cola de la GPU: mientras está pendiente el botón
+     lo dice, y en cuanto termina se lee el resultado. */
+  const revisando = job.diag_estado === 'en_cola' || job.diag_estado === 'revisando';
+  const estabaRevisando = useRef(revisando);
+  useEffect(() => {
+    if (estabaRevisando.current && !revisando) {
+      void qcFila.invalidateQueries({ queryKey: ['diagnostico', job.id] });
+    }
+    estabaRevisando.current = revisando;
+  }, [revisando, job.id, qcFila]);
+  const textoRevisar =
+    job.diag_estado === 'en_cola'
+      ? 'Revisión en cola…'
+      : job.diag_estado === 'revisando'
+        ? 'Revisando encuadre…'
+        : null;
   /* Video con detecciones: lo deja el conteo si el proyecto lo pide, o se
      genera después sobre un video ya contado, sin recontarlo. */
   const anotar = useAnotarVideo();
@@ -226,9 +243,9 @@ function JobRow({
         ) : (
           <Button
             onClick={() => diagnosticar.mutate({ jobId: job.id })}
-            disabled={diagnosticar.isPending}
+            disabled={diagnosticar.isPending || revisando}
           >
-            {diagnosticar.isPending ? 'Revisando…' : 'Revisar encuadre'}
+            {textoRevisar ?? (diagnosticar.isPending ? 'Pidiendo…' : 'Revisar encuadre')}
           </Button>
         )}
 
@@ -267,6 +284,23 @@ function JobRow({
         </IconButton>
       </div>
 
+      {job.diag_estado === 'error' && (
+        <div className="notice-stack">
+          <Notice tone="warning" title="No se pudo revisar el encuadre">
+            {job.diag_error || 'La revisión falló.'} Puedes volver a pedirla.
+          </Notice>
+        </div>
+      )}
+
+      {job.anotado_estado === 'error' && (
+        <div className="notice-stack">
+          <Notice tone="warning" title="No se pudo generar el video con detecciones">
+            El conteo de este video no cambió. Vuelve a pedirlo; si se repite, revisa que el
+            archivo original siga en el equipo.
+          </Notice>
+        </div>
+      )}
+
       {job.status === 'done' && job.aviso && (
         /* Lo que el conteo encontró raro en este video (zona que descarta
            casi todo, vehículos que no cruzaron ninguna línea, archivo
@@ -295,9 +329,9 @@ function JobRow({
             </span>
             <Button
               onClick={() => diagnosticar.mutate({ jobId: job.id })}
-              disabled={diagnosticar.isPending}
+              disabled={diagnosticar.isPending || revisando}
             >
-              {diagnosticar.isPending ? 'Revisando…' : 'Revisar de nuevo'}
+              {textoRevisar ?? (diagnosticar.isPending ? 'Pidiendo…' : 'Revisar de nuevo')}
             </Button>
           </div>
 

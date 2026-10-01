@@ -101,14 +101,14 @@ export function useDiagnosticar() {
     ...conAviso({
       mutationFn: ({ jobId, direccional }: { jobId: number; direccional?: boolean }) =>
         api.diagnosticarVideo(jobId, direccional),
-      exito: (d) => ({
-        titulo: `Encuadre ${d.diagnostico.veredicto}`,
-        detalle: `${d.diagnostico.puntaje}/100`,
+      exito: () => ({
+        titulo: 'Revisión del encuadre en camino',
+        detalle: 'Tarda uno o dos minutos; el resultado aparece en la fila del video.',
       }),
-      fallo: 'No se pudo diagnosticar el encuadre',
+      fallo: 'No se pudo pedir la revisión del encuadre',
     }),
-    onSuccess: (_d, v) => {
-      void qc.invalidateQueries({ queryKey: ['diagnostico', v.jobId] });
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['videos'] });
     },
   });
 }

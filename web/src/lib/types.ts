@@ -269,6 +269,10 @@ export interface VideoJob {
      (con su avance en %) o con error. Null si no hay nada pendiente. */
   anotado_estado?: 'en_cola' | 'generando' | 'error' | null;
   anotado_avance?: number | null;
+  /* Revisión del encuadre pedida: en la cola de la GPU, revisándose o con
+     error (y su motivo). Null cuando no hay nada pendiente. */
+  diag_estado?: 'en_cola' | 'revisando' | 'error' | null;
+  diag_error?: string | null;
 }
 
 export interface VehicleCounts {
@@ -379,6 +383,8 @@ export interface VideoSegment {
   hora_inicio: string | null;
   /** Si ya existe la versión que dibujó la IA sobre este video. */
   tiene_procesado: boolean;
+  /** Si el original se puede reproducir como video en el navegador. */
+  original_reproducible?: boolean;
 }
 
 /** Qué video se está viendo: la grabación tal cual, o la anotada por la IA. */

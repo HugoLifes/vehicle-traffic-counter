@@ -883,6 +883,7 @@
 }
 
 .ws-stage img,
+.ws-stage video,
 .ws-stage canvas {
   position: absolute;
   inset: 0;
@@ -890,7 +891,12 @@
   height: 100%;
   display: block;
 }
-.ws-stage img { object-fit: contain; }
+.ws-stage img,
+.ws-stage video { object-fit: contain; }
+/* Mientras se reproduce se ve el <video> y en pausa el cuadro exacto: los
+   dos están siempre montados y solo se esconde el que no toca, para que el
+   cambio no parpadee. */
+.ws-stage .is-oculto { visibility: hidden; }
 /* El lienzo solo pinta: los clics los recoge el contenedor, que es quien
    conoce la escala entre píxeles del video y píxeles de pantalla. */
 .ws-stage canvas { pointer-events: none; }
