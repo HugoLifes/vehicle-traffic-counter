@@ -1897,6 +1897,15 @@ Excel, y el dueño lo notó al comparar con el clip.
   tope de 2 Mb/s; las respuestas JSON van comprimidas (`src/api/compresion.py`:
   la lista de 731 videos, de 400 a 25 KB) y la cola se refresca cada 3 s solo
   con algo en marcha.
+- **La subida va por pedazos de 16 MB** (`/api/videos/subida/iniciar`, `PUT
+  /subida/{id}?offset=`, `/terminar`; los parciales en `data/uploads/parciales`,
+  se borran a los 3 días). Un video de campo de 3.3 GB en una sola petición
+  tardaba casi una hora por la dirección pública y un reinicio a la mitad lo
+  tiraba con un 502 sin que llegara nada. Probado por fuera: 700 MB de un
+  jalón en 13 min (0.9 MB/s, sin límite de tamaño en el camino) y 200 MB por
+  pedazos con un corte a la mitad, retomando desde 117 MB, idéntico por MD5.
+  **No reiniciar la plataforma con una subida en curso**: se ve con los
+  archivos borrados abiertos por el proceso 1 del contenedor.
 - **Revisar encuadre va por la cola de la GPU** (`video_jobs.diag_estado`).
   Antes respondía 409 mientras algo se contaba o se generaba, y desde la
   pantalla parecía que el botón no servía. La cola tiene prioridad:
