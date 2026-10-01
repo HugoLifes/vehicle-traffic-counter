@@ -209,6 +209,11 @@ def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
             f"Hay {len(ocupados)} videos en la cola de conteo. El diagnóstico usa la misma "
             "GPU y correr los dos a la vez estropea ambos: inténtalo cuando la cola termine."
         )
+    if traffic_db.get_connection().execute(
+            "SELECT 1 FROM video_jobs WHERE anotado_estado IN ('en_cola', 'generando')").fetchone():
+        raise HTTPException(
+            409, "Se está generando un video con detecciones, que usa la misma GPU: "
+                 "inténtalo cuando termine.")
 
     procesador = get_processor()
     if procesador is None:
@@ -249,6 +254,25 @@ def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
          "diagnostico": combinar(imagen, medidas_rastreo)}
     traffic_db.guardar_diagnostico(job_id, job.get("project_id"), d)
     return d
+
+
+@router.post("/{job_id}/anotar", status_code=202)
+def anotar(job_id: int):
+    """Genera el video con detecciones de un video ya contado, con el dibujo
+    de presentacion.py, sin recontarlo (recontar borra sus cruces y la
+    revisión de los pesados). Entra a la cola de la GPU detrás de lo que haya."""
+    job = traffic_db.get_video_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Video no encontrado")
+    if job["status"] != "done":
+        raise HTTPException(409, "El video todavía no está contado")
+    if job.get("anotado_estado") in ("en_cola", "generando"):
+        return {"job_id": job_id, "anotado_estado": job["anotado_estado"]}
+    procesador = get_processor()
+    if procesador is None:
+        raise HTTPException(503, "El procesador de video no está disponible")
+    procesador.anotar(job_id)
+    return {"job_id": job_id, "anotado_estado": "en_cola"}
 
 
 @router.get("/live-frame")

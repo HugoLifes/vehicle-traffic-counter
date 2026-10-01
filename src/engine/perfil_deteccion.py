@@ -69,6 +69,14 @@ def leer(proyecto: Optional[Dict]) -> Dict:
     for clave in ("clasificador_pesados", "clasificador_livianos"):
         if isinstance(perfil.get(clave), str) and perfil[clave].strip():
             limpio[clave] = perfil[clave].strip()
+    # Rectángulo [x1, y1, x2, y2] del cuadro original que se difumina en el
+    # video con detecciones: la leyenda de la cámara frontal dice otra fecha y
+    # otra hora (revisar_reloj.py) y contradice la hora real del encabezado.
+    tapar = perfil.get("tapar_leyenda")
+    if (isinstance(tapar, (list, tuple)) and len(tapar) == 4
+            and all(isinstance(v, (int, float)) and v >= 0 for v in tapar)
+            and tapar[2] > tapar[0] and tapar[3] > tapar[1]):
+        limpio["tapar_leyenda"] = [int(v) for v in tapar]
     return limpio
 
 

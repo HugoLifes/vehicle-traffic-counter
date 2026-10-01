@@ -216,6 +216,52 @@ export const uploadVideos = (form: FormData) =>
     { method: 'POST', body: form },
   );
 
+/*
+  Subida de UN video, con su avance. Con fetch no hay forma de saber cuánto
+  lleva una subida, y la pantalla mandaba todos los videos en una sola
+  petición: por internet, con la subida de una oficina (0.3–1 MB/s medido),
+  un lote de varios cientos de megas pasaba minutos en "Subiendo…" sin
+  moverse, y un corte a la mitad perdía el lote entero sin que el servidor
+  llegara a ver nada (1-oct-2026, primer día de la beta).
+*/
+export function uploadVideoConProgreso(
+  form: FormData,
+  onProgress: (cargado: number, total: number) => void,
+): Promise<{ accepted: VideoJob[]; rejected: { filename: string; reason: string }[] }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/videos/upload');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded, e.total);
+    };
+    xhr.onload = () => {
+      let body: unknown = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        /* respuesta sin JSON */
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body as { accepted: VideoJob[]; rejected: { filename: string; reason: string }[] });
+        return;
+      }
+      const detail =
+        body && typeof body === 'object' && 'detail' in body
+          ? String((body as { detail: unknown }).detail)
+          : `El servidor respondió ${xhr.status}.`;
+      reject(new ApiError(detail, xhr.status));
+    };
+    xhr.onerror = () =>
+      reject(
+        new ApiError(
+          'Se cortó la conexión a media subida. Los videos que ya subieron se quedan; vuelve a intentar con los que faltan.',
+          0,
+        ),
+      );
+    xhr.send(form);
+  });
+}
+
 export const getMetrics = (projectId: number, minutes: number) =>
   request<ProjectMetrics>(`/api/videos/metrics?project_id=${projectId}&minutes=${minutes}`);
 
@@ -229,6 +275,12 @@ export const getDiagnostico = (jobId: number) =>
 
 /* El diagnóstico usa la misma GPU que la cola de conteo, así que el backend
    lo rechaza mientras haya videos contándose. */
+/* Video con detecciones de un video ya contado, sin recontarlo. */
+export const anotarVideo = (jobId: number) =>
+  request<{ job_id: number; anotado_estado: string }>(`/api/videos/${jobId}/anotar`, {
+    method: 'POST',
+  });
+
 export const diagnosticarVideo = (jobId: number, direccional = false) =>
   request<{ diagnostico: DiagnosticoEncuadre }>(
     `/api/videos/${jobId}/diagnostico?rastreo=true&direccional=${direccional}`,

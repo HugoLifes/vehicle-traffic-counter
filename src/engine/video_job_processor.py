@@ -27,7 +27,7 @@ import imageio_ffmpeg
 from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
-from src.engine import conteo_trayectoria, perfil_deteccion
+from src.engine import conteo_trayectoria, perfil_deteccion, presentacion
 from src.engine.lanes import build_lane_counters
 from src.engine.velocidad import MedidorVelocidad
 from src.engine.origen_destino import AforoDireccional
@@ -118,6 +118,12 @@ class VideoJobProcessor:
             if job['status'] == 'processing':
                 traffic_db.update_video_job(job['id'], status='queued', processed_frames=0)
             self._queue.put(job['id'])
+        # Lo mismo con los videos con detecciones pedidos: la cola vive en
+        # memoria y sin esto se quedaban "en cola" para siempre.
+        for job_id, in traffic_db.get_connection().execute(
+                "SELECT id FROM video_jobs WHERE anotado_estado IN ('en_cola', 'generando')"
+                " ORDER BY id").fetchall():
+            self.anotar(job_id)
 
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -139,6 +145,60 @@ class VideoJobProcessor:
 
     def enqueue(self, job_id: int):
         self._queue.put(job_id)
+
+    def anotar(self, job_id: int):
+        """Pide el video con detecciones de un video ya contado."""
+        traffic_db.update_video_job(job_id, anotado_estado='en_cola', anotado_avance=0)
+        self._queue.put(('anotar', job_id))
+
+    def _anotar_job(self, job_id: int):
+        """Dibuja el aforo sobre un video ya contado SIN recontarlo: recontar
+        borra sus cruces, y con ellos la revisión de los pesados. Cuenta en
+        memoria por el mismo camino que _process_job (presentacion.generar_video)
+        y deja el resultado como el video con detecciones del trabajo."""
+        job = traffic_db.get_video_job(job_id)
+        if job is None or job['status'] != 'done':
+            if job is not None:
+                traffic_db.update_video_job(job_id, anotado_estado=None)
+            return
+        traffic_db.update_video_job(job_id, anotado_estado='generando', anotado_avance=0)
+        proyecto = traffic_db.get_project(job.get('project_id')) or {}
+        perfil = perfil_deteccion.leer(proyecto)
+        detector = self._get_detector(perfil.get('modelo'), perfil.get('input_size'))
+        clasificadores = (self._get_clasificador(perfil.get('clasificador_pesados')),
+                          self._get_clasificador(perfil.get('clasificador_livianos')))
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = OUTPUT_DIR / f"{job_id}_annotated.tmp.mp4"
+        final = OUTPUT_DIR / f"{job_id}_annotated.mp4"
+        ultimo = [0]
+
+        def avance(p):
+            pct = int(p * 100)
+            if pct >= ultimo[0] + 2:
+                ultimo[0] = pct
+                traffic_db.update_video_job(job_id, anotado_avance=pct)
+
+        try:
+            presentacion.generar_video(
+                job, detector, {**self.config, 'confidence_threshold': self.confidence_threshold},
+                str(tmp), ancho=None, clasificadores=clasificadores,
+                detener=self._stop_event.is_set, progreso=avance)
+        except InterruptedError:
+            tmp.unlink(missing_ok=True)
+            traffic_db.update_video_job(job_id, anotado_estado=None)
+            return
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
+        # El servidor de cuadros tiene abierto el anotado anterior.
+        try:
+            from src.api.routes_video_frames import cerrar_captura
+            cerrar_captura(job_id)
+        except Exception:
+            pass
+        tmp.replace(final)
+        traffic_db.update_video_job(job_id, output_video_path=str(final),
+                                    anotado_estado=None, anotado_avance=100)
 
     # --- Internos --------------------------------------------------
 
@@ -198,6 +258,19 @@ class VideoJobProcessor:
             except queue.Empty:
                 continue
             if job_id is None:
+                continue
+            if isinstance(job_id, tuple):
+                # ('anotar', id): video con detecciones de un video ya
+                # contado. Va por la misma cola para no correr nunca dos
+                # trabajos de GPU a la vez (NvMapMemAllocInternalTagged).
+                try:
+                    self._anotar_job(job_id[1])
+                except Exception as e:
+                    logging.exception(f"No se pudo generar el video con detecciones de {job_id[1]}")
+                    try:
+                        traffic_db.update_video_job(job_id[1], anotado_estado='error')
+                    except Exception:
+                        pass
                 continue
             try:
                 self._process_job(job_id)
@@ -377,6 +450,22 @@ class VideoJobProcessor:
             raw_path = OUTPUT_DIR / f"{job_id}_raw.mp4"
             final_path = OUTPUT_DIR / f"{job_id}_annotated.mp4"
             escala_salida = min(1.0, ANCHO_MAXIMO_ANOTADO / frame_width)
+            # Aforo por línea: el dibujo de presentacion.py, el mismo de los
+            # clips (clase que se entrega sobre cada vehículo y un marcador
+            # por sentido). Se dibuja siempre a 1280 de ancho, también desde
+            # un video de 640: el texto del marcador a la mitad no se lee.
+            # El direccional sigue con el dibujo de antes.
+            marcador = None
+            if lane_counters:
+                umbral_carril, perfil_carril = presentacion.escala_por_carril(job.get('project_id'))
+                marcador = presentacion.Marcador(
+                    lane_meta, fps, umbral_carril, perfil_carril,
+                    horas_subtipo=perfil.get('horas_subtipo', (7, 19)),
+                    inicio=(datetime.fromisoformat(job['video_start_time'])
+                            if job.get('video_start_time') else None),
+                    lugar=presentacion.lugar_del_proyecto(proyecto),
+                    tapar=perfil.get('tapar_leyenda'))
+                escala_salida = ANCHO_MAXIMO_ANOTADO / frame_width
             salida_w = int(frame_width * escala_salida) // 2 * 2
             salida_h = int(frame_height * escala_salida) // 2 * 2
             # Guardar el video anotado es opcional POR PROYECTO. Apagado, el
@@ -468,8 +557,12 @@ class VideoJobProcessor:
                 # Sin video que guardar solo se dibuja de vez en cuando, para
                 # el visor en vivo: dibujar cuesta 22 ms por cuadro.
                 dibujar = guardar_anotado or frame_count % cada_para_vivo == 0
+                # Con el marcador se dibuja al final, ya con los cruces de
+                # este cuadro. Y sobre una copia: draw_zones pinta encima del
+                # cuadro que recibe, y los clasificadores recortan de ese
+                # mismo cuadro al contar (se entrenaron con recortes limpios).
                 annotated = (visualizer.draw_tracks(draw_zones(frame, zonas), tracks)
-                             if dibujar else frame)
+                             if dibujar and marcador is None else frame)
 
                 resumen = []
                 for idx, (lane_id, counter) in enumerate(lane_counters.items()):
@@ -539,6 +632,10 @@ class VideoJobProcessor:
                             r = clasificador_livianos.clasificar(frame, track['bbox'])
                             if r:
                                 subtipo, prob_subtipo = r
+                        if marcador is not None and track is not None:
+                            marcador.registrar(lane_id, crossing['track_id'], marcador.clase(
+                                lane_id, track, frame_count, clase_modelo, prob_modelo,
+                                subtipo, prob_subtipo))
                         # Con conteo por trayectoria el panel del video sigue
                         # mostrando el conteo en vivo, pero lo que se GUARDA
                         # se decide al final, sobre los recorridos completos.
@@ -563,18 +660,24 @@ class VideoJobProcessor:
                                 prob_subtipo=prob_subtipo
                             )
 
-                    color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
-                    line_coords = lane_meta[lane_id]["points"]
-                    annotated = visualizer.draw_counting_line(annotated, line_coords, line_color=color)
-                    resumen.append((lane_meta[lane_id]["name"], counter.get_counts(), color))
+                    if marcador is None:
+                        color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
+                        line_coords = lane_meta[lane_id]["points"]
+                        annotated = visualizer.draw_counting_line(annotated, line_coords, line_color=color)
+                        resumen.append((lane_meta[lane_id]["name"], counter.get_counts(), color))
 
-                # Un solo panel compacto para todos los carriles. Antes se
-                # dibujaba un bloque de 5 líneas POR carril, que con dos
-                # carriles tapaba un tercio del cuadro justo donde entran
-                # los vehículos.
-                annotated = visualizer.draw_lane_summary(annotated, resumen)
+                if marcador is not None:
+                    if dibujar:
+                        annotated = marcador.dibujar(frame, tracks, frame_count, salida_w, salida_h)
+                    marcador.avanzar()
+                else:
+                    # Un solo panel compacto para todos los carriles. Antes se
+                    # dibujaba un bloque de 5 líneas POR carril, que con dos
+                    # carriles tapaba un tercio del cuadro justo donde entran
+                    # los vehículos.
+                    annotated = visualizer.draw_lane_summary(annotated, resumen)
 
-                if dibujar and escala_salida < 1.0:
+                if dibujar and marcador is None and escala_salida < 1.0:
                     annotated = cv2.resize(annotated, (salida_w, salida_h),
                                            interpolation=cv2.INTER_AREA)
                 if writer is not None:

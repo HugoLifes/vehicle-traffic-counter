@@ -78,6 +78,23 @@ export function useDiagnostico(jobId: number) {
   });
 }
 
+export function useAnotarVideo() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...conAviso({
+      mutationFn: ({ jobId }: { jobId: number }) => api.anotarVideo(jobId),
+      exito: () => ({
+        titulo: 'Video con detecciones en camino',
+        detalle: 'Entra a la cola; el avance se ve en la fila del video.',
+      }),
+      fallo: 'No se pudo pedir el video con detecciones',
+    }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['videos'] });
+    },
+  });
+}
+
 export function useDiagnosticar() {
   const qc = useQueryClient();
   return useMutation({

@@ -256,6 +256,12 @@ def init_schema():
     # vehiculos sin ningun cruce, archivo cortado). Antes iban solo al
     # registro del contenedor, que quien opera la plataforma nunca lee.
     _ensure_column(conn, "video_jobs", "aviso", "TEXT")
+    # Video con detecciones pedido para un video YA contado, sin recontarlo
+    # (presentacion.generar_video): 'en_cola', 'generando' o 'error', y el
+    # avance en porcentaje mientras se genera. Vacio cuando no hay nada
+    # pendiente.
+    _ensure_column(conn, "video_jobs", "anotado_estado", "TEXT")
+    _ensure_column(conn, "video_jobs", "anotado_avance", "INTEGER")
     # Perfil de deteccion de la camara de ESTE proyecto (JSON): modelo,
     # input_size, umbral por clase y quitar cajas anidadas. Vacio cuenta
     # como platform.yaml. Ver src/engine/perfil_deteccion.py.

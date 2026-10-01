@@ -13,15 +13,17 @@ import { Link } from 'react-router-dom';
 import { Button, Card, EmptyState, IconButton, Notice, Pill } from '../components/ui';
 import { IconClose, IconEye, IconTrash, IconUpload, IconVideo } from '../components/Icons';
 import {
+  useAnotarVideo,
   useDeleteVideo,
   useDiagnosticar,
   useDiagnostico,
   useStartCounting,
-  useUploadVideos,
+  keys,
   useVideos,
 } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { errorMessage, frameUrl, videoUrl } from '../lib/api';
+import { errorMessage, frameUrl, uploadVideoConProgreso, videoUrl } from '../lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   JOB_STATUS_LABEL,
   JOB_STATUS_TONE,
@@ -154,6 +156,11 @@ function JobRow({
      que el backend lo rechaza mientras haya videos contándose. */
   const { data: diag } = useDiagnostico(job.id);
   const diagnosticar = useDiagnosticar();
+  /* Video con detecciones: lo deja el conteo si el proyecto lo pide, o se
+     genera después sobre un video ya contado, sin recontarlo. */
+  const anotar = useAnotarVideo();
+  const tieneVideo = Boolean(job.output_video_path);
+  const anotando = job.anotado_estado === 'en_cola' || job.anotado_estado === 'generando';
   const d = diag?.datos?.diagnostico;
   /* Los avisos son lo útil del diagnóstico —dicen qué cambiar de la cámara—,
      así que cuando el encuadre NO sale bueno el detalle se abre solo:
@@ -225,7 +232,21 @@ function JobRow({
           </Button>
         )}
 
-        {job.status === 'done' && (
+        {job.status === 'done' && anotando && (
+          <Pill tone="accent" dot live>
+            {job.anotado_estado === 'en_cola'
+              ? 'Video con detecciones en cola'
+              : `Generando video · ${job.anotado_avance ?? 0} %`}
+          </Pill>
+        )}
+
+        {job.status === 'done' && !anotando && !tieneVideo && (
+          <Button onClick={() => anotar.mutate({ jobId: job.id })} disabled={anotar.isPending}>
+            {job.anotado_estado === 'error' ? 'Reintentar video' : 'Generar video con detecciones'}
+          </Button>
+        )}
+
+        {job.status === 'done' && tieneVideo && !anotando && (
           <IconButton
             label={open ? 'Ocultar el video con detecciones' : 'Ver el video con las detecciones'}
             tone="accent"
@@ -305,7 +326,7 @@ function JobRow({
         </div>
       )}
 
-      {open && (
+      {open && tieneVideo && !anotando && (
         /*
           Vista rápida dentro de la cola: sirve para confirmar de un
           vistazo que el conteo hizo algo razonable. Para mirar de verdad
@@ -332,13 +353,18 @@ function JobRow({
             loop={loop}
             preload="metadata"
             poster={frameUrl(job.id, Math.floor((job.total_frames ?? 2) / 2), 'procesado')}
-            src={videoUrl(job.id)}
+            /* El avance cambia al regenerarlo: sin esto el navegador puede
+               seguir mostrando el video de antes, que tenía la misma ruta. */
+            src={`${videoUrl(job.id)}?v=${job.anotado_avance ?? 0}`}
           />
           <div className="jp-foot">
             <label className="jp-loop">
               <input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} />
               <span>Repetir en bucle</span>
             </label>
+            <Button onClick={() => anotar.mutate({ jobId: job.id })} disabled={anotar.isPending}>
+              Volver a generar
+            </Button>
             <Link className="jp-link" to={`/proyecto/${projectId}/calibrar?job=${job.id}&ver=procesado`}>
               Revisar cuadro a cuadro
             </Link>
@@ -356,7 +382,23 @@ export default function Subir() {
   // La cola se acota a la intersección elegida: con varios aforos en curso,
   // ver los videos de todos mezclados no ayuda a nadie.
   const { data: jobs } = useVideos(projectId ?? undefined, true);
-  const upload = useUploadVideos();
+  const qc = useQueryClient();
+  /* Avance de cada video mientras sube, uno por uno. */
+  const [progreso, setProgreso] = useState<
+    Record<string, { cargado: number; total: number; estado: 'subiendo' | 'error' }>
+  >({});
+  const [subiendo, setSubiendo] = useState(false);
+
+  /* Cerrar la página a media subida la pierde: el navegador pregunta antes. */
+  useEffect(() => {
+    if (!subiendo) return;
+    const alSalir = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', alSalir);
+    return () => window.removeEventListener('beforeunload', alSalir);
+  }, [subiendo]);
   const remove = useDeleteVideo();
   const start = useStartCounting();
 
@@ -402,30 +444,63 @@ export default function Subir() {
     // no hacer nada.
     if (projectId === null) return;
 
-    const form = new FormData();
-    const startTimes: Record<string, string> = {};
-    for (const entry of pending) {
-      form.append('files', entry.file);
-      if (entry.date && entry.time) startTimes[entry.file.name] = `${entry.date} ${entry.time}`;
-    }
-    form.append('project_id', String(projectId));
-    form.append('start_times', JSON.stringify(startTimes));
+    if (subiendo) return;
 
-    try {
-      const result = await upload.mutateAsync(form);
-      if (result.rejected?.length) setRejections((r) => [...r, ...result.rejected]);
-      setMessage(
-        `${plural(pending.length, 'video subido', 'videos subidos')}. El siguiente paso es calibrar los carriles.`,
+    /* Uno por uno: cada video que termina ya está a salvo en el servidor
+       aunque el siguiente falle, y la barra dice cuánto falta. */
+    setSubiendo(true);
+    let subidos = 0;
+    let fallidos = 0;
+    for (const entry of [...pending]) {
+      setProgreso((p) => ({
+        ...p,
+        [entry.id]: { cargado: 0, total: entry.file.size, estado: 'subiendo' },
+      }));
+      const form = new FormData();
+      form.append('files', entry.file);
+      form.append('project_id', String(projectId));
+      form.append(
+        'start_times',
+        JSON.stringify(
+          entry.date && entry.time ? { [entry.file.name]: `${entry.date} ${entry.time}` } : {},
+        ),
       );
-      setPending([]);
-    } catch (e) {
-      setRejections((r) => [
-        ...r,
-        ...pending.map((p) => ({
-          filename: p.file.name,
-          reason: `No se pudo subir. ${errorMessage(e)}`,
-        })),
-      ]);
+      try {
+        const r = await uploadVideoConProgreso(form, (cargado, total) =>
+          setProgreso((p) => ({ ...p, [entry.id]: { cargado, total, estado: 'subiendo' } })),
+        );
+        if (r.rejected?.length) setRejections((x) => [...x, ...r.rejected]);
+        subidos += r.accepted?.length ?? 0;
+        setPending((p) => p.filter((x) => x.id !== entry.id));
+        setProgreso((p) => {
+          const n = { ...p };
+          delete n[entry.id];
+          return n;
+        });
+        qc.invalidateQueries({ queryKey: ['videos'] });
+      } catch (e) {
+        fallidos += 1;
+        setProgreso((p) => ({
+          ...p,
+          [entry.id]: { cargado: 0, total: entry.file.size, estado: 'error' },
+        }));
+        setRejections((x) => [
+          ...x,
+          { filename: entry.file.name, reason: `No se pudo subir. ${errorMessage(e)}` },
+        ]);
+      }
+    }
+    setSubiendo(false);
+    qc.invalidateQueries({ queryKey: ['videos'] });
+    qc.invalidateQueries({ queryKey: keys.projects });
+    if (subidos > 0) {
+      setMessage(
+        `${plural(subidos, 'video subido', 'videos subidos')}.` +
+          (fallidos
+            ? ` ${plural(fallidos, 'quedó', 'quedaron')} en la lista para volver a intentar.`
+            : '') +
+          ' El siguiente paso es calibrar los carriles.',
+      );
     }
   }
 
@@ -539,17 +614,62 @@ export default function Subir() {
                   label={`Quitar ${entry.file.name} de la lista`}
                   onClick={() => setPending((p) => p.filter((x) => x.id !== entry.id))}
                   style={{ marginInlineStart: 'auto' }}
+                  disabled={subiendo}
                 >
                   <IconClose />
                 </IconButton>
+                {progreso[entry.id] && (
+                  <div className="sf-progreso">
+                    {progreso[entry.id].estado === 'error' ? (
+                      <span className="sf-meta">No se pudo subir; sigue en la lista para reintentar.</span>
+                    ) : (
+                      <>
+                        <div
+                          className="job-progress"
+                          role="progressbar"
+                          aria-valuenow={Math.round(
+                            (100 * progreso[entry.id].cargado) / Math.max(1, progreso[entry.id].total),
+                          )}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-label={`Subida de ${entry.file.name}`}
+                        >
+                          <div
+                            className="bar"
+                            style={{
+                              scale: `${progreso[entry.id].cargado / Math.max(1, progreso[entry.id].total)} 1`,
+                            }}
+                          />
+                        </div>
+                        <span className="sf-meta">
+                          {Math.round(
+                            (100 * progreso[entry.id].cargado) / Math.max(1, progreso[entry.id].total),
+                          )}{' '}
+                          % · {formatSize(progreso[entry.id].cargado)} de{' '}
+                          {formatSize(progreso[entry.id].total)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
+          {subiendo && (
+            <p className="field-hint">
+              Subiendo un video a la vez. No cierres esta página hasta que termine: la velocidad
+              depende del internet de este equipo, y por internet un video de 10 minutos puede
+              tardar de 10 a 20 minutos.
+            </p>
+          )}
+
           <div className="staging-actions">
-            <Button onClick={() => setPending([])}>Cancelar</Button>
-            <Button variant="primary" onClick={() => void confirmUpload()} disabled={upload.isPending}>
-              {upload.isPending
+            <Button onClick={() => setPending([])} disabled={subiendo}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={() => void confirmUpload()} disabled={subiendo}>
+              {subiendo
                 ? 'Subiendo…'
                 : pending.length === 1
                   ? 'Subir 1 video'

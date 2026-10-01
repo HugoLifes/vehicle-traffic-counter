@@ -263,6 +263,12 @@ export interface VideoJob {
   /* Avisos del último conteo: zona que descarta casi todo, vehículos que no
      cruzaron ninguna línea, archivo cortado. Null si no hubo nada que avisar. */
   aviso?: string | null;
+  /* Ruta del video con detecciones; null si todavía no hay. */
+  output_video_path?: string | null;
+  /* Video con detecciones pedido para un video ya contado: en cola, generándose
+     (con su avance en %) o con error. Null si no hay nada pendiente. */
+  anotado_estado?: 'en_cola' | 'generando' | 'error' | null;
+  anotado_avance?: number | null;
 }
 
 export interface VehicleCounts {
