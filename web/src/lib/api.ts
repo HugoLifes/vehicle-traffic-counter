@@ -27,7 +27,6 @@ import type {
 } from './types';
 import type {
   AforoDireccional,
-  DiagnosticoEncuadre,
   DiagnosticoGuardado,
   EventoProyecto,
   FichaCamara,
