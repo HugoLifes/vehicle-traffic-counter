@@ -54,15 +54,29 @@ function Metrics({ m }: { m: ProjectMetrics }) {
         <div className="rr-hero-label">Volumen total</div>
         <div className="rr-hero-n">{formatNumber(m.totals.total)}</div>
         <div className="rr-hero-sub">vehículos cruzaron las líneas de conteo</div>
+        {/* Con una línea por sentido, el reparto que se lee es el de cada
+            sentido ("Poniente → Oriente"); "entrada" y "salida" son el lado
+            de la línea por el que se cruzó, que solo dice algo con una sola. */}
         <div className="rr-split">
-          <div className="rr-split-item">
-            <span className="num">{formatNumber(m.totals.in)}</span>
-            <span>entrada</span>
-          </div>
-          <div className="rr-split-item">
-            <span className="num">{formatNumber(m.totals.out)}</span>
-            <span>salida</span>
-          </div>
+          {m.lanes.length >= 2 && m.lanes.length <= 3
+            ? m.lanes.map((l) => (
+                <div className="rr-split-item" key={l.lane_id}>
+                  <span className="num">{formatNumber(l.total)}</span>
+                  <span>{l.lane_name}</span>
+                </div>
+              ))
+            : (
+                <>
+                  <div className="rr-split-item">
+                    <span className="num">{formatNumber(m.totals.in)}</span>
+                    <span>entrada</span>
+                  </div>
+                  <div className="rr-split-item">
+                    <span className="num">{formatNumber(m.totals.out)}</span>
+                    <span>salida</span>
+                  </div>
+                </>
+              )}
         </div>
       </div>
 

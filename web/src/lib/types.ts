@@ -34,6 +34,8 @@ export interface Project {
   /* Aforo direccional: movimientos contados y accesos dibujados. */
   movement_count?: number;
   access_count?: number;
+  /* Cruces con la clase de pesado revisada sobre su recorte; recontar la borra. */
+  revisados_count?: number;
   /* Si el vehículo se ve grande (cámara de frente o cercana) o chico
      (lejana o de lado). Lo decide el servidor a partir de lo guardado. */
   tipo_camara?: TipoCamara;

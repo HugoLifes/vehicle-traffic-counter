@@ -298,8 +298,15 @@ export default function ProyectoResumen() {
       <ConfirmDialog
         open={confirmarReconteo}
         title="¿Volver a contar todo?"
-        body={`Se reprocesan los ${project.video_count} videos de "${project.name}" con la calibración actual. Los conteos anteriores se reemplazan. Puede tardar un buen rato.`}
+        body={
+          `Se reprocesan los ${project.video_count.toLocaleString('es-MX')} videos de "${project.name}" con la calibración actual y los conteos anteriores se reemplazan. ` +
+          `En el equipo tarda de 1.6 a 2.7 minutos por cada minuto de video, y mientras tanto la cola no hace otra cosa.` +
+          ((project.revisados_count ?? 0) > 0
+            ? ` Se pierde además la revisión de la clase de ${project.revisados_count!.toLocaleString('es-MX')} pesados hecha sobre sus recortes, y habría que volver a hacerla.`
+            : '')
+        }
         confirmLabel="Volver a contar"
+        destructive={(project.revisados_count ?? 0) > 0}
         onConfirm={() => {
           recontar.mutate(id);
           setConfirmarReconteo(false);

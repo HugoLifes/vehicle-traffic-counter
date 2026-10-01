@@ -34,7 +34,7 @@ interface PageProps {
 }
 
 export function Page({ title, subtitle, hideGuide, hideHeader, actions, children }: PageProps) {
-  const { project, projects } = useProjectParam();
+  const { project, projects, isLoading } = useProjectParam();
 
   /*
     En la lista de proyectos no hay ninguna intersección elegida, pero la
@@ -77,7 +77,12 @@ export function Page({ title, subtitle, hideGuide, hideHeader, actions, children
             {actions && <div className="page-head-acciones">{actions}</div>}
           </div>
         )}
-        {!hideGuide && <Guia project={project ?? guideReference} projectCount={projects.length} />}
+        {/* Mientras llegan los proyectos no se sabe en qué paso va el usuario:
+            sin esta espera la guía decía "crea la intersección" un instante
+            al abrir el reporte de un aforo de 20 mil vehículos. */}
+        {!hideGuide && !isLoading && (
+          <Guia project={project ?? guideReference} projectCount={projects.length} />
+        )}
         <main id="contenido" tabIndex={-1}>
           {children}
         </main>

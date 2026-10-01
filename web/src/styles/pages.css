@@ -463,6 +463,10 @@
   .calib-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* Texto de ayuda de los paneles de Calibrar. Solo tenía estilo dentro de
+   "Empezar conteo" y de las zonas; en el panel de carriles heredaba el
+   tamaño del cuerpo y se leía como un titular. */
+.sc-info { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; }
 .zone-panel .sc-info { margin-bottom: var(--space-3); }
 
 .calib-main { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
@@ -1078,10 +1082,14 @@
 
 /* --- Distintivo sobre el video ---------------------------------------- */
 
+/* Abajo al centro: el video con detecciones lleva su marcador por sentido
+   en las dos esquinas de arriba, y ahí la etiqueta tapaba el de la derecha. */
 .ws-badge {
   position: absolute;
-  top: var(--space-3);
-  inset-inline-end: var(--space-3);
+  bottom: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
   background: rgba(4, 8, 14, 0.78);
   color: #fff;
   font-size: var(--text-xs);
@@ -1093,8 +1101,10 @@
 }
 /* El aviso de dibujo va al lado contrario para no taparse con el otro. */
 .ws-badge-draw {
-  inset-inline-end: auto;
-  inset-inline-start: var(--space-3);
+  bottom: auto;
+  top: var(--space-3);
+  left: var(--space-3);
+  transform: none;
   background: var(--accent);
   color: var(--accent-ink);
 }

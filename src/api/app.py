@@ -90,6 +90,13 @@ if os.environ.get("AFORO_USUARIO") and os.environ.get("AFORO_CONTRASENA"):
     app.add_middleware(AccesoBasico, usuario=os.environ["AFORO_USUARIO"],
                        contrasena=os.environ["AFORO_CONTRASENA"])
 
+from src.api.compresion import GzipSoloDatos  # noqa: E402
+
+# Por la dirección pública llegan ~4.5 Mb/s, y la lista de los 731 videos
+# del aforo frontal (400 KB) se pedía cada 3 s: un cuarto del ancho de banda
+# se iba en eso mientras el video se atoraba (1-oct-2026).
+app.add_middleware(GzipSoloDatos)
+
 from src.api.routes_counts import router as counts_router  # noqa: E402
 from src.api.routes_videos import router as videos_router  # noqa: E402
 from src.api.routes_camera import router as camera_router  # noqa: E402

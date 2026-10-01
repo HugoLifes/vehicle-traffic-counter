@@ -18,7 +18,7 @@ import { avisar } from './avisos';
 import { navegarA } from './navegar';
 import { errorMessage } from './api';
 import { plural } from './format';
-import type { Point, ProjectCreate, Tramo } from './types';
+import type { Point, ProjectCreate, Tramo, VideoJob } from './types';
 
 /** La cola y la cámara se miran en vivo; 3 s es el ritmo del backend. */
 const LIVE_MS = 3000;
@@ -45,11 +45,31 @@ export function useLanes(projectId: number | null) {
   });
 }
 
+/* Sin nada en marcha la cola solo cambia cuando alguien sube o borra, y esa
+   pantalla ya refresca sola al hacerlo: basta con mirar cada 15 s. Con 731
+   videos la lista pesa 400 KB, y pedirla cada 3 s por internet le quitaba
+   ancho de banda al video. */
+const QUIETO_MS = 15000;
+
+function hayActividad(jobs: VideoJob[] | undefined): boolean {
+  return (jobs ?? []).some(
+    (j) =>
+      j.status === 'queued' ||
+      j.status === 'processing' ||
+      j.anotado_estado === 'en_cola' ||
+      j.anotado_estado === 'generando' ||
+      j.diag_estado === 'en_cola' ||
+      j.diag_estado === 'revisando',
+  );
+}
+
 export function useVideos(projectId?: number, live = false) {
   return useQuery({
     queryKey: keys.videos(projectId),
     queryFn: () => api.listVideos(projectId),
-    refetchInterval: live ? LIVE_MS : false,
+    refetchInterval: live
+      ? (q) => (hayActividad(q.state.data as VideoJob[] | undefined) ? LIVE_MS : QUIETO_MS)
+      : false,
   });
 }
 

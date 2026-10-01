@@ -443,6 +443,12 @@ def list_projects() -> List[Dict]:
                (SELECT COUNT(*) FROM crossings c
                     JOIN lane_configs l ON c.lane_id = l.id
                     WHERE l.project_id = p.id) AS crossing_count,
+               -- Cruces con la clase revisada sobre su recorte
+               -- (revisar_pesados.py). Recontar los borra: la pantalla lo
+               -- dice antes de confirmar.
+               (SELECT COUNT(*) FROM crossings c
+                    JOIN lane_configs l ON c.lane_id = l.id
+                    WHERE l.project_id = p.id AND c.clase_revisada IS NOT NULL) AS revisados_count,
                -- Un aforo direccional no tiene cruces de linea sino
                -- movimientos: sin esto la tarjeta decia "sin contar
                -- todavia" de Altozano, con 1 081 movimientos contados.
@@ -635,8 +641,13 @@ def update_lane(lane_id: int, name: Optional[str] = None,
         params.append(zone_id or None)
     if not fields:
         return
+    # Solo un cambio de geometría deja los conteos ya hechos como de otra
+    # calibración. Renombrar no: al poner "Poniente → Oriente" en el
+    # proyecto 7 (1-oct-2026) la pantalla declaró los 731 videos de una
+    # calibración anterior y ofreció recontarlos, lo que habría borrado la
+    # revisión de los pesados. Corregir la distancia del tramo tampoco.
     geometria = [f for f in fields if not f.startswith("name")]
-    if not (solo_distancia and len(geometria) == 1):
+    if geometria and not (solo_distancia and len(geometria) == 1):
         fields.append("updated_at = datetime('now')")
     params.append(lane_id)
     conn.execute(f"UPDATE lane_configs SET {', '.join(fields)} WHERE id = ?", params)
