@@ -148,6 +148,10 @@ def main():
     ap.add_argument("--segundos", type=float, default=30.0)
     ap.add_argument("--salida", required=True)
     ap.add_argument("--lugar", default="Blvd. Miguel de la Madrid · Cd. Juárez")
+    ap.add_argument("--sentido", action="append", default=[],
+                    help='nombre del sentido de una línea: "texto de su nombre=Oriente → '
+                         'Poniente". En el frontal la calzada que se aleja va al poniente '
+                         '(ver "Dónde está" en CLAUDE.md)')
     ap.add_argument("--tapar", default=None,
                     help="x1,y1,x2,y2 del clip (1920x1080) a difuminar: la leyenda de "
                          "la cámara, que en el frontal dice otra fecha y otra hora "
@@ -213,6 +217,10 @@ def main():
         nombre = m["name"].replace("Carril ", "")
         nombre = nombre.replace("camara", "cámara").replace("alejandose", "alejándose")
         sentidos[lane_id] = nombre[:1].upper() + nombre[1:]
+        for regla in a.sentido:
+            texto, _, rumbo = regla.partition("=")
+            if texto.lower() in m["name"].lower():
+                sentidos[lane_id] = rumbo
     destello = {lid: (0, None) for lid in meta}   # cuadros que le quedan, color
     conteo = {lid: Counter() for lid in meta}
     recien = {lid: Counter() for lid in meta}
