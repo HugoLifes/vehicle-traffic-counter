@@ -124,6 +124,14 @@ def main():
     if any('estela' in a for a in dia):
         print('MAL  brillo 158 con contraste 28 es pavimento claro, no estela nocturna')
         fallos += 1
+    # La cámara frontal a las 14:56: brillo 148 con contraste 34 contó 1.00x
+    # contra el conteo manual. No puede perder puntos por exposición ni
+    # avisar que "el conteo se desploma a 0.03x".
+    frontal = calificar(dict(base, brillo=148, contraste=34))
+    claro = calificar(dict(base, brillo=148))
+    if any('0.03x' in a for a in frontal['avisos']) or frontal['puntaje'] <= claro['puntaje']:
+        print('MAL  brillo 148 con contraste 34 es pavimento claro: no castiga la exposición')
+        fallos += 1
 
     # Sin el dato de la etapa por imagen, pocos rastros siguen siendo
     # "no sirve": es como se comportaban las llamadas viejas.

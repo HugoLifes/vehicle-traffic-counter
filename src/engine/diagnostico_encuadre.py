@@ -255,12 +255,23 @@ def calificar(m: Dict, direccional: bool = False) -> Dict:
             'razon_esperada': None,
         }
 
+    # La exposición solo castiga con contraste alto: brillo alto con
+    # contraste bajo es pavimento claro al sol, no la estela nocturna. La
+    # cámara frontal de Cd. Juárez da brillo 148 con contraste 34 a las 14:56
+    # y contó 1.00x contra el conteo manual, y la revisión la daba por
+    # "regular" avisando que "el conteo se desploma a 0.03x" (2-oct-2026).
+    # Sin el contraste medido (casos viejos) se castiga como antes.
+    if m.get('contraste') is not None and contraste < CONTRASTE_ESTELA:
+        exposicion = 1.0
+    else:
+        exposicion = _banda(brillo, 110.0, BRILLO_ALTO)
+
     # Cada factor entre 0 y 1, con su peso. El tamaño pesa el doble porque
     # es el límite duro: lo que no está en los píxeles no lo recupera nada.
     factores = {
         'tamaño del vehículo': (_banda(alto, ALTO_BUENO, ALTO_MINIMO), 2.0),
         'confianza del detector': (_banda(conf, CONFIANZA_BUENA, CONFIANZA_MALA), 1.0),
-        'exposición': (_banda(brillo, 110.0, BRILLO_ALTO), 1.0),
+        'exposición': (exposicion, 1.0),
         'nitidez': (_banda(nitidez, 2400.0, NITIDEZ_BAJA), 1.0),
     }
     if direccional:
