@@ -147,8 +147,8 @@ def main():
         det.set_detection_band(band_from_zones(zonas, alto) if zonas else None)
         cero, arr = Conteo(job, cfg, alto, ancho, zonas), Conteo(job, cfg, alto, ancho, zonas)
         n_prev = 0
-        for cuadro in cuadros_finales(previo["stored_path"]):
-            arr.paso(detectar(cuadro), n_prev - 10_000, registrar=False)
+        for indice, cuadro in cuadros_finales(previo["stored_path"]):
+            arr.paso(detectar(cuadro), indice, registrar=False)
             n_prev += 1
         guardados_cuadros = {}
         for n in range(int(a.segundos * fps)):

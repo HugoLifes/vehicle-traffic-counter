@@ -266,6 +266,9 @@ def init_schema():
     # o 'error' (con su motivo). El resultado va en la tabla diagnosticos.
     _ensure_column(conn, "video_jobs", "diag_estado", "TEXT")
     _ensure_column(conn, "video_jobs", "diag_error", "TEXT")
+    # Velocidad medida sin recontar (remedir_velocidad.py): 'en_cola',
+    # 'midiendo' o 'error'. Vacio cuando no hay nada pendiente.
+    _ensure_column(conn, "video_jobs", "vel_estado", "TEXT")
     # Perfil de deteccion de la camara de ESTE proyecto (JSON): modelo,
     # input_size, umbral por clase y quitar cajas anidadas. Vacio cuenta
     # como platform.yaml. Ver src/engine/perfil_deteccion.py.
@@ -449,6 +452,9 @@ def list_projects() -> List[Dict]:
                (SELECT COUNT(*) FROM crossings c
                     JOIN lane_configs l ON c.lane_id = l.id
                     WHERE l.project_id = p.id AND c.clase_revisada IS NOT NULL) AS revisados_count,
+               -- Videos con la velocidad pendiente de medir sin recontar.
+               (SELECT COUNT(*) FROM video_jobs v WHERE v.project_id = p.id
+                    AND v.vel_estado IN ('en_cola', 'midiendo')) AS velocidad_pendiente,
                -- Un aforo direccional no tiene cruces de linea sino
                -- movimientos: sin esto la tarjeta decia "sin contar
                -- todavia" de Altozano, con 1 081 movimientos contados.
@@ -611,16 +617,6 @@ def update_lane(lane_id: int, name: Optional[str] = None,
                  quitar_tramo: bool = False):
     conn = get_connection()
     fields, params = [], []
-    # Corregir solo la distancia del tramo no toca la geometría: la base
-    # guarda el tiempo de paso y la velocidad se recalcula al reportar, así
-    # que los videos ya contados siguen vigentes. Mover la línea sí obliga a
-    # volver a contar.
-    solo_distancia = False
-    if tramo is not None:
-        previo = conn.execute("SELECT tramo_json FROM lane_configs WHERE id = ?",
-                              (lane_id,)).fetchone()
-        previo = json.loads(previo[0]) if previo and previo[0] else None
-        solo_distancia = bool(previo) and previo.get("linea") == tramo.get("linea")
     if tramo is not None or quitar_tramo:
         fields.append("tramo_json = ?")
         params.append(json.dumps(tramo) if tramo else None)
@@ -641,13 +637,15 @@ def update_lane(lane_id: int, name: Optional[str] = None,
         params.append(zone_id or None)
     if not fields:
         return
-    # Solo un cambio de geometría deja los conteos ya hechos como de otra
-    # calibración. Renombrar no: al poner "Poniente → Oriente" en el
-    # proyecto 7 (1-oct-2026) la pantalla declaró los 731 videos de una
-    # calibración anterior y ofreció recontarlos, lo que habría borrado la
-    # revisión de los pesados. Corregir la distancia del tramo tampoco.
-    geometria = [f for f in fields if not f.startswith("name")]
-    if geometria and not (solo_distancia and len(geometria) == 1):
+    # Solo un cambio de la geometría que CUENTA (la línea o su calzada) deja
+    # los conteos ya hechos como de otra calibración. Renombrar no: al poner
+    # "Poniente → Oriente" en el proyecto 7 (1-oct-2026) la pantalla declaró
+    # los 731 videos de una calibración anterior y ofreció recontarlos, lo
+    # que habría borrado la revisión de los pesados. El tramo de velocidad
+    # tampoco: no cambia ningún cruce, y la velocidad de lo ya contado se
+    # vuelve a medir sin recontar (remedir_velocidad.py).
+    geometria = [f for f in fields if f.split(" ")[0] in ("line_type", "points_json", "zone_id")]
+    if geometria:
         fields.append("updated_at = datetime('now')")
     params.append(lane_id)
     conn.execute(f"UPDATE lane_configs SET {', '.join(fields)} WHERE id = ?", params)

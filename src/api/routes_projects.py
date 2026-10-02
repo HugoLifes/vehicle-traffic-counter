@@ -300,6 +300,39 @@ def recount(project_id: int):
     return {"requeued": len(conn_jobs)}
 
 
+@router.post("/{project_id}/medir-velocidad")
+def medir_velocidad(project_id: int):
+    """
+    Mide la velocidad de los videos ya contados SIN recontarlos: los cuenta
+    en memoria con el tramo vigente y solo escribe el tiempo de paso en los
+    cruces que ya existen (src/engine/remedir_velocidad.py). Recontar daría
+    lo mismo, pero borra lo que se agregó a los cruces después —en el aforo
+    frontal, la revisión de 879 pesados—.
+
+    Entra a la cola de la GPU con la prioridad más baja: un conteo nuevo
+    pasa delante.
+    """
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    if not any(l.get("tramo") for l in traffic_db.list_lanes(project_id=project_id)):
+        raise HTTPException(409, "Ninguna línea de este proyecto tiene tramo de velocidad. "
+                                 "Ponlo en Calibrar con «Medir velocidad en este carril».")
+    trabajos = [j for j in traffic_db.list_video_jobs(project_id=project_id)
+                if j["status"] == "done" and j.get("vel_estado") not in ("en_cola", "midiendo")]
+    if not trabajos:
+        raise HTTPException(409, "No hay videos contados a los que medir la velocidad")
+    processor = get_processor()
+    if processor is None:
+        raise HTTPException(503, "El procesador de video no está disponible")
+    for job in sorted(trabajos, key=lambda j: (j.get("video_start_time") or "", j["id"])):
+        processor.medir_velocidad(job["id"])
+    traffic_db.log_event(
+        project_id, "velocidad", "Se pidió medir la velocidad sin recontar",
+        f"{len(trabajos)} videos en la cola; los conteos no cambian",
+    )
+    return {"en_cola": len(trabajos)}
+
+
 @router.post("/{project_id}/copy-calibration")
 def copy_calibration(project_id: int, data: CopyCalibration):
     """

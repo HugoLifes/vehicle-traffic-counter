@@ -36,6 +36,8 @@ export interface Project {
   access_count?: number;
   /* Cruces con la clase de pesado revisada sobre su recorte; recontar la borra. */
   revisados_count?: number;
+  /* Videos con la velocidad pendiente de medir sin recontar. */
+  velocidad_pendiente?: number;
   /* Si el vehículo se ve grande (cámara de frente o cercana) o chico
      (lejana o de lado). Lo decide el servidor a partir de lo guardado. */
   tipo_camara?: TipoCamara;

@@ -284,13 +284,18 @@ export function useSetTramo(projectId: number) {
         api.setLaneTramo(laneId, tramo),
       exito: (_d, v) =>
         v.tramo
-          ? { titulo: 'Tramo de velocidad guardado', detalle: `${v.tramo.distancia_m} m` }
+          ? {
+              titulo: 'Tramo de velocidad guardado',
+              detalle: `${v.tramo.distancia_m} m. Los conteos siguen vigentes; para la velocidad de lo ya contado, «Medir la velocidad sin recontar» en el Resumen.`,
+              ir: { etiqueta: 'Ir al Resumen', a: `/proyecto/${projectId}` },
+            }
           : { titulo: 'Tramo de velocidad quitado' },
       fallo: 'No se pudo guardar el tramo de velocidad',
       alTerminar: () => {
         qc.invalidateQueries({ queryKey: keys.lanes(projectId) });
         // Una distancia corregida cambia las velocidades del reporte sin
-        // volver a contar, y mover la línea deja los conteos desactualizados.
+        // volver a contar; mover la línea del tramo no toca ningún conteo, y
+        // la velocidad de lo ya contado se vuelve a medir sin recontar.
         qc.invalidateQueries({ queryKey: ['metrics', projectId] });
         qc.invalidateQueries({ queryKey: ['calibration-status', projectId] });
       },
@@ -335,6 +340,21 @@ export function useRecount() {
         ir: { etiqueta: 'Ver la cola', a: `/proyecto/${projectId}/subir` },
       }),
       fallo: 'No se pudo volver a contar',
+      alTerminar: () => qc.invalidateQueries(),
+    }),
+  });
+}
+
+export function useMedirVelocidad() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...conAviso({
+      mutationFn: (projectId: number) => api.medirVelocidad(projectId),
+      exito: (r) => ({
+        titulo: 'Medición de velocidad encolada',
+        detalle: `${plural(r.en_cola, 'video', 'videos')}. Los conteos no cambian; la velocidad aparece en el reporte conforme avanza.`,
+      }),
+      fallo: 'No se pudo pedir la medición de velocidad',
       alTerminar: () => qc.invalidateQueries(),
     }),
   });

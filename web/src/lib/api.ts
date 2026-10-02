@@ -94,6 +94,9 @@ export const getCalibrationStatus = (id: number) =>
 
 export const recount = (id: number) =>
   request<{ requeued: number }>(`/api/projects/${id}/recount`, { method: 'POST' });
+/* Velocidad de lo ya contado sin recontar (remedir_velocidad.py). */
+export const medirVelocidad = (id: number) =>
+  request<{ en_cola: number }>(`/api/projects/${id}/medir-velocidad`, { method: 'POST' });
 
 export const updateProject = (id: number, data: Partial<ProjectCreate>) =>
   request<Project>(`/api/projects/${id}`, {

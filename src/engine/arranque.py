@@ -80,7 +80,12 @@ def _duracion_s(job: Dict) -> Optional[float]:
 
 
 def cuadros_finales(ruta: str, segundos: float = SEGUNDOS_PREVIOS) -> Iterator:
-    """Los cuadros de los últimos `segundos` de un archivo, en orden.
+    """(índice, cuadro) de los últimos `segundos` de un archivo, en orden.
+
+    El índice es negativo y termina en -1: es el número de cuadro que tendría
+    en el archivo que sigue, para que la velocidad de un vehículo que cruza
+    una línea antes del corte y la otra después se mida con el tiempo bien
+    puesto.
 
     Se salta al punto con una sola búsqueda (decodifica desde el cuadro
     clave anterior, ~1 s de trabajo) en vez de leer el minuto entero.
@@ -94,12 +99,13 @@ def cuadros_finales(ruta: str, segundos: float = SEGUNDOS_PREVIOS) -> Iterator:
         desde = max(0, total - int(round(segundos * fps)))
         if desde:
             cap.set(cv2.CAP_PROP_POS_FRAMES, desde)
+        esperados = total - desde
         n = 0
         while True:
             ok, cuadro = cap.read()
             if not ok:
                 break
-            yield cuadro
+            yield n - esperados, cuadro
             n += 1
         if n == 0:
             logging.warning(f"Arranque: no se pudo leer el final de {ruta}")

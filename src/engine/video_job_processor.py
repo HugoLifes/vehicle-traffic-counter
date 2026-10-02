@@ -28,7 +28,7 @@ import imageio_ffmpeg
 from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
-from src.engine import conteo_trayectoria, perfil_deteccion, presentacion
+from src.engine import arranque, conteo_trayectoria, perfil_deteccion, presentacion
 from src.engine.lanes import build_lane_counters
 from src.engine.velocidad import MedidorVelocidad
 from src.engine.origen_destino import AforoDireccional
@@ -48,6 +48,9 @@ from src.visualizer import Visualizer
 PRIORIDAD_DIAGNOSTICO = 0
 PRIORIDAD_ANOTAR = 1
 PRIORIDAD_CONTEO = 2
+# Medir velocidad sin recontar: un aforo entero son horas de GPU, y nada de
+# eso debe retrasar un conteo nuevo.
+PRIORIDAD_VELOCIDAD = 3
 ANCHO_MAXIMO_ANOTADO = 1280
 
 
@@ -145,6 +148,10 @@ class VideoJobProcessor:
                 "SELECT id FROM video_jobs WHERE diag_estado IN ('en_cola', 'revisando')"
                 " ORDER BY id").fetchall():
             self.diagnosticar(job_id)
+        for job_id, in conn.execute(
+                "SELECT id FROM video_jobs WHERE vel_estado IN ('en_cola', 'midiendo')"
+                " ORDER BY video_start_time, id").fetchall():
+            self.medir_velocidad(job_id)
 
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -187,6 +194,40 @@ class VideoJobProcessor:
         self._poner(PRIORIDAD_DIAGNOSTICO,
                     ('diagnostico', job_id, {'rastreo': rastreo, 'direccional': direccional,
                                              'minutos': minutos}))
+
+    def medir_velocidad(self, job_id: int):
+        """Pide la velocidad de un video ya contado, sin recontarlo."""
+        traffic_db.update_video_job(job_id, vel_estado='en_cola')
+        self._poner(PRIORIDAD_VELOCIDAD, ('velocidad', job_id))
+
+    def _velocidad_job(self, job_id: int):
+        """Cuenta el video en memoria con el tramo de velocidad y escribe el
+        tiempo de paso en los cruces que ya existen (remedir_velocidad.py).
+        No borra ni cambia ningún cruce."""
+        from src.engine import remedir_velocidad
+        job = traffic_db.get_video_job(job_id)
+        if job is None or job['status'] != 'done':
+            if job is not None:
+                traffic_db.update_video_job(job_id, vel_estado=None)
+            return
+        traffic_db.update_video_job(job_id, vel_estado='midiendo')
+        proyecto = traffic_db.get_project(job.get('project_id')) or {}
+        perfil = perfil_deteccion.leer(proyecto)
+        detector = self._get_detector(perfil.get('modelo'), perfil.get('input_size'))
+        try:
+            cruces, _ = remedir_velocidad.medir(
+                job, detector, {**self.config, 'confidence_threshold': self.confidence_threshold},
+                detener=self._stop_event.is_set)
+        except InterruptedError:
+            traffic_db.update_video_job(job_id, vel_estado='en_cola')
+            return
+        pares = remedir_velocidad.emparejar(job, cruces)
+        con = remedir_velocidad.aplicar(pares)
+        guardados = traffic_db.get_connection().execute(
+            "SELECT count(*) FROM crossings WHERE job_id = ?", (job_id,)).fetchone()[0]
+        logging.info(f"Velocidad sin recontar de {job['original_name']}: {len(pares)} de "
+                     f"{guardados} cruces emparejados, {con} con velocidad")
+        traffic_db.update_video_job(job_id, vel_estado=None)
 
     def _diagnosticar_job(self, job_id: int, opciones: dict):
         from src.engine.diagnostico_encuadre import VideoIlegible, diagnosticar_trabajo
@@ -311,6 +352,16 @@ class VideoJobProcessor:
             except queue.Empty:
                 continue
             if job_id is None:
+                continue
+            if isinstance(job_id, tuple) and job_id[0] == 'velocidad':
+                try:
+                    self._velocidad_job(job_id[1])
+                except Exception:
+                    logging.exception(f"No se pudo medir la velocidad del video {job_id[1]}")
+                    try:
+                        traffic_db.update_video_job(job_id[1], vel_estado='error')
+                    except Exception:
+                        pass
                 continue
             if isinstance(job_id, tuple) and job_id[0] == 'diagnostico':
                 try:
@@ -552,6 +603,48 @@ class VideoJobProcessor:
             video_start_time = None
             if job.get('video_start_time'):
                 video_start_time = datetime.fromisoformat(job['video_start_time'])
+
+            # Arranque con los últimos segundos del archivo anterior (ver
+            # src/engine/arranque.py): sin esto, el vehículo que va cruzando
+            # la línea en el cuadro 0 no se contaba —0.3-0.5 % del aforo en
+            # archivos de un minuto—. Lo que cruza en esos segundos ya lo
+            # contó el anterior y aquí no se registra. Solo con conteo
+            # instantáneo por línea: por trayectoria y en el direccional, lo
+            # que pasa ahí se volvería a decidir al cerrar el video.
+            if lane_counters and not por_trayectoria and not direccional.activo:
+                previo = arranque.archivo_previo_continuo(job)
+                n_previo = 0
+                for indice, cuadro_previo in (arranque.cuadros_finales(previo['stored_path'])
+                                              if previo else ()):
+                    if self._stop_event.is_set():
+                        break
+                    dets = perfil_deteccion.filtrar_por_clase(
+                        detector.detect(cuadro_previo)[0], perfil, self.confidence_threshold)
+                    dets = filter_detections(zonas, dets)
+                    if perfil.get('quitar_anidadas'):
+                        dets = perfil_deteccion.quitar_anidadas(dets, perfil['quitar_anidadas'])
+                    tracks = tracker.update(dets)
+                    if quitar_nacidos:
+                        for tr in tracks:
+                            if tr['id'] not in rastros_vistos:
+                                rastros_vistos.add(tr['id'])
+                                if perfil_deteccion.nacio_dentro_de_pesado(
+                                        tr['bbox'], tracks, propio_id=tr['id']) is not None:
+                                    nacidos_en_pesado.add(tr['id'])
+                    for lane_id, counter in lane_counters.items():
+                        zona_carril = lane_meta[lane_id].get('zone_id')
+                        vistos = ([t for t in tracks if zone_for_bbox(zonas, t['bbox']) == zona_carril]
+                                  if zona_carril and zonas else tracks)
+                        counter.update(vistos)
+                        if lane_id in medidores:
+                            # Mediciones completas aquí son de vehículos que
+                            # contó el anterior: se descartan. Lo que sirve es
+                            # que el medidor ya tenga el primer cruce.
+                            medidores[lane_id].observar(indice, vistos)
+                    n_previo += 1
+                if n_previo:
+                    logging.info(f"Arranque de {job['original_name']}: {n_previo} cuadros del "
+                                 f"final de {previo['original_name']}")
 
             frame_count = 0
             last_progress_update = time.time()
