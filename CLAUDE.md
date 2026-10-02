@@ -1931,6 +1931,32 @@ Excel, y el dueño lo notó al comparar con el clip.
   pedazos con un corte a la mitad, retomando desde 117 MB, idéntico por MD5.
   **No reiniciar la plataforma con una subida en curso**: se ve con los
   archivos borrados abiertos por el proceso 1 del contenedor.
+- **Prueba externa antes de entregar a Juárez (2-oct-2026)**, por la dirección
+  pública: por API, 32 de 33 comprobaciones (la que falló era la propia prueba:
+  el visor cambió de cuadro entre dos peticiones; probado en el Jetson, el
+  servidor sí responde 204 X-Sin-Cambio); con los botones de la página, crear
+  intersección, copiar calibración, soltar un video, subir por pedazos, empezar
+  conteo, revisar encuadre, ver el video con detecciones, reporte, Excel,
+  medir velocidad y borrar, sin errores de la página. El conteo de prueba del
+  minuto 14:56 reprodujo el del proyecto 7: 34 / 17.
+- **Subir no pide nada video por video.** Con los 731 del frontal la pantalla
+  pedía la revisión de encuadre de cada uno: 731 peticiones, casi todas 404,
+  que por la dirección pública tapaban el navegador y dejaban el Reporte en
+  "Calculando…". El resumen viene en la lista (`diag_color`, `diag_veredicto`,
+  `diag_puntaje`) y el detalle se pide al abrirlo.
+- **Revisar encuadre ya no castiga el brillo con contraste bajo.** La cámara
+  frontal (brillo 148, contraste 34) salía "regular, 0.80–0.95×" avisando que
+  "el conteo se desploma a 0.03x", y contó 1.00× contra el conteo manual;
+  ahora sale "bueno, 78". Sin contraste medido se califica como antes. La
+  nitidez sigue avisando "justa" (1 162 contra 2 400–4 700 de la cámara vieja):
+  el umbral es de 640×360 y no está medido a 2560×1440 con bitrate bajo.
+- **La medición de velocidad se detiene y se continúa** (botón en el Resumen):
+  detener vacía la cola; volver a pedirla sigue con los videos sin velocidad.
+  Mover o quitar la línea del tramo borra los tiempos medidos con la línea
+  anterior. En el proyecto 7 quedaron 219 de 731 videos medidos al detenerla
+  para que Juárez use la GPU. Ojo al reiniciar: `docker compose ... up -d`
+  avisa de un contenedor "huérfano" (tailscale, de su propio compose); NO usar
+  `--remove-orphans`.
 - **Revisar encuadre va por la cola de la GPU** (`video_jobs.diag_estado`).
   Antes respondía 409 mientras algo se contaba o se generaba, y desde la
   pantalla parecía que el botón no servía. La cola tiene prioridad:
