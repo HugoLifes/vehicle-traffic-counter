@@ -1023,6 +1023,18 @@ lección de siempre en este proyecto, esta vez con el tamaño de la muestra.
 décima parte. Con esta cifra **no vale la pena recontar un aforo ya contado
 para recuperarlo**; se usa desde el principio en los aforos nuevos.
 
+**Arreglado en producción el 2-oct-2026: cada archivo arranca con los últimos
+3 s del anterior** (`src/engine/arranque.py`, solo si son consecutivos; no en
+el direccional ni por trayectoria). Lo que cruza en esos segundos ya lo contó
+el anterior y no se registra; el contador lleva los rastros contados por línea,
+así que no hay doble conteo. Medido con `tools/probar_arranque_archivo.py`
+sobre la misma detección, primeros 8 s de cada archivo del proyecto 7: de día
+(13–15 h, 118 archivos) **+14 vehículos**, de noche (21–22 h, 56) **+2**;
+todos en el segundo 0.0–0.1, los 16 revisados a ojo reales y distintos,
+ninguno perdido. Era la camioneta que el clip de las 14:56 enseñaba pasar sin
+contarse. Lo ya contado no cambia hasta recontar; con el arranque ya no hace
+falta pegar los archivos para no perder el primer segundo.
+
 **Lo que unir los segmentos NO arregla, también medido:**
 
 - **No acelera.** La cola no tiene un segundo muerto entre videos: el
