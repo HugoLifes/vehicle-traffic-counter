@@ -105,6 +105,10 @@ class VideoJobProcessor:
         # vez de esperar a que termine todo el archivo.
         self._live_frame = None
         self._live_job_id = None
+        # Sube cada vez que hay un cuadro nuevo: el visor lo pide cada medio
+        # segundo y el cuadro cambia cada ~2 s, así que sin esto bajaba la
+        # misma imagen cuatro veces por la dirección pública.
+        self._live_seq = 0
         self._live_lock = threading.Lock()
 
         # Cola con prioridad: lo que alguien está esperando frente a la
@@ -159,6 +163,10 @@ class VideoJobProcessor:
             if self._live_frame is None:
                 return None, None
             return self._live_frame.copy(), self._live_job_id
+
+    def get_live_seq(self) -> int:
+        with self._live_lock:
+            return self._live_seq
 
     def _poner(self, prioridad: int, trabajo):
         # El turno desempata: a igual prioridad, en el orden en que llegaron.
@@ -746,6 +754,7 @@ class VideoJobProcessor:
                     with self._live_lock:
                         self._live_frame = annotated
                         self._live_job_id = job_id
+                        self._live_seq += 1
                 frame_count += 1
                 if time.time() - last_progress_update > 1.0:
                     traffic_db.update_video_job(job_id, processed_frames=frame_count)

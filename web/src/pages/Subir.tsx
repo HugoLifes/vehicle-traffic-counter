@@ -59,6 +59,8 @@ function LiveView({ jobs }: { jobs: VideoJob[] }) {
   const [src, setSrc] = useState<string | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
   const urlRef = useRef<string | null>(null);
+  // Último cuadro recibido: el servidor no lo vuelve a mandar si no cambió.
+  const cuadroRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,9 +70,13 @@ function LiveView({ jobs }: { jobs: VideoJob[] }) {
       if (inFlight || document.hidden) return;
       inFlight = true;
       try {
-        const res = await fetch('/api/videos/live-frame', { cache: 'no-store' });
-        // 204 no es un error: significa que no hay nada procesándose.
+        const visto = cuadroRef.current ? `?visto=${cuadroRef.current}` : '';
+        const res = await fetch(`/api/videos/live-frame${visto}`, { cache: 'no-store' });
+        // Mismo cuadro que ya está en pantalla: no hay nada que bajar.
+        if (res.status === 204 && res.headers.get('X-Sin-Cambio')) return;
+        // 204 sin más no es un error: significa que no hay nada procesándose.
         if (res.status === 204) {
+          cuadroRef.current = null;
           if (!cancelled) setSrc(null);
           return;
         }
@@ -87,6 +93,7 @@ function LiveView({ jobs }: { jobs: VideoJob[] }) {
         setSrc(url);
         const id = res.headers.get('X-Job-Id');
         setJobId(id ? Number(id) : null);
+        cuadroRef.current = res.headers.get('X-Cuadro');
       } catch {
         // Sin red se deja el último cuadro en pantalla en vez de parpadear.
       } finally {
@@ -106,6 +113,14 @@ function LiveView({ jobs }: { jobs: VideoJob[] }) {
 
   if (!src) return null;
   const job = jobs.find((j) => j.id === jobId);
+  /* A qué velocidad va el análisis respecto al video: es lo que explica por
+     qué esta vista avanza más despacio que la grabación. */
+  let ritmo: number | null = null;
+  if (job?.started_at && job.fps && job.processed_frames > 0) {
+    const inicio = Date.parse(`${job.started_at.replace(' ', 'T')}Z`);
+    const segundos = (Date.now() - inicio) / 1000;
+    if (segundos > 5) ritmo = job.processed_frames / job.fps / segundos;
+  }
 
   return (
     <Card accent className="live-view rise">
@@ -121,8 +136,10 @@ function LiveView({ jobs }: { jobs: VideoJob[] }) {
         <img src={src} alt="Cuadro actual del video con las detecciones de la IA" />
       </div>
       <p className="live-hint">
-        Lo que ves es el cuadro que la IA está analizando en este momento: una caja por vehículo, su
-        identificador de seguimiento y las líneas de conteo.
+        Es el análisis en vivo: la IA revisa cada uno de los cuadros del video
+        {ritmo ? ` y va a ${ritmo.toFixed(1)}× del tiempo real` : ''}, así que esta vista avanza más
+        despacio que la grabación y se actualiza cada vez que termina un segundo de video. Para
+        verlo fluido, cuando el archivo termine ábrelo con el ojo o pide su video con detecciones.
       </p>
     </Card>
   );
@@ -382,10 +399,13 @@ function JobRow({
               negro y no se sabe si cargó o se rompió. Se toma un cuadro
               de la mitad, donde es más probable que haya tránsito que en
               el primer segundo. */}
+          {/* `auto`: el reproductor solo existe cuando se abrió, así que se
+              empieza a cargar enseguida en vez de esperar al clic de
+              reproducir; por internet eso es un segundo de arranque menos. */}
           <video
             controls
             loop={loop}
-            preload="metadata"
+            preload="auto"
             poster={frameUrl(job.id, Math.floor((job.total_frames ?? 2) / 2), 'procesado')}
             /* El avance cambia al regenerarlo: sin esto el navegador puede
                seguir mostrando el video de antes, que tenía la misma ruta. */

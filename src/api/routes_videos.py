@@ -347,7 +347,7 @@ def anotar(job_id: int):
 
 
 @router.get("/live-frame")
-def live_frame():
+def live_frame(visto: Optional[int] = None):
     """
     Último cuadro anotado del video que se está procesando ahora mismo.
     Permite ver en vivo lo que la IA está detectando, en vez de esperar a
@@ -358,9 +358,13 @@ def live_frame():
     if processor is None:
         return Response(status_code=204)
 
+    seq = processor.get_live_seq()
     frame, job_id = processor.get_live_frame()
     if frame is None:
         return Response(status_code=204)
+    # El visor ya tiene este cuadro: no se vuelve a mandar (X-Sin-Cambio).
+    if visto is not None and visto == seq:
+        return Response(status_code=204, headers={"X-Sin-Cambio": "1", "X-Cuadro": str(seq)})
 
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
     if not ok:
@@ -369,7 +373,7 @@ def live_frame():
     return Response(
         content=buf.tobytes(),
         media_type="image/jpeg",
-        headers={"X-Job-Id": str(job_id), "Cache-Control": "no-store"},
+        headers={"X-Job-Id": str(job_id), "X-Cuadro": str(seq), "Cache-Control": "no-store"},
     )
 
 

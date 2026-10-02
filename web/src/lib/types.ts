@@ -265,6 +265,10 @@ export interface VideoJob {
   /* Avisos del último conteo: zona que descarta casi todo, vehículos que no
      cruzaron ninguna línea, archivo cortado. Null si no hubo nada que avisar. */
   aviso?: string | null;
+  /* Cuadros por segundo del archivo y cuándo empezó a contarse (UTC, como lo
+     guarda SQLite): con ellos se sabe a qué velocidad va el análisis. */
+  fps?: number | null;
+  started_at?: string | null;
   /* Ruta del video con detecciones; null si todavía no hay. */
   output_video_path?: string | null;
   /* Video con detecciones pedido para un video ya contado: en cola, generándose

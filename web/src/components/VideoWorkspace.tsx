@@ -380,7 +380,10 @@ export function VideoWorkspace({
 
   useEffect(() => {
     if (!showDetections || !segment || playing || fuente === 'procesado') {
-      setDetections([]);
+      // El mismo arreglo si ya estaba vacío. Un [] nuevo en cada cuadro
+      // volvía a dibujar el lienzo entero 20 veces por segundo mientras se
+      // reproducía, y en un equipo modesto eso trababa el video.
+      setDetections((d) => (d.length ? [] : d));
       return;
     }
     let cancelado = false;
@@ -407,8 +410,10 @@ export function VideoWorkspace({
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx || !segment || ancho === null || alto === null) return;
 
-    canvas.width = ancho;
-    canvas.height = alto;
+    // Asignar el tamaño reserva de nuevo el lienzo (hasta 2560x1440, 15 MB):
+    // solo cuando cambia. Para borrar basta clearRect.
+    if (canvas.width !== ancho) canvas.width = ancho;
+    if (canvas.height !== alto) canvas.height = alto;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Sobre el video procesado la IA ya dibujó sus propias líneas y cajas.
