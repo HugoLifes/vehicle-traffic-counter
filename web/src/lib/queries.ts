@@ -89,10 +89,13 @@ export function useDireccional(projectId: number | null, minutes: number) {
   });
 }
 
-export function useDiagnostico(jobId: number) {
+export function useDiagnostico(jobId: number, enabled = true) {
   return useQuery({
     queryKey: ['diagnostico', jobId],
     queryFn: () => api.getDiagnostico(jobId),
+    // Solo cuando se va a mostrar el detalle: el resumen ya viene en la
+    // lista de videos.
+    enabled,
     // 404 = todavía no se ha diagnosticado; no es un error que reintentar.
     retry: false,
   });

@@ -171,7 +171,6 @@ function JobRow({
   /* Diagnóstico del encuadre: dice si vale la pena contar este video antes
      de gastar horas en hacerlo. Corre sobre la misma GPU que la cola, así
      que el backend lo rechaza mientras haya videos contándose. */
-  const { data: diag } = useDiagnostico(job.id);
   const diagnosticar = useDiagnosticar();
   const qcFila = useQueryClient();
   /* La revisión corre en la cola de la GPU: mientras está pendiente el botón
@@ -195,13 +194,18 @@ function JobRow({
   const anotar = useAnotarVideo();
   const tieneVideo = Boolean(job.output_video_path);
   const anotando = job.anotado_estado === 'en_cola' || job.anotado_estado === 'generando';
-  const d = diag?.datos?.diagnostico;
   /* Los avisos son lo útil del diagnóstico —dicen qué cambiar de la cámara—,
      así que cuando el encuadre NO sale bueno el detalle se abre solo:
      esconder "esta perspectiva va a costar exactitud" detrás de un clic es
      no avisar. El usuario puede cerrarlo, y entonces manda su elección. */
   const [verDetalle, setVerDetalle] = useState<boolean | null>(null);
-  const abierto = verDetalle ?? (d ? d.color !== 'verde' : false);
+  const resumen = job.diag_color
+    ? { color: job.diag_color, veredicto: job.diag_veredicto, puntaje: job.diag_puntaje }
+    : null;
+  const abierto = verDetalle ?? (resumen ? resumen.color !== 'verde' : false);
+  /* El detalle (avisos, exactitud esperable) se pide solo si se muestra. */
+  const { data: diag } = useDiagnostico(job.id, Boolean(resumen) && abierto);
+  const d = diag?.datos?.diagnostico;
   const TONO: Record<string, 'good' | 'warning' | 'critical'> = {
     verde: 'good',
     ambar: 'warning',
@@ -245,7 +249,7 @@ function JobRow({
             : JOB_STATUS_LABEL[job.status]}
         </Pill>
 
-        {d ? (
+        {resumen ? (
           <button
             type="button"
             className="pill-boton"
@@ -253,8 +257,8 @@ function JobRow({
             title={abierto ? 'Ocultar el detalle del encuadre' : 'Ver por qué y qué cambiar'}
             onClick={() => setVerDetalle(!abierto)}
           >
-            <Pill tone={TONO[d.color]} dot>
-              Encuadre {d.veredicto} · {d.puntaje}/100
+            <Pill tone={TONO[resumen.color]} dot>
+              Encuadre {resumen.veredicto} · {resumen.puntaje}/100
             </Pill>
           </button>
         ) : (

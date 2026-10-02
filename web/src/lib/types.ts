@@ -280,6 +280,11 @@ export interface VideoJob {
   /* Revisión del encuadre pedida: en la cola de la GPU, revisándose o con
      error (y su motivo). Null cuando no hay nada pendiente. */
   diag_estado?: 'en_cola' | 'revisando' | 'error' | null;
+  /* Resumen de la revisión de encuadre ya hecha (null si no hay): viene en
+     la lista para no pedirla video por video. */
+  diag_color?: 'verde' | 'ambar' | 'rojo' | null;
+  diag_veredicto?: string | null;
+  diag_puntaje?: number | null;
   diag_error?: string | null;
 }
 

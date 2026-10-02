@@ -1091,13 +1091,20 @@ def create_video_job(
 
 
 def list_video_jobs(project_id: Optional[int] = None) -> List[Dict]:
+    # El resumen de la revisión de encuadre va en la misma lista. La pantalla
+    # lo pedía video por video: con los 731 del aforo frontal eran 731
+    # peticiones (casi todas 404, "sin revisión") que por la dirección
+    # pública tapaban el navegador minutos y dejaban el Reporte en
+    # "Calculando…" (2-oct-2026). El detalle se pide solo al abrirlo.
     conn = get_connection()
+    sql = """SELECT v.*, d.color AS diag_color, d.veredicto AS diag_veredicto,
+                    d.puntaje AS diag_puntaje
+             FROM video_jobs v LEFT JOIN diagnosticos d ON d.job_id = v.id"""
     if project_id is not None:
-        rows = conn.execute(
-            "SELECT * FROM video_jobs WHERE project_id = ? ORDER BY id DESC", (project_id,)
-        ).fetchall()
+        rows = conn.execute(sql + " WHERE v.project_id = ? ORDER BY v.id DESC",
+                            (project_id,)).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM video_jobs ORDER BY id DESC").fetchall()
+        rows = conn.execute(sql + " ORDER BY v.id DESC").fetchall()
     return [dict(row) for row in rows]
 
 
