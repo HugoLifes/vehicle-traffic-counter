@@ -317,10 +317,18 @@ def medir_velocidad(project_id: int):
     if not any(l.get("tramo") for l in traffic_db.list_lanes(project_id=project_id)):
         raise HTTPException(409, "Ninguna línea de este proyecto tiene tramo de velocidad. "
                                  "Ponlo en Calibrar con «Medir velocidad en este carril».")
+    # Solo los que todavía no tienen ninguna velocidad: así, detener y volver
+    # a pedir continúa donde se quedó. Mover la línea del tramo borra los
+    # tiempos de esa línea (traffic_db.update_lane), y entonces vuelven a
+    # entrar todos.
+    con_velocidad = {r[0] for r in traffic_db.get_connection().execute(
+        """SELECT DISTINCT c.job_id FROM crossings c JOIN lane_configs l ON l.id = c.lane_id
+           WHERE l.project_id = ? AND c.tiempo_tramo_s IS NOT NULL""", (project_id,))}
     trabajos = [j for j in traffic_db.list_video_jobs(project_id=project_id)
-                if j["status"] == "done" and j.get("vel_estado") not in ("en_cola", "midiendo")]
+                if j["status"] == "done" and j.get("vel_estado") not in ("en_cola", "midiendo")
+                and j["id"] not in con_velocidad]
     if not trabajos:
-        raise HTTPException(409, "No hay videos contados a los que medir la velocidad")
+        raise HTTPException(409, "Todos los videos contados ya tienen la velocidad medida")
     processor = get_processor()
     if processor is None:
         raise HTTPException(503, "El procesador de video no está disponible")
@@ -331,6 +339,24 @@ def medir_velocidad(project_id: int):
         f"{len(trabajos)} videos en la cola; los conteos no cambian",
     )
     return {"en_cola": len(trabajos)}
+
+
+@router.post("/{project_id}/medir-velocidad/detener")
+def detener_medicion_velocidad(project_id: int):
+    """Saca de la cola la medición de velocidad pendiente de este proyecto.
+    El video que se esté midiendo termina (minuto y medio como mucho) y lo
+    medido se conserva; volver a pedirla sigue con los que faltan."""
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    conn = traffic_db.get_connection()
+    cur = conn.execute(
+        "UPDATE video_jobs SET vel_estado = NULL WHERE project_id = ? AND vel_estado = 'en_cola'",
+        (project_id,))
+    conn.commit()
+    if cur.rowcount:
+        traffic_db.log_event(project_id, "velocidad", "Se detuvo la medición de velocidad",
+                             f"{cur.rowcount} videos salieron de la cola; lo medido se conserva")
+    return {"detenidos": cur.rowcount}
 
 
 @router.post("/{project_id}/copy-calibration")

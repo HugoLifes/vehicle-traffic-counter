@@ -27,6 +27,7 @@ import {
   useCopyCalibration,
   useDeleteProject,
   useLanes,
+  useDetenerVelocidad,
   useMedirVelocidad,
   useProjects,
   useRecount,
@@ -131,6 +132,7 @@ export default function ProyectoResumen() {
   const borrar = useDeleteProject();
   const recontar = useRecount();
   const medirVelocidad = useMedirVelocidad();
+  const detenerVelocidad = useDetenerVelocidad();
   const [confirmarVelocidad, setConfirmarVelocidad] = useState(false);
   const copiar = useCopyCalibration(id);
 
@@ -296,15 +298,25 @@ export default function ProyectoResumen() {
             <p className="ptc-empty">
               {(project.velocidad_pendiente ?? 0) > 0
                 ? `Midiendo: faltan ${plural(project.velocidad_pendiente ?? 0, 'video', 'videos')}. Un conteo nuevo pasa delante.`
-                : 'Hazlo después de poner o mover el tramo de velocidad en Calibrar.'}
+                : 'Mide solo los videos que todavía no tienen velocidad. Hazlo después de poner o mover el tramo en Calibrar.'}
             </p>
-            <Button
-              disabled={medirVelocidad.isPending || (project.velocidad_pendiente ?? 0) > 0}
-              onClick={() => setConfirmarVelocidad(true)}
-              style={{ marginTop: 'var(--space-3)' }}
-            >
-              {medirVelocidad.isPending ? 'Encolando…' : 'Medir la velocidad sin recontar'}
-            </Button>
+            {(project.velocidad_pendiente ?? 0) > 0 ? (
+              <Button
+                disabled={detenerVelocidad.isPending}
+                onClick={() => detenerVelocidad.mutate(id)}
+                style={{ marginTop: 'var(--space-3)' }}
+              >
+                {detenerVelocidad.isPending ? 'Deteniendo…' : 'Detener la medición'}
+              </Button>
+            ) : (
+              <Button
+                disabled={medirVelocidad.isPending}
+                onClick={() => setConfirmarVelocidad(true)}
+                style={{ marginTop: 'var(--space-3)' }}
+              >
+                {medirVelocidad.isPending ? 'Encolando…' : 'Medir la velocidad sin recontar'}
+              </Button>
+            )}
           </Card>
         )}
 
@@ -345,7 +357,7 @@ export default function ProyectoResumen() {
       <ConfirmDialog
         open={confirmarVelocidad}
         title="¿Medir la velocidad sin recontar?"
-        body={`Se repasan los ${project.video_count.toLocaleString('es-MX')} videos de "${project.name}" para medir el tiempo de cada vehículo en el tramo. Tarda casi lo mismo que contarlos (de 1.6 a 2.7 minutos por minuto de video), pero no cambia ningún conteo ni clase, y cualquier conteo nuevo pasa delante en la cola.`}
+        body={`Se repasan los videos de "${project.name}" que todavía no tienen velocidad para medir el tiempo de cada vehículo en el tramo. Tarda casi lo mismo que contarlos (alrededor de un minuto y medio por minuto de video), pero no cambia ningún conteo ni clase, cualquier conteo nuevo pasa delante en la cola y se puede detener en cualquier momento.`}
         confirmLabel="Medir la velocidad"
         onConfirm={() => {
           medirVelocidad.mutate(id);

@@ -620,6 +620,16 @@ def update_lane(lane_id: int, name: Optional[str] = None,
     if tramo is not None or quitar_tramo:
         fields.append("tramo_json = ?")
         params.append(json.dumps(tramo) if tramo else None)
+        # El tiempo de paso guardado es el de la línea del tramo de antes: si
+        # la línea se mueve o se quita, ya no corresponde y se borra (los
+        # cruces no). Corregir solo la distancia lo conserva, porque la
+        # velocidad se recalcula con ella al leer.
+        previo = conn.execute("SELECT tramo_json FROM lane_configs WHERE id = ?",
+                              (lane_id,)).fetchone()
+        previo = json.loads(previo[0]) if previo and previo[0] else None
+        if previo and (quitar_tramo or (tramo or {}).get("linea") != previo.get("linea")):
+            conn.execute("UPDATE crossings SET tiempo_tramo_s = NULL WHERE lane_id = ?",
+                         (lane_id,))
     if name is not None:
         fields.append("name = ?")
         params.append(name)

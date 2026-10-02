@@ -206,9 +206,12 @@ class VideoJobProcessor:
         No borra ni cambia ningún cruce."""
         from src.engine import remedir_velocidad
         job = traffic_db.get_video_job(job_id)
-        if job is None or job['status'] != 'done':
-            if job is not None:
-                traffic_db.update_video_job(job_id, vel_estado=None)
+        # Detener la medición vacía `vel_estado` en la base; lo que ya estaba
+        # en la cola (que vive en memoria) se salta aquí al salir.
+        if job is None or job.get('vel_estado') != 'en_cola':
+            return
+        if job['status'] != 'done':
+            traffic_db.update_video_job(job_id, vel_estado=None)
             return
         traffic_db.update_video_job(job_id, vel_estado='midiendo')
         proyecto = traffic_db.get_project(job.get('project_id')) or {}

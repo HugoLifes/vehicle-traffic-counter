@@ -360,6 +360,21 @@ export function useMedirVelocidad() {
   });
 }
 
+export function useDetenerVelocidad() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...conAviso({
+      mutationFn: (projectId: number) => api.detenerVelocidad(projectId),
+      exito: (r) => ({
+        titulo: 'Medición de velocidad detenida',
+        detalle: `${plural(r.detenidos, 'video salió', 'videos salieron')} de la cola. Lo medido se conserva; al volver a pedirla sigue con los que faltan.`,
+      }),
+      fallo: 'No se pudo detener la medición de velocidad',
+      alTerminar: () => qc.invalidateQueries(),
+    }),
+  });
+}
+
 export function useCopyCalibration(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
