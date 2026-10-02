@@ -1487,6 +1487,19 @@ en 1.1–2.1 m (`control_distancia`). Para aforos nuevos: medir una losa o dos
 marcas con cinta al instalar o al recoger; `--distancia "Calzada=metros"` la
 toma sin volver a procesar.
 
+**Velocidad del proyecto 7 sin recontar (2-oct-2026).** Recontar para
+tenerla borraría la revisión de los 879 pesados. `src/engine/remedir_velocidad.py`
+cuenta cada video en memoria con el tramo (fila 870: 8.82 m hacia la cámara,
+8.37 m alejándose, copiado del proyecto 9) y solo escribe `tiempo_tramo_s` en
+los cruces que ya existen, emparejando por línea, segundo y alto de caja. En
+13:10, 16:10 y 21:10 reprodujo el 100 % de los cruces guardados; con velocidad
+94 %, 98 % y 57 % (de noche los faros parten el rastro). A las 16:10, p85
+73.6 / 51.8 km/h contra 72.1 / 54.6 de las mangueras a las 16 h. Botón
+"Medir la velocidad sin recontar" en el Resumen; va por la cola de la GPU con
+la prioridad más baja (~84 s por minuto de video, ~17 h el proyecto 7).
+Poner o mover el tramo ya no marca los conteos como desactualizados.
+Respaldo previo: `data/respaldos/antes_velocidad_p7_2026-10-02.db`.
+
 **Ajustar el recorrido completo NO mejoró**, y está medido. Es lo que hacen
 Roboflow/supervision y los métodos de BrnoCompSpeed: la distancia real de
 cada punto del piso (Z = K / (y − horizonte), piso plano) ajustada sobre
