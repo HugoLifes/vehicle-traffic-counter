@@ -427,6 +427,39 @@ export interface Almacenamiento {
 }
 export const getAlmacenamiento = () => request<Almacenamiento>('/api/videos/almacenamiento');
 
+/* Carpeta de entrada: videos que llegaron por WinSCP o en un disco
+   conectado al Jetson, sin pasar por el navegador. */
+export interface ArchivoEntrada {
+  ruta: string;
+  tamano: number;
+  modificado: string;
+  fecha: string | null;
+  hora: string | null;
+  importado: number | null;
+}
+export interface EstadoImportacion {
+  activa: boolean;
+  total?: number;
+  hechos?: number;
+  bytes_total?: number;
+  bytes_hechos?: number;
+  actual?: string | null;
+  errores?: { ruta: string; motivo: string }[];
+  videos?: number[];
+  omitidos?: number;
+}
+export const getEntrada = (projectId: number) =>
+  request<{ disponible: boolean; archivos: ArchivoEntrada[]; importacion: EstadoImportacion }>(
+    `/api/entrada?project_id=${projectId}`,
+  );
+export const getEstadoImportacion = () => request<EstadoImportacion>('/api/entrada/estado');
+export const importarEntrada = (projectId: number, archivos: { ruta: string; inicio: string }[]) =>
+  request<EstadoImportacion>('/api/entrada/importar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, archivos }),
+  });
+
 /* La hora real de inicio de un video ya subido y aún sin contar. */
 export const ponerInicio = (jobId: number, inicio: string) =>
   request<VideoJob>(`/api/videos/${jobId}/inicio`, {

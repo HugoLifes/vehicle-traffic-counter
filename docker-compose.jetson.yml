@@ -43,6 +43,11 @@ services:
       # montado, Docker crea aquí una carpeta vacía en el SSD: sin la marca
       # .disco_aforo, la plataforma rechaza las subidas y lo dice en Subir.
       - ${AFORO_DIR_VIDEOS:-/mnt/videos/aforo/uploads}:/app/data/uploads
+      # Carpeta de entrada: lo que llega por WinSCP (cuenta `juarez`, encerrada
+      # en /srv/entrada/juarez) o en un disco conectado. SOLO LECTURA: la
+      # plataforma copia de aquí al disco de los videos y nunca borra ni cambia
+      # lo que subieron. Ver src/storage/entrada.py.
+      - ${AFORO_DIR_ENTRADA:-/srv/entrada}:/app/data/entrada:ro
       - ./configs:/app/configs
 
       # El código de Python se monta desde el host, de SOLO LECTURA.

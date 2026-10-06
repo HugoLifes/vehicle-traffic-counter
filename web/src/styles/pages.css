@@ -2110,3 +2110,8 @@
 .almacen-relleno { height: 100%; border-radius: 999px; background: var(--good, #2f7d4f); }
 .almacen--warning .almacen-relleno { background: var(--warning, #b7791f); }
 .almacen--critical .almacen-relleno { background: var(--critical); }
+
+/* Carpeta de entrada (WinSCP o disco conectado). */
+.entrada-lista { max-height: 420px; overflow-y: auto; }
+.entrada-lista .staging-file-row input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; }
+.entrada-lista .staging-file-row.is-hecho { opacity: 0.55; }
