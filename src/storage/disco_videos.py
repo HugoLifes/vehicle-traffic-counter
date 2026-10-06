@@ -77,13 +77,16 @@ def estado() -> dict:
 
 
 def gb_por_hora():
-    """Peso medio de una hora de video, de los videos ya subidos y leídos
-    (el frontal de 2560x1440 pesa ~1 GB/h; el lateral de 640x360, ~0.2).
-    None si todavía no hay ninguno."""
+    """Peso medio de una hora de video, de los últimos 100 videos subidos y
+    leídos. No de todos: el lateral de 640x360 pesa ~0.2 GB/h y el frontal de
+    2560x1440 ~1 GB/h, y el promedio de todo el histórico daba 6 100 h libres
+    donde con la cámara de hoy caben 1 800 (5-oct-2026). None si no hay."""
     from src.storage import traffic_db
     fila = traffic_db.get_connection().execute(
-        """SELECT SUM(size_bytes), SUM(total_frames / fps) FROM video_jobs
-           WHERE fps > 0 AND total_frames > 0 AND size_bytes > 0""").fetchone()
+        """SELECT SUM(size_bytes), SUM(total_frames / fps) FROM (
+               SELECT size_bytes, total_frames, fps FROM video_jobs
+               WHERE fps > 0 AND total_frames > 0 AND size_bytes > 0
+               ORDER BY id DESC LIMIT 100)""").fetchone()
     if not fila or not fila[0] or not fila[1]:
         return None
     return round(fila[0] / 1024 ** 3 / (fila[1] / 3600), 2)

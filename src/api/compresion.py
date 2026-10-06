@@ -9,7 +9,7 @@ rompería el Content-Length de cada pedazo: esos pasan tal cual.
 from starlette.middleware.gzip import GZipMiddleware
 
 # Rutas que devuelven video o imagen.
-_MEDIOS_FINAL = ("/video", "/original", "/live-frame")
+_MEDIOS_FINAL = ("/video", "/original", "/live-frame", "/live-stream")
 _MEDIOS_EXACTOS = ("/api/frames/frame",)
 
 

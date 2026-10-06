@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import torch
 import logging
+import math
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
@@ -139,20 +140,13 @@ class VehicleDetector:
                 logging.info("Habilitando precisión FP16")
                 model.half()
             
-            # Exportar a TensorRT si se solicita (solo Jetson/CUDA)
-            if self.use_tensorrt and torch.cuda.is_available():
-                logging.info("Intentando exportar a TensorRT...")
-                try:
-                    engine_path = self.model_path.replace('.pt', '.engine')
-                    if not Path(engine_path).exists():
-                        model.export(format='engine', half=self.half_precision)
-                        logging.info(f"Modelo exportado a TensorRT: {engine_path}")
-                    else:
-                        logging.info(f"Usando modelo TensorRT existente: {engine_path}")
-                        model = YOLO(engine_path)
-                except Exception as e:
-                    logging.warning(f"No se pudo exportar a TensorRT: {e}")
-            
+            # TensorRT NO se exporta aquí. Antes se exportaba al cargar, dentro
+            # del hilo de la cola: 9 minutos de GPU en el Orin con el primer
+            # video esperando, y el modelo exportado ni siquiera se usaba. Los
+            # motores se hacen aparte, uno por tamaño de entrada
+            # (tools/exportar_tensorrt.py), y `_modelo_para` los toma si existen.
+            self._motores: Dict[Tuple[int, int], YOLO] = {}
+            self._sin_motor = set()
             logging.info(f"Modelo cargado: {self.model_path}")
             return model
             
@@ -160,6 +154,44 @@ class VehicleDetector:
             logging.error(f"Error cargando modelo: {e}")
             raise
     
+    def forma_de_entrada(self, alto: int, ancho: int) -> Tuple[int, int]:
+        """El tamaño que recibe la red para una imagen de alto x ancho: la
+        letterbox rectangular de ultralytics a imgsz (lado mayor = imgsz, el
+        otro redondeado y llevado al múltiplo de 32 de arriba)."""
+        r = self.input_size / max(alto, ancho)
+        return (int(math.ceil(round(alto * r) / 32) * 32),
+                int(math.ceil(round(ancho * r) / 32) * 32))
+
+    def ruta_motor(self, forma: Tuple[int, int]) -> Path:
+        p = Path(self.model_path)
+        return p.with_name(f"{p.stem}_{forma[0]}x{forma[1]}_fp16.engine")
+
+    def _modelo_para(self, entrada: np.ndarray):
+        """(modelo, imgsz) para esta entrada. Con `use_tensorrt`, el motor
+        TensorRT FP16 de ese tamaño exacto si ya existe; si no, el .pt.
+
+        Medido en el Orin sobre la franja del proyecto 7 (448x1280), 300
+        cuadros de día y 300 de noche: 1 944 y 298 detecciones con los dos,
+        99.6 % y 100 % emparejadas con la misma clase, confianza movida 0.001
+        de mediana, y 63 -> 30 ms por cuadro (6-oct-2026)."""
+        if not self.use_tensorrt or not torch.cuda.is_available():
+            return self.model, self.input_size
+        forma = self.forma_de_entrada(*entrada.shape[:2])
+        motor = self._motores.get(forma)
+        if motor is None:
+            # Sin guardar el "no hay": un motor exportado con la plataforma
+            # encendida se toma en el siguiente cuadro, sin reiniciar. Mirar
+            # si existe el archivo cuesta microsegundos.
+            ruta = self.ruta_motor(forma)
+            if ruta.exists():
+                logging.info(f"Detector con TensorRT FP16: {ruta}")
+                motor = self._motores[forma] = YOLO(str(ruta), task="detect")
+            elif forma not in self._sin_motor:
+                self._sin_motor.add(forma)
+                logging.info(f"Sin motor TensorRT para {forma[0]}x{forma[1]} ({ruta.name}); "
+                             f"se usa {self.model_path}. Se crea con tools/exportar_tensorrt.py")
+        return (motor, forma) if motor is not None else (self.model, self.input_size)
+
     def _opciones_precision(self) -> Dict:
         """
         `half` solo se pasa a predict() cuando FP16 está activado.
@@ -253,11 +285,12 @@ class VehicleDetector:
                 offset_y = y0
 
             # Realizar detección
-            results = self.model.predict(
+            modelo, imgsz = self._modelo_para(entrada)
+            results = modelo.predict(
                 entrada,
                 conf=self.confidence_threshold,
                 iou=self.iou_threshold,
-                imgsz=self.input_size,
+                imgsz=imgsz,
                 agnostic_nms=self.nms_agnostico,
                 verbose=False,
                 device=self.device,

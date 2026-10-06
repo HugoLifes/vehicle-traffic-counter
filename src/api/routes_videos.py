@@ -474,8 +474,49 @@ def anotar(job_id: int):
     return {"job_id": job_id, "anotado_estado": "en_cola"}
 
 
+CABECERA_CUADRO = b"--cuadro\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n"
+FIN_CUADRO = b"\r\n"
+
+
+@router.get("/live-stream")
+async def live_stream():
+    """El visor en vivo como transmisión continua (MJPEG), como la de una
+    cámara IP: el navegador la muestra en un <img> sin pedir cuadro por
+    cuadro. Manda siempre el cuadro MÁS NUEVO: si la conexión es lenta, los
+    cuadros intermedios se saltan en vez de acumular atraso. Mientras alguien
+    mira, el procesador dibuja ~8 cuadros por segundo de video en vez de 1.
+    Termina sola si no hay nada procesándose durante 10 s."""
+    processor = get_processor()
+    if processor is None:
+        return Response(status_code=204)
+
+    async def cuadros():
+        visto, quieto = -1, 0.0
+        while True:
+            processor.marcar_espectador()
+            seq = processor.get_live_seq()
+            if seq != visto:
+                frame, _ = processor.get_live_frame()
+                if frame is not None:
+                    visto, quieto = seq, 0.0
+                    ok, buf = await asyncio.to_thread(
+                        cv2.imencode, ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    if ok:
+                        datos = buf.tobytes()
+                        yield (CABECERA_CUADRO % len(datos)) + datos + FIN_CUADRO
+                    continue
+            quieto += 0.04
+            if quieto > 10:
+                return
+            await asyncio.sleep(0.04)
+
+    return StreamingResponse(
+        cuadros(), media_type="multipart/x-mixed-replace; boundary=cuadro",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
 @router.get("/live-frame")
-def live_frame(visto: Optional[int] = None):
+def live_frame(visto: Optional[int] = None, estado: bool = False):
     """
     Último cuadro anotado del video que se está procesando ahora mismo.
     Permite ver en vivo lo que la IA está detectando, en vez de esperar a
@@ -490,6 +531,10 @@ def live_frame(visto: Optional[int] = None):
     frame, job_id = processor.get_live_frame()
     if frame is None:
         return Response(status_code=204)
+    # Solo qué se procesa, sin la imagen: el visor fluido trae los cuadros
+    # por /live-stream y esto le dice cuándo mostrarlo.
+    if estado:
+        return {"job_id": job_id, "cuadro": seq}
     # El visor ya tiene este cuadro: no se vuelve a mandar (X-Sin-Cambio).
     if visto is not None and visto == seq:
         return Response(status_code=204, headers={"X-Sin-Cambio": "1", "X-Cuadro": str(seq)})

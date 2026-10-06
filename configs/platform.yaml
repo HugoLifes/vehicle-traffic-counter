@@ -50,7 +50,15 @@ detector:
   #   30.6 ms/cuadro -> 4.6 min por cada video de 10 min.
   # El Orin Nano es del orden de 5-8x más lento, así que sin TensorRT un
   # video de 10 min tardaría entre 23 y 37 minutos.
-  use_tensorrt: false
+  #
+  # TensorRT (6-oct-2026): encendido. El detector usa un motor FP16 por tamaño
+  # de entrada SOLO si existe (tools/exportar_tensorrt.py --proyecto N); si no,
+  # el .pt de siempre. Medido en el Orin sobre la franja del proyecto 7, 300
+  # cuadros de día y 300 de noche: mismas detecciones (1 944 y 298, la misma
+  # clase en 99.6 y 100 %) y 63 -> 30 ms por cuadro.
+  use_tensorrt: true
+  # FP16 sobre el .pt: sin medir, se deja apagado. El FP16 que sí se usa es
+  # el del motor TensorRT.
   half_precision: false
 
 tracker:

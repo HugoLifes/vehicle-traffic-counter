@@ -60,66 +60,44 @@ interface Rejection {
 }
 
 /* --- Visor en vivo del procesamiento ------------------------------------
-   Muestra el cuadro que la IA está analizando ahora mismo. Va a su propio
-   ritmo (dos por segundo) para que se lea como video y no como
-   diapositivas. */
+   Una transmisión continua (MJPEG) de lo que la IA analiza, como la de una
+   cámara IP: el navegador la pinta solo, sin pedir foto por foto. Antes se
+   pedía un cuadro cada medio segundo y el servidor dibujaba uno por segundo
+   de video: con el análisis a ~1.6x del tiempo real se veían diapositivas.
+   Aquí solo se pregunta, cada 2 s, si hay algo procesándose. */
 
 function LiveView({ jobs }: { jobs: VideoJob[] }) {
-  const [src, setSrc] = useState<string | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
-  const urlRef = useRef<string | null>(null);
-  // Último cuadro recibido: el servidor no lo vuelve a mandar si no cambió.
-  const cuadroRef = useRef<string | null>(null);
+  // Cambia al reconectar: un <img> con la misma URL no vuelve a pedirla.
+  const [conexion, setConexion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    let inFlight = false;
-
     async function tick() {
-      if (inFlight || document.hidden) return;
-      inFlight = true;
+      if (document.hidden) return;
       try {
-        const visto = cuadroRef.current ? `?visto=${cuadroRef.current}` : '';
-        const res = await fetch(`/api/videos/live-frame${visto}`, { cache: 'no-store' });
-        // Mismo cuadro que ya está en pantalla: no hay nada que bajar.
-        if (res.status === 204 && res.headers.get('X-Sin-Cambio')) return;
-        // 204 sin más no es un error: significa que no hay nada procesándose.
+        const res = await fetch('/api/videos/live-frame?estado=1', { cache: 'no-store' });
+        if (cancelled) return;
         if (res.status === 204) {
-          cuadroRef.current = null;
-          if (!cancelled) setSrc(null);
+          setJobId(null);
           return;
         }
         if (!res.ok) return;
-        const url = URL.createObjectURL(await res.blob());
-        if (cancelled) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        // Liberar el cuadro anterior; si no, la memoria del navegador crece
-        // sin límite a dos imágenes por segundo.
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = url;
-        setSrc(url);
-        const id = res.headers.get('X-Job-Id');
-        setJobId(id ? Number(id) : null);
-        cuadroRef.current = res.headers.get('X-Cuadro');
+        const d = (await res.json()) as { job_id: number | null };
+        setJobId(d.job_id ?? null);
       } catch {
-        // Sin red se deja el último cuadro en pantalla en vez de parpadear.
-      } finally {
-        inFlight = false;
+        // Sin red se deja lo que está en pantalla.
       }
     }
-
     void tick();
-    const timer = window.setInterval(tick, 500);
+    const timer = window.setInterval(tick, 2000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
     };
   }, []);
 
+  const src = jobId != null ? `/api/videos/live-stream?v=${jobId}-${conexion}` : null;
   if (!src) return null;
   const job = jobs.find((j) => j.id === jobId);
   /* A qué velocidad va el análisis respecto al video: es lo que explica por
@@ -142,13 +120,19 @@ function LiveView({ jobs }: { jobs: VideoJob[] }) {
         </Pill>
       </div>
       <div className="live-stage">
-        <img src={src} alt="Cuadro actual del video con las detecciones de la IA" />
+        <img
+          src={src}
+          alt="Video en vivo con las detecciones de la IA"
+          // La transmisión se corta al terminar cada archivo o si cae la red:
+          // se vuelve a abrir en 1 s.
+          onError={() => window.setTimeout(() => setConexion((c) => c + 1), 1000)}
+        />
       </div>
       <p className="live-hint">
-        Es el análisis en vivo: la IA revisa cada uno de los cuadros del video
-        {ritmo ? ` y va a ${ritmo.toFixed(1)}× del tiempo real` : ''}, así que esta vista avanza más
-        despacio que la grabación y se actualiza cada vez que termina un segundo de video. Para
-        verlo fluido, cuando el archivo termine ábrelo con el ojo o pide su video con detecciones.
+        Es el análisis en vivo: la IA revisa uno por uno todos los cuadros del video
+        {ritmo ? `, a ${ritmo.toFixed(1)}× del tiempo real` : ''}. Si va por debajo de 1×, la vista
+        avanza más despacio que la grabación; con internet lento se saltan cuadros para no
+        atrasarse. El video ya contado se ve a velocidad normal con el ojo de cada archivo.
       </p>
     </Card>
   );

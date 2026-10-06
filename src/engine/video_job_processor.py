@@ -52,6 +52,13 @@ PRIORIDAD_CONTEO = 2
 # eso debe retrasar un conteo nuevo.
 PRIORIDAD_VELOCIDAD = 3
 ANCHO_MAXIMO_ANOTADO = 1280
+# El visor en vivo, cuando no se guarda video anotado: más chico, porque se
+# manda por internet cuadro por cuadro y dibujar cuesta según el tamaño.
+ANCHO_VIVO = 960
+# Cuadros por segundo de video que se dibujan mientras alguien mira el visor.
+# Antes era 1: con el análisis a ~1.6x del tiempo real, el visor cambiaba de
+# imagen cada 1.6 s y se veía como diapositivas (5-oct-2026).
+CUADROS_VIVO = 8
 
 
 def _transcode_to_h264(raw_path: Path, final_path: Path):
@@ -174,6 +181,14 @@ class VideoJobProcessor:
     def get_live_seq(self) -> int:
         with self._live_lock:
             return self._live_seq
+
+    def marcar_espectador(self):
+        """Alguien está mirando el visor en vivo: mientras dure, se dibujan
+        más cuadros. Sin nadie mirando, dibujar de más solo cuesta tiempo."""
+        self._espectador = time.time()
+
+    def hay_espectador(self) -> bool:
+        return time.time() - getattr(self, "_espectador", 0.0) < 5.0
 
     def _poner(self, prioridad: int, trabajo):
         # El turno desempata: a igual prioridad, en el orden en que llegaron.
@@ -599,6 +614,13 @@ class VideoJobProcessor:
             # Cada cuantos cuadros se dibuja cuando no se guarda video. Uno
             # por segundo alcanza para que el visor en vivo muestre algo.
             cada_para_vivo = max(1, int(fps))
+            cada_fluido = max(1, round(fps / CUADROS_VIVO))
+            # Sin video que guardar, el visor no necesita la resolución del
+            # anotado.
+            vivo_w, vivo_h = salida_w, salida_h
+            if writer is None and salida_w > ANCHO_VIVO:
+                vivo_w = ANCHO_VIVO
+                vivo_h = int(frame_height * ANCHO_VIVO / frame_width) // 2 * 2
             visualizer = Visualizer(config=self.config.get('visualizer', {}))
 
             traffic_db.update_video_job(job_id, total_frames=total_frames, fps=fps)
@@ -716,7 +738,8 @@ class VideoJobProcessor:
                 # Las zonas van debajo de las cajas para que no las tapen.
                 # Sin video que guardar solo se dibuja de vez en cuando, para
                 # el visor en vivo: dibujar cuesta 22 ms por cuadro.
-                dibujar = guardar_anotado or frame_count % cada_para_vivo == 0
+                dibujar = (guardar_anotado or frame_count % cada_para_vivo == 0
+                           or (frame_count % cada_fluido == 0 and self.hay_espectador()))
                 # Con el marcador se dibuja al final, ya con los cruces de
                 # este cuadro. Y sobre una copia: draw_zones pinta encima del
                 # cuadro que recibe, y los clasificadores recortan de ese
@@ -828,7 +851,7 @@ class VideoJobProcessor:
 
                 if marcador is not None:
                     if dibujar:
-                        annotated = marcador.dibujar(frame, tracks, frame_count, salida_w, salida_h)
+                        annotated = marcador.dibujar(frame, tracks, frame_count, vivo_w, vivo_h)
                     marcador.avanzar()
                 else:
                     # Un solo panel compacto para todos los carriles. Antes se
