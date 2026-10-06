@@ -112,7 +112,8 @@ Para cambiar la contraseña, otra vez `bash tools/poner_acceso.sh`.
    Si la cámara no se movió desde otro aforo, **copia la calibración** de ese
    proyecto: trae las zonas, las líneas atadas a su calzada y el tramo.
 2. **Subir.** Arrastra los videos. Revisa que el *inicio real* de cada uno sea
-   el correcto antes de subir.
+   el correcto antes de subir. Para muchos videos o internet lento, mejor por
+   WinSCP (abajo).
 3. **Revisar encuadre** (en Subir, sobre un video). Califica en un minuto si
    el video sirve: tamaño del vehículo, exposición, nitidez. Si sale "no
    recomendable", lee los avisos: casi siempre es la cámara, y contar no lo
@@ -133,9 +134,31 @@ Para cambiar la contraseña, otra vez `bash tools/poner_acceso.sh`.
    - "Ver por dónde pasan los vehículos" muestra los rastros para comprobar
      que la línea los corta de través.
 5. **Empezar conteo.** Los videos entran a la cola y se procesan uno por uno.
-   Con la cámara frontal tarda del orden de 1.6 horas por hora de video.
+   Con la cámara frontal va algo más rápido que la grabación: una hora de
+   video en ~45–55 minutos.
 6. **Reporte.** Volumen por intervalo, composición, velocidad y hora pico.
    Desde ahí se descarga el Excel.
+
+### Subir muchos videos por WinSCP
+
+Por la página, desde fuera de la casa, los videos pasan por el relevo público
+y suben lento. Por WinSCP van a la velocidad del internet de quien sube,
+retoman solos si se corta y se arrastran carpetas enteras.
+
+1. Instala **Tailscale** (tailscale.com/download) y entra con la invitación.
+2. Instala **WinSCP** (winscp.net). Nueva conexión: protocolo **SFTP**,
+   servidor **100.107.72.1**, puerto **22**, usuario **juarez** y la
+   contraseña que te dieron.
+3. Arrastra las carpetas a la ventana de la derecha. Si van por hora y
+   minuto (`2026-10-05/14/00.mp4`, `14/01.mp4`…), la plataforma toma la fecha
+   y la hora solas.
+4. En la plataforma: **Subir → Videos en la carpeta de entrada**. Revisa la
+   hora de cada uno, elige y pulsa **Importar**. Se copian al disco de los
+   videos y quedan listos para calibrar y contar.
+
+Esa cuenta solo puede subir y bajar archivos de su carpeta: no ve nada más
+del equipo ni puede ejecutar nada. Lo que subes ahí no se borra al importar;
+bórralo tú desde WinSCP cuando ya esté contado.
 
 ## 5. Revisar antes de entregar
 

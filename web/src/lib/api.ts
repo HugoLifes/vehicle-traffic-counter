@@ -431,6 +431,7 @@ export const getAlmacenamiento = () => request<Almacenamiento>('/api/videos/alma
    conectado al Jetson, sin pasar por el navegador. */
 export interface ArchivoEntrada {
   ruta: string;
+  nombre: string;
   tamano: number;
   modificado: string;
   fecha: string | null;

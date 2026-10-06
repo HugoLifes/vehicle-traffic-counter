@@ -81,6 +81,15 @@ def _seguro(ruta_relativa: str) -> Path:
     return ruta
 
 
+def visible(ruta_relativa: str) -> str:
+    """La ruta como la piensa quien subió: sin `juarez/videos/` delante (la
+    carpeta de su cuenta de WinSCP)."""
+    partes = Path(ruta_relativa).parts
+    if len(partes) > 2 and partes[1] == "videos":
+        partes = partes[2:]
+    return "/".join(partes)
+
+
 def huella(ruta_relativa: str, tamano: int, mtime: float, proyecto_id: int) -> str:
     clave = f"entrada|{proyecto_id}|{ruta_relativa}|{tamano}|{int(mtime)}"
     return "entrada-" + hashlib.sha256(clave.encode()).hexdigest()[:28]
@@ -107,7 +116,7 @@ def listar(proyecto_id: Optional[int] = None) -> Dict:
             continue
         rel = ruta.relative_to(DIRECTORIO).as_posix()
         archivos.append({
-            "ruta": rel, "tamano": st.st_size,
+            "ruta": rel, "nombre": visible(rel), "tamano": st.st_size,
             "modificado": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
             **hora_de(rel),
             "importado": (importados.get(huella(rel, st.st_size, st.st_mtime, proyecto_id))
@@ -185,7 +194,7 @@ def _copiar(proyecto, pedidos, rutas, destino: Path):
                 raise IOError(f"la copia quedó de {copiado} bytes y el original tiene {st.st_size}")
             temporal.replace(final)
             job_id = traffic_db.create_video_job(
-                original_name=Path(rel).name if "/" not in rel else rel.replace("/", " / "),
+                original_name=visible(rel).replace("/", " / "),
                 stored_path=str(final), size_bytes=st.st_size, source_label=proyecto["name"],
                 project_id=proyecto["id"], video_start_time=pedido.get("inicio"),
                 interval_minutes=proyecto["interval_minutes"], status="awaiting_calibration")

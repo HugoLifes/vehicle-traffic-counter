@@ -148,13 +148,13 @@ export function ImportarEntrada({ projectId }: { projectId: number }) {
                 type="checkbox"
                 checked={!hecho && f.elegido}
                 disabled={hecho || activa}
-                aria-label={`Importar ${a.ruta}`}
+                aria-label={`Importar ${a.nombre}`}
                 onChange={(e) =>
                   setFilas((p) => ({ ...p, [a.ruta]: { ...f, elegido: e.target.checked } }))
                 }
               />
-              <span className="sf-name" title={a.ruta}>
-                {a.ruta}
+              <span className="sf-name" title={a.nombre}>
+                {a.nombre}
               </span>
               <span className="sf-meta">{formatSize(a.tamano)}</span>
               {hecho ? (
@@ -166,7 +166,7 @@ export function ImportarEntrada({ projectId }: { projectId: number }) {
                     type="date"
                     value={f.fecha}
                     disabled={activa}
-                    aria-label={`Fecha de inicio de ${a.ruta}`}
+                    aria-label={`Fecha de inicio de ${a.nombre}`}
                     onChange={(e) =>
                       setFilas((p) => ({ ...p, [a.ruta]: { ...f, fecha: e.target.value } }))
                     }
@@ -176,7 +176,7 @@ export function ImportarEntrada({ projectId }: { projectId: number }) {
                     step={1}
                     value={f.hora}
                     disabled={activa}
-                    aria-label={`Hora de inicio de ${a.ruta}`}
+                    aria-label={`Hora de inicio de ${a.nombre}`}
                     onChange={(e) =>
                       setFilas((p) => ({ ...p, [a.ruta]: { ...f, hora: e.target.value } }))
                     }
