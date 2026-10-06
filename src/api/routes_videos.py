@@ -478,6 +478,22 @@ CABECERA_CUADRO = b"--cuadro\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r
 FIN_CUADRO = b"\r\n"
 
 
+# La transmisión va a 800 px y calidad 60: a 1280 px y 70 pesaba 154 KB por
+# cuadro, 7.4 Mb/s a 6 cuadros/s por la dirección pública (medido 6-oct-2026),
+# más de lo que deja pasar el relevo de Tailscale y muy por encima del
+# internet de Juárez. Con red lenta se saltan cuadros, pero cuantos más
+# lleguen, más fluido.
+ANCHO_TRANSMISION = 800
+
+
+def _jpeg_vivo(frame):
+    h, w = frame.shape[:2]
+    if w > ANCHO_TRANSMISION:
+        frame = cv2.resize(frame, (ANCHO_TRANSMISION, int(h * ANCHO_TRANSMISION / w) // 2 * 2),
+                           interpolation=cv2.INTER_AREA)
+    return cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+
+
 @router.get("/live-stream")
 async def live_stream():
     """El visor en vivo como transmisión continua (MJPEG), como la de una
@@ -499,8 +515,7 @@ async def live_stream():
                 frame, _ = processor.get_live_frame()
                 if frame is not None:
                     visto, quieto = seq, 0.0
-                    ok, buf = await asyncio.to_thread(
-                        cv2.imencode, ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    ok, buf = await asyncio.to_thread(_jpeg_vivo, frame)
                     if ok:
                         datos = buf.tobytes()
                         yield (CABECERA_CUADRO % len(datos)) + datos + FIN_CUADRO
