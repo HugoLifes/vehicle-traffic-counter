@@ -167,6 +167,9 @@ class VehicleDetector:
         return p.with_name(f"{p.stem}_{forma[0]}x{forma[1]}_fp16.engine")
 
     def _modelo_para(self, entrada: np.ndarray):
+        return self._modelo_para_forma(*entrada.shape[:2])
+
+    def _modelo_para_forma(self, alto: int, ancho: int):
         """(modelo, imgsz) para esta entrada. Con `use_tensorrt`, el motor
         TensorRT FP16 de ese tamaño exacto si ya existe; si no, el .pt.
 
@@ -176,7 +179,7 @@ class VehicleDetector:
         de mediana, y 63 -> 30 ms por cuadro (6-oct-2026)."""
         if not self.use_tensorrt or not torch.cuda.is_available():
             return self.model, self.input_size
-        forma = self.forma_de_entrada(*entrada.shape[:2])
+        forma = self.forma_de_entrada(alto, ancho)
         motor = self._motores.get(forma)
         if motor is None:
             # Sin guardar el "no hay": un motor exportado con la plataforma
@@ -244,10 +247,42 @@ class VehicleDetector:
             return None      # cubre casi todo: no vale la pena recortar
         return (y0, y1)
 
+    def _recortar(self, frame: np.ndarray):
+        """La franja de la vía (o el cuadro entero) y dónde empieza."""
+        if self._band is None:
+            return frame, 0
+        y0, y1 = self._band
+        y0 = max(0, min(y0, frame.shape[0] - 1))
+        y1 = max(y0 + 1, min(y1, frame.shape[0]))
+        return frame[y0:y1], y0
+
+    def preparar(self, frame: np.ndarray) -> Dict:
+        """El recorte de la franja y la reducción al tamaño de la red, para
+        hacerlos en OTRO hilo mientras la GPU detecta el cuadro anterior.
+
+        Es exactamente la reducción de la letterbox de ultralytics
+        (r = imgsz / lado mayor, cv2.INTER_LINEAR, `round` de cada lado), así
+        que la red recibe el mismo tensor: ultralytics ve la imagen ya del
+        tamaño y solo agrega el relleno. Medido en el Orin (6-oct-2026): esa
+        reducción eran 10 de los 72 ms por cuadro, con la GPU parada."""
+        entrada, offset_y = self._recortar(frame)
+        alto, ancho = entrada.shape[:2]
+        r = self.input_size / max(alto, ancho)
+        nuevo = (round(ancho * r), round(alto * r))
+        img = entrada if nuevo == (ancho, alto) else cv2.resize(
+            entrada, nuevo, interpolation=cv2.INTER_LINEAR)
+        # Las cajas vuelven dividiendo los DOS ejes entre r, como hace
+        # scale_boxes de ultralytics con su `gain`: no entre la proporción de
+        # cada lado (438/875 no es 0.5).
+        return {"img": img, "escala": r if img is not entrada else 1.0,
+                "alto": alto, "ancho": ancho, "offset_y": offset_y,
+                "input_size": self.input_size, "banda": self._band}
+
     def detect(
         self,
         frame: np.ndarray,
-        return_annotated: bool = False
+        return_annotated: bool = False,
+        preparado: Optional[Dict] = None
     ) -> Tuple[List[Dict], Optional[np.ndarray]]:
         """
         Detectar vehículos en un frame
@@ -275,17 +310,23 @@ class VehicleDetector:
             # vehículo llega al modelo mucho más grande. Medido sobre el
             # footage real: 75 -> 112 cruces en 2 min, al mismo costo por
             # cuadro que el cuadro completo a imgsz 640.
-            entrada = frame
-            offset_y = 0
-            if self._band is not None:
-                y0, y1 = self._band
-                y0 = max(0, min(y0, frame.shape[0] - 1))
-                y1 = max(y0 + 1, min(y1, frame.shape[0]))
-                entrada = frame[y0:y1]
-                offset_y = y0
+            # Un `preparado` de otra franja o resolución (el detector se
+            # comparte entre proyectos) no vale: se prepara aquí.
+            if preparado is not None and (preparado["banda"] != self._band
+                                          or preparado["input_size"] != self.input_size):
+                preparado = None
+            if preparado is None:
+                entrada, offset_y = self._recortar(frame)
+                modelo, imgsz = self._modelo_para(entrada)
+                escala_x = escala_y = 1.0
+                limite = None
+            else:
+                entrada, offset_y = preparado["img"], preparado["offset_y"]
+                modelo, imgsz = self._modelo_para_forma(preparado["alto"], preparado["ancho"])
+                escala_x = escala_y = preparado["escala"]
+                limite = (preparado["ancho"], preparado["alto"])
 
             # Realizar detección
-            modelo, imgsz = self._modelo_para(entrada)
             results = modelo.predict(
                 entrada,
                 conf=self.confidence_threshold,
@@ -302,16 +343,20 @@ class VehicleDetector:
             
             if len(results) > 0:
                 result = results[0]
-                
-                # Obtener detecciones
-                boxes = result.boxes
-                
-                for box in boxes:
-                    # Obtener datos
-                    xyxy = box.xyxy[0].cpu().numpy()
-                    conf = float(box.conf[0].cpu().numpy())
-                    cls = int(box.cls[0].cpu().numpy())
-                    
+
+                # De la GPU una sola vez y no caja por caja: eran ~40 copias
+                # por cuadro, 3 ms (medido en el Orin, 6-oct-2026).
+                cajas = result.boxes.xyxy.cpu().numpy()
+                confs = result.boxes.conf.cpu().numpy()
+                clases = result.boxes.cls.cpu().numpy()
+                if limite is not None:
+                    # De la imagen reducida a la franja, y recortadas a ella
+                    # igual que hace ultralytics con la imagen original.
+                    cajas = cajas / np.array([escala_x, escala_y, escala_x, escala_y], dtype=cajas.dtype)
+                    cajas[:, [0, 2]] = cajas[:, [0, 2]].clip(0, limite[0])
+                    cajas[:, [1, 3]] = cajas[:, [1, 3]].clip(0, limite[1])
+
+                for xyxy, conf, cls in zip(cajas, confs.tolist(), clases.astype(int).tolist()):
                     # Filtrar solo vehículos
                     if cls in self.vehicle_classes:
                         detection = {

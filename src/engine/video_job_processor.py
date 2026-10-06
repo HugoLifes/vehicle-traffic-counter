@@ -30,6 +30,7 @@ from src.tracker import VehicleTracker
 from src.storage import traffic_db
 from src.engine import arranque, conteo_trayectoria, perfil_deteccion, presentacion
 from src.engine.lanes import build_lane_counters
+from src.engine.lector import LectorAdelantado
 from src.engine.velocidad import MedidorVelocidad
 from src.engine.origen_destino import AforoDireccional
 from src.engine.rastreo_bytetrack import RastreadorBytetrack
@@ -463,6 +464,7 @@ class VideoJobProcessor:
         # el direccional, hay que devolverlo aunque el video falle, o el
         # siguiente aforo por línea contaría con 0.1 sin que nadie lo note.
         umbral_restaurar = None
+        lector = None
         try:
             # El filtro de cajas repetidas entre clases es del PROYECTO, no
             # del detector: el mismo modelo sirve a aforos con vehículos de
@@ -679,12 +681,15 @@ class VideoJobProcessor:
             det_crudas = 0
             det_en_zona = 0
 
+            # Lee y prepara el cuadro siguiente mientras la GPU detecta este
+            # (ver src/engine/lector.py). Desde aquí solo el lector toca cap.
+            lector = LectorAdelantado(cap, detector.preparar)
             while not self._stop_event.is_set():
-                ret, frame = cap.read()
+                ret, frame, preparado = lector.read()
                 if not ret:
                     break
 
-                detections, _ = detector.detect(frame)
+                detections, _ = detector.detect(frame, preparado=preparado)
                 # Se filtra ANTES del tracker, no después: un vehículo
                 # estacionado fuera de la calzada que llega a formar track
                 # ya ensucia el conteo aunque después se descarte.
@@ -1034,6 +1039,8 @@ class VideoJobProcessor:
                 self._live_frame = None
                 self._live_job_id = None
         finally:
+            if lector is not None:
+                lector.cerrar()
             cap.release()
             if writer is not None:
                 writer.release()
