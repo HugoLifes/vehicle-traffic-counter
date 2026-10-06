@@ -60,13 +60,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => null);
     const detail =
       body && typeof body === 'object' && 'detail' in body
-        ? String((body as { detail: unknown }).detail)
+        ? textoDelDetalle((body as { detail: unknown }).detail, res.status)
         : `El servidor respondió ${res.status}.`;
     throw new ApiError(detail, res.status);
   }
 
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/* El `detail` de FastAPI puede ser texto, un objeto con `mensaje` o la lista
+   de errores de validación. `String()` de un objeto da "[object Object]", que
+   es lo que vieron en Juárez al fallar una subida (2-oct-2026). */
+function textoDelDetalle(detail: unknown, status: number): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const partes = detail
+      .map((d) => (d && typeof d === 'object' && 'msg' in d ? String((d as { msg: unknown }).msg) : ''))
+      .filter(Boolean);
+    if (partes.length) return `Datos no válidos: ${partes.join('; ')}.`;
+  }
+  if (detail && typeof detail === 'object' && 'mensaje' in detail) {
+    return String((detail as { mensaje: unknown }).mensaje);
+  }
+  return `El servidor respondió ${status}.`;
 }
 
 const json = (body: unknown): RequestInit => ({
@@ -253,7 +270,7 @@ export function uploadVideoConProgreso(
       }
       const detail =
         body && typeof body === 'object' && 'detail' in body
-          ? String((body as { detail: unknown }).detail)
+          ? textoDelDetalle((body as { detail: unknown }).detail, xhr.status)
           : `El servidor respondió ${xhr.status}.`;
       reject(new ApiError(detail, xhr.status));
     };
@@ -277,7 +294,10 @@ export function uploadVideoConProgreso(
   tenía responde 409 con lo que tiene y se sigue desde ahí. Volver a elegir
   el mismo archivo después de cerrar la página continúa donde se quedó.
 */
-const PEDAZO = 16 * 1024 * 1024;
+/* 4 MB: desde Juárez, por el relevo de internet, se midieron ~25 KB/s. Un
+   pedazo de 16 MB tardaba 11 min y un corte a la mitad lo tiraba entero; uno
+   de 4 MB son menos de 3 min. En la red de la casa el costo es nulo. */
+const PEDAZO = 4 * 1024 * 1024;
 const REINTENTOS = 6;
 
 function subirPedazo(
@@ -321,13 +341,20 @@ export async function subirVideoPorPedazos(
     modificado: archivo.lastModified,
     inicio,
   };
-  const { subida_id, recibido } = await request<{ subida_id: string; recibido: number }>(
-    '/api/videos/subida/iniciar',
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) },
-  );
-  let offset = recibido;
+  const { subida_id, recibido, ya_subido } = await request<{
+    subida_id: string;
+    recibido: number;
+    ya_subido?: number;
+  }>('/api/videos/subida/iniciar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  // Este mismo archivo ya quedó registrado: terminar devuelve ese video.
+  let offset = ya_subido ? archivo.size : recibido;
   onProgress(offset, archivo.size, false);
   let fallos = 0;
+  let ocupado = 0;
   while (offset < archivo.size) {
     const pedazo = archivo.slice(offset, Math.min(archivo.size, offset + PEDAZO));
     const r = await subirPedazo(
@@ -342,8 +369,23 @@ export async function subirVideoPorPedazos(
       continue;
     }
     if (r.status === 409) {
+      const det = (r.body as { detail?: { recibido?: number; ocupado?: boolean } } | null)?.detail;
+      if (det?.ocupado) {
+        // Otra pestaña (o un doble clic) sube este mismo archivo: se espera
+        // a que acabe en vez de pelearse por el mismo pedazo.
+        ocupado += 1;
+        if (ocupado > 120) {
+          throw new ApiError(
+            `${archivo.name} se está subiendo desde otra pestaña o equipo. Espera a que termine allá.`,
+            409,
+          );
+        }
+        onProgress(det.recibido ?? offset, archivo.size, true);
+        await esperar(5000);
+        offset = det.recibido ?? offset;
+        continue;
+      }
       // El servidor tiene otra cosa (un reintento de un pedazo que sí llegó).
-      const det = (r.body as { detail?: { recibido?: number } } | null)?.detail;
       if (typeof det?.recibido === 'number') {
         offset = det.recibido;
         continue;
@@ -371,6 +413,24 @@ export const getMetrics = (projectId: number, minutes: number) =>
 
 export const getDireccional = (projectId: number, minutes: number) =>
   request<AforoDireccional>(`/api/projects/${projectId}/direccional?interval_minutes=${minutes}`);
+
+/* Si el disco de los videos está conectado y cuánto le cabe. */
+export interface Almacenamiento {
+  exigido: boolean;
+  conectado: boolean;
+  libre_gb: number;
+  total_gb: number;
+  problema: string | null;
+}
+export const getAlmacenamiento = () => request<Almacenamiento>('/api/videos/almacenamiento');
+
+/* La hora real de inicio de un video ya subido y aún sin contar. */
+export const ponerInicio = (jobId: number, inicio: string) =>
+  request<VideoJob>(`/api/videos/${jobId}/inicio`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inicio }),
+  });
 
 export const videoUrl = (jobId: number) => `/api/videos/${jobId}/video`;
 export const originalUrl = (jobId: number) => `/api/videos/${jobId}/original`;
@@ -436,7 +496,7 @@ export async function fetchImage(url: string): Promise<HTMLImageElement> {
     const body = await res.json().catch(() => null);
     const detail =
       body && typeof body === 'object' && 'detail' in body
-        ? String((body as { detail: unknown }).detail)
+        ? textoDelDetalle((body as { detail: unknown }).detail, res.status)
         : `El servidor respondió ${res.status}.`;
     throw new ApiError(detail, res.status);
   }

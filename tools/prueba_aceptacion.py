@@ -161,6 +161,15 @@ def salud(max_horas_respaldo, min_disco):
         anotar("salud", "Respaldo de la base", "PASA" if horas <= max_horas_respaldo else "AVISO",
                f"el último tiene {horas:.0f} h; hay {len(existentes)}")
 
+    # Los videos viven en el disco externo (src/storage/disco_videos.py). Si
+    # no está montado, Docker pone la carpeta vacía del SSD en su lugar y las
+    # subidas llenarían el disco del sistema sin decir nada.
+    from src.storage import disco_videos
+    d = disco_videos.estado()
+    if d["exigido"]:
+        anotar("salud", "Disco de los videos", "FALLA" if d["problema"] else "PASA",
+               d["problema"] or f"conectado, {d['libre_gb']:.0f} de {d['total_gb']:.0f} GB libres")
+
     uso = shutil.disk_usage(bd.parent)
     libre = uso.free / uso.total
     anotar("salud", "Espacio en disco", "PASA" if libre >= min_disco else "FALLA",

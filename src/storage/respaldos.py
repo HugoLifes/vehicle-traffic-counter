@@ -22,6 +22,7 @@ Restaurar (con el contenedor detenido):
 """
 import logging
 import re
+import shutil
 import sqlite3
 import threading
 import time
@@ -85,7 +86,26 @@ def respaldar(conservar: int = CONSERVAR) -> Optional[Path]:
     for viejo in listar()[:-conservar] if conservar > 0 else []:
         viejo.unlink(missing_ok=True)
     logging.info(f"Respaldo de la base: {destino} ({destino.stat().st_size // 1024} KB)")
+    _copiar_al_disco_de_videos(destino, conservar)
     return destino
+
+
+def _copiar_al_disco_de_videos(respaldo: Path, conservar: int):
+    """Otra copia en el disco externo de los videos: si falla el SSD donde
+    vive la base, sus respaldos se irían con ella. Solo si ese disco está
+    de verdad conectado (lleva su marca); nunca tumba al respaldo."""
+    from src.storage import disco_videos
+    if not (disco_videos.DIRECTORIO / disco_videos.MARCA).exists():
+        return
+    try:
+        otro = disco_videos.DIRECTORIO / "respaldos_bd"
+        otro.mkdir(exist_ok=True)
+        shutil.copyfile(respaldo, otro / respaldo.name)
+        copias = sorted(p for p in otro.glob(f"{PREFIJO}*.db") if _AUTOMATICO.fullmatch(p.name))
+        for viejo in copias[:-conservar] if conservar > 0 else []:
+            viejo.unlink(missing_ok=True)
+    except Exception:
+        logging.exception("No se pudo copiar el respaldo al disco de los videos")
 
 
 def _hace_falta() -> bool:

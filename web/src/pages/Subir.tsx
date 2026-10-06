@@ -22,14 +22,22 @@ import {
   useVideos,
 } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { errorMessage, frameUrl, subirVideoPorPedazos, videoUrl } from '../lib/api';
-import { useQueryClient } from '@tanstack/react-query';
+import {
+  errorMessage,
+  frameUrl,
+  getAlmacenamiento,
+  ponerInicio,
+  subirVideoPorPedazos,
+  videoUrl,
+} from '../lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   JOB_STATUS_LABEL,
   JOB_STATUS_TONE,
   fileExtension,
   formatSize,
   guessStartTime,
+  minutoDelNombre,
   plural,
   todayISO,
 } from '../lib/format';
@@ -167,6 +175,24 @@ function JobRow({
 
   const format = fileExtension(job.original_name).replace('.', '').toUpperCase();
   const start = job.video_start_time ? job.video_start_time.slice(11, 19) : 'sin hora';
+  /* Un video sin hora no cae en ningún intervalo del reporte. Mientras no se
+     haya contado, la hora se corrige aquí sin volver a subirlo. */
+  const corregible = ['awaiting_calibration', 'queued', 'error'].includes(job.status);
+  const [editHora, setEditHora] = useState(false);
+  const [fechaE, setFechaE] = useState(job.video_start_time?.slice(0, 10) ?? todayISO());
+  const [horaE, setHoraE] = useState(job.video_start_time?.slice(11, 19) ?? '');
+  const [errHora, setErrHora] = useState<string | null>(null);
+  async function guardarHora() {
+    try {
+      setErrHora(null);
+      const h = horaE.length === 5 ? `${horaE}:00` : horaE;
+      await ponerInicio(job.id, `${fechaE} ${h}`);
+      setEditHora(false);
+      void qcFila.invalidateQueries({ queryKey: ['videos'] });
+    } catch (e) {
+      setErrHora(errorMessage(e));
+    }
+  }
 
   /* Diagnóstico del encuadre: dice si vale la pena contar este video antes
      de gastar horas en hacerlo. Corre sobre la misma GPU que la cola, así
@@ -223,8 +249,39 @@ function JobRow({
             {job.original_name}
           </div>
           <div className="job-meta">
-            {format} · {formatSize(job.size_bytes)} · inicio {start}
+            {format} · {formatSize(job.size_bytes)} · inicio{' '}
+            {job.video_start_time ? start : <strong className="sin-hora">sin hora</strong>}
+            {corregible && !editHora && (
+              <>
+                {' · '}
+                <button type="button" className="enlace-boton" onClick={() => setEditHora(true)}>
+                  {job.video_start_time ? 'cambiar hora' : 'poner hora'}
+                </button>
+              </>
+            )}
           </div>
+          {editHora && (
+            <div className="sf-start">
+              <input
+                type="date"
+                value={fechaE}
+                aria-label={`Fecha de inicio de ${job.original_name}`}
+                onChange={(e) => setFechaE(e.target.value)}
+              />
+              <input
+                type="time"
+                step={1}
+                value={horaE}
+                aria-label={`Hora de inicio de ${job.original_name}`}
+                onChange={(e) => setHoraE(e.target.value)}
+              />
+              <Button onClick={() => void guardarHora()} disabled={!fechaE || !horaE}>
+                Guardar
+              </Button>
+              <Button onClick={() => setEditHora(false)}>Cancelar</Button>
+              {errHora && <span className="sf-meta">{errHora}</span>}
+            </div>
+          )}
         </div>
 
         <div
@@ -446,6 +503,9 @@ export default function Subir() {
     Record<string, { cargado: number; total: number; estado: 'subiendo' | 'reintentando' | 'error' }>
   >({});
   const [subiendo, setSubiendo] = useState(false);
+  /* El estado de React tarda un render en verse: un doble clic rápido
+     arrancaba dos subidas del mismo archivo (Juárez, 2-oct-2026). */
+  const subiendoRef = useRef(false);
 
   /* Cerrar la página a media subida la pierde: el navegador pregunta antes. */
   useEffect(() => {
@@ -467,6 +527,13 @@ export default function Subir() {
   const [message, setMessage] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  /* Sin el disco de los videos el servidor rechaza las subidas: se dice
+     antes de que alguien espere media hora a que suba un archivo. */
+  const { data: almacen } = useQuery({
+    queryKey: ['almacenamiento'],
+    queryFn: getAlmacenamiento,
+    refetchInterval: 60000,
+  });
 
   const awaiting = (jobs ?? []).filter((j) => j.status === 'awaiting_calibration');
 
@@ -502,7 +569,21 @@ export default function Subir() {
     // no hacer nada.
     if (projectId === null) return;
 
-    if (subiendo) return;
+    if (subiendoRef.current) return;
+    const sinHora = pending.filter((p) => !p.date || !p.time);
+    if (sinHora.length) {
+      setRejections((x) => [
+        ...x,
+        {
+          filename: sinHora.map((p) => p.file.name).join(', '),
+          reason:
+            'Falta la fecha o la hora real de inicio. Sin ella los vehículos no caen en ningún ' +
+            'cuarto de hora del reporte.',
+        },
+      ]);
+      return;
+    }
+    subiendoRef.current = true;
 
     /* Uno por uno: cada video que termina ya está a salvo en el servidor
        aunque el siguiente falle, y la barra dice cuánto falta. */
@@ -547,6 +628,7 @@ export default function Subir() {
       }
     }
     setSubiendo(false);
+    subiendoRef.current = false;
     qc.invalidateQueries({ queryKey: ['videos'] });
     qc.invalidateQueries({ queryKey: keys.projects });
     if (subidos > 0) {
@@ -604,6 +686,14 @@ export default function Subir() {
         }}
       />
 
+      {almacen?.problema && (
+        <div className="notice-stack">
+          <Notice tone="critical" title="No se pueden subir videos">
+            {almacen.problema}
+          </Notice>
+        </div>
+      )}
+
       {(rejections.length > 0 || message) && (
         <div className="notice-stack">
           {message && (
@@ -630,7 +720,47 @@ export default function Subir() {
       {pending.length > 0 && (
         <Card className="staging rise">
           <h2 className="section-title">Antes de subir</h2>
-
+          <div className="sf-start sf-todos">
+            <span>Para todos:</span>
+            <input
+              type="date"
+              aria-label="Fecha de grabación de todos los videos"
+              disabled={subiendo}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v) setPending((p) => p.map((x) => ({ ...x, date: v })));
+              }}
+            />
+            {pending.some((p) => minutoDelNombre(p.file.name) !== null) && (
+              <label>
+                hora de la carpeta{' '}
+                <select
+                  aria-label="Hora de la carpeta: los videos se llaman por el minuto"
+                  disabled={subiendo}
+                  defaultValue=""
+                  onChange={(e) => {
+                    const hh = e.target.value;
+                    if (!hh) return;
+                    setPending((p) =>
+                      p.map((x) => {
+                        const mm = minutoDelNombre(x.file.name);
+                        return mm === null
+                          ? x
+                          : { ...x, time: `${hh}:${String(mm).padStart(2, '0')}:00` };
+                      }),
+                    );
+                  }}
+                >
+                  <option value="">elegir…</option>
+                  {Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0')).map((h) => (
+                    <option key={h} value={h}>
+                      {h}:00
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
 
           <div className="staging-files">
             {pending.map((entry) => (

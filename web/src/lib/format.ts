@@ -153,6 +153,14 @@ export function guessStartTime(filename: string): string | null {
   return `${hh}:${mm}:${ss}`;
 }
 
+/* Los videos de Juárez se llaman por el minuto (00.mp4 … 59.mp4) dentro de
+   una carpeta por hora: el nombre da el minuto, la hora la pone quien sube. */
+export function minutoDelNombre(filename: string): number | null {
+  const m = filename.match(/^(\d{1,2})(?:-\d+)?\.[a-z0-9]+$/i);
+  if (!m || +m[1] > 59) return null;
+  return +m[1];
+}
+
 export function fileExtension(filename: string): string {
   const i = filename.lastIndexOf('.');
   return i === -1 ? '' : filename.slice(i).toLowerCase();

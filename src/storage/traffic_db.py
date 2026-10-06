@@ -269,6 +269,9 @@ def init_schema():
     # Velocidad medida sin recontar (remedir_velocidad.py): 'en_cola',
     # 'midiendo' o 'error'. Vacio cuando no hay nada pendiente.
     _ensure_column(conn, "video_jobs", "vel_estado", "TEXT")
+    # Qué subida por pedazos registró el video: terminarla otra vez (otra
+    # pestaña, un doble clic, un reintento) devuelve el mismo video.
+    _ensure_column(conn, "video_jobs", "subida_id", "TEXT")
     # Perfil de deteccion de la camara de ESTE proyecto (JSON): modelo,
     # input_size, umbral por clase y quitar cajas anidadas. Vacio cuenta
     # como platform.yaml. Ver src/engine/perfil_deteccion.py.
@@ -1351,7 +1354,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
                    confidence, timestamp, tiempo_tramo_s, zone_id,
                    clase_revisada, clase_modelo, prob_modelo,
                    subtipo_modelo, prob_subtipo FROM crossings
-            WHERE lane_id IN ({placeholders})
+            WHERE lane_id IN ({placeholders}) AND timestamp IS NOT NULL
             ORDER BY timestamp""",
         lane_ids
     ).fetchall()

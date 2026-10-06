@@ -7,6 +7,7 @@ Los videos NO se procesan al subirlos: quedan esperando a que el usuario
 calibre los carriles y presione "Empezar conteo".
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -14,13 +15,13 @@ import uuid
 
 import cv2
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
 from src.engine.video_job_processor import get_processor
-from src.storage import traffic_db, traffic_metrics
+from src.storage import disco_videos, traffic_db, traffic_metrics
 
 router = APIRouter(prefix="/api/videos")
 
@@ -36,7 +37,9 @@ ALLOWED_EXTENSIONS = {
 
 def _safe_stored_path(original_name: str) -> Path:
     ext = Path(original_name).suffix.lower()
-    safe_stem = Path(original_name).stem.replace("/", "_").replace("\\", "_")[:80]
+    # Sin los caracteres que NTFS no acepta: los videos viven en un disco
+    # externo con NTFS, y un nombre con ':' o '?' fallaría al guardar.
+    safe_stem = re.sub(r'[/\\:*?"<>|]', "_", Path(original_name).stem)[:80]
     unique_name = f"{uuid.uuid4().hex[:8]}_{safe_stem}{ext}"
     return UPLOAD_DIR / unique_name
 
@@ -66,6 +69,7 @@ async def upload_videos(
     project = traffic_db.get_project(project_id)
     if project is None:
         raise HTTPException(404, "Proyecto no encontrado")
+    _exigir_disco()
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -154,10 +158,62 @@ def _limpiar_parciales():
             pass
 
 
+# El mismo archivo no se escribe dos veces a la vez. Con un doble clic en
+# "Subir" (o dos pestañas, o un pedazo que el navegador dio por perdido pero
+# el relevo de internet seguía entregando) dos subidas del mismo archivo caían
+# en el mismo parcial: una tumbaba a la otra con 409 en cada pedazo y al final
+# a una de las dos le salía "No se pudo subir. [object Object]" (2-oct-2026,
+# los primeros videos de Juárez). Un candado por subida: la segunda espera.
+_candados: Dict[str, asyncio.Lock] = {}
+_FORMATO_INICIO = re.compile(r"^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?$")
+
+
+def _exigir_disco():
+    """Sin el disco de videos (o sin espacio) no se acepta nada: ver
+    src/storage/disco_videos.py."""
+    problema = disco_videos.problema_para_subir()
+    if problema:
+        raise HTTPException(507, detail={"mensaje": problema})
+
+
+@router.get("/almacenamiento")
+def almacenamiento():
+    """Dónde y cuánto cabe: la pantalla de Subir avisa si el disco de los
+    videos no está conectado o se está llenando."""
+    return disco_videos.estado()
+
+
+def _candado(subida_id: str) -> asyncio.Lock:
+    return _candados.setdefault(subida_id, asyncio.Lock())
+
+
+def _job_de_subida(subida_id: str) -> Optional[dict]:
+    """El video que ya registró esta subida, si lo hay: volver a terminarla
+    (otra pestaña, un reintento) devuelve ese mismo video en vez de fallar o
+    duplicarlo."""
+    fila = traffic_db.get_connection().execute(
+        "SELECT id FROM video_jobs WHERE subida_id = ? ORDER BY id LIMIT 1", (subida_id,)).fetchone()
+    return traffic_db.get_video_job(fila[0]) if fila else None
+
+
+def _inicio_valido(inicio) -> Optional[str]:
+    """'AAAA-MM-DD HH:MM[:SS]' normalizado a segundos; None si viene vacío.
+    Una hora mal escrita se rechaza con su motivo: un video sin hora no cae en
+    ningún intervalo del reporte."""
+    if not inicio:
+        return None
+    m = _FORMATO_INICIO.match(str(inicio).strip())
+    if not m or int(m.group(2)) > 23 or int(m.group(3)) > 59 or int(m.group(4) or 0) > 59:
+        raise HTTPException(400, detail={"mensaje": f"La hora de inicio «{inicio}» no es válida; "
+                                                     "usa fecha y hora, por ejemplo 2026-09-19 14:56:00."})
+    return f"{m.group(1)} {m.group(2)}:{m.group(3)}:{m.group(4) or '00'}"
+
+
 @router.post("/subida/iniciar")
 def iniciar_subida(datos: dict):
     """Abre (o retoma) la subida de un archivo. Devuelve cuántos bytes ya
-    tiene el servidor: 0 si es nueva, más si se está retomando.
+    tiene el servidor: 0 si es nueva, más si se está retomando, y el tamaño
+    completo con `ya_subido` si este mismo archivo ya quedó registrado.
 
     La identidad sale del proyecto, el nombre, el tamaño y la fecha del
     archivo en el equipo de quien sube: el mismo archivo elegido otra vez
@@ -167,75 +223,133 @@ def iniciar_subida(datos: dict):
     nombre = str(datos.get("nombre") or "")
     tamano = int(datos.get("tamano") or 0)
     if traffic_db.get_project(proyecto_id) is None:
-        raise HTTPException(404, "Proyecto no encontrado")
+        raise HTTPException(404, detail={"mensaje": "La intersección ya no existe."})
     ext = Path(nombre).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(415, f"Formato '{ext or 'desconocido'}' no soportado. "
-                                 f"Formatos aceptados: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+        raise HTTPException(415, detail={"mensaje": f"Formato '{ext or 'desconocido'}' no soportado. "
+                                         f"Formatos aceptados: {', '.join(sorted(ALLOWED_EXTENSIONS))}"})
     if tamano <= 0:
-        raise HTTPException(400, "El archivo está vacío")
+        raise HTTPException(400, detail={"mensaje": "El archivo está vacío."})
+    _inicio_valido(datos.get("inicio"))
+    _exigir_disco()
     PARCIALES.mkdir(parents=True, exist_ok=True)
     _limpiar_parciales()
     clave = f"{proyecto_id}|{nombre}|{tamano}|{datos.get('modificado') or ''}"
     subida_id = hashlib.sha256(clave.encode()).hexdigest()[:32]
+    hecho = _job_de_subida(subida_id)
+    if hecho is not None:
+        return {"subida_id": subida_id, "recibido": tamano, "ya_subido": hecho["id"]}
     ruta = _ruta_parcial(subida_id)
     recibido = ruta.stat().st_size if ruta.exists() else 0
-    if recibido > tamano:
+    if recibido > tamano and not _candado(subida_id).locked():
         ruta.unlink()
         recibido = 0
-    return {"subida_id": subida_id, "recibido": recibido}
+    return {"subida_id": subida_id, "recibido": min(recibido, tamano)}
 
 
 @router.put("/subida/{subida_id}")
 async def recibir_pedazo(subida_id: str, offset: int, request: Request):
     """Un pedazo del archivo, que tiene que caer justo donde termina lo que
     ya hay. Si no (un reintento de un pedazo que sí había llegado), responde
-    409 con lo que el servidor tiene, y el navegador sigue desde ahí."""
+    409 con lo que el servidor tiene, y el navegador sigue desde ahí. Si otra
+    subida del mismo archivo está escribiendo, 409 con `ocupado` y espera."""
     ruta = _ruta_parcial(subida_id)
-    actual = ruta.stat().st_size if ruta.exists() else 0
-    if offset != actual:
-        raise HTTPException(409, detail={"recibido": actual})
-    escrito = 0
-    with open(ruta, "ab") as f:
-        async for trozo in request.stream():
-            escrito += len(trozo)
-            if escrito > PEDAZO_MAXIMO:
-                f.truncate(actual)
-                raise HTTPException(413, "Pedazo demasiado grande")
-            f.write(trozo)
-    return {"recibido": actual + escrito}
+    candado = _candado(subida_id)
+    _exigir_disco()
+    if candado.locked():
+        actual = ruta.stat().st_size if ruta.exists() else 0
+        raise HTTPException(409, detail={
+            "recibido": actual, "ocupado": True,
+            "mensaje": "Este archivo ya se está subiendo (otra pestaña o un doble clic): "
+                       "esta subida espera a que termine."})
+    async with candado:
+        if not ruta.exists():
+            hecho = _job_de_subida(subida_id)
+            if hecho is not None:
+                raise HTTPException(409, detail={"recibido": hecho["size_bytes"],
+                                                 "mensaje": "Este archivo ya estaba subido."})
+        actual = ruta.stat().st_size if ruta.exists() else 0
+        if offset != actual:
+            raise HTTPException(409, detail={"recibido": actual,
+                                             "mensaje": "El servidor ya tenía otra parte del archivo."})
+        escrito = 0
+        with open(ruta, "ab") as f:
+            async for trozo in request.stream():
+                escrito += len(trozo)
+                if escrito > PEDAZO_MAXIMO:
+                    f.truncate(actual)
+                    raise HTTPException(413, detail={"mensaje": "Pedazo demasiado grande."})
+                f.write(trozo)
+        return {"recibido": actual + escrito}
 
 
 @router.post("/subida/{subida_id}/terminar")
-def terminar_subida(subida_id: str, datos: dict):
-    """Cierra la subida y registra el video como lo hace /upload."""
+async def terminar_subida(subida_id: str, datos: dict):
+    """Cierra la subida y registra el video como lo hace /upload. Terminar
+    otra vez la misma subida devuelve el video ya registrado."""
     ruta = _ruta_parcial(subida_id)
     proyecto_id = int(datos.get("project_id") or 0)
     nombre = str(datos.get("nombre") or "")
     tamano = int(datos.get("tamano") or 0)
     project = traffic_db.get_project(proyecto_id)
     if project is None:
-        raise HTTPException(404, "Proyecto no encontrado")
-    if not ruta.exists():
-        raise HTTPException(404, "No hay una subida con ese identificador")
-    recibido = ruta.stat().st_size
-    if recibido != tamano:
-        raise HTTPException(409, detail={"recibido": recibido,
-                                         "mensaje": f"Faltan {tamano - recibido} bytes"})
-    destino = _safe_stored_path(nombre)
-    ruta.replace(destino)
-    job_id = traffic_db.create_video_job(
-        original_name=nombre,
-        stored_path=str(destino),
-        size_bytes=recibido,
-        source_label=project["name"],
-        project_id=proyecto_id,
-        video_start_time=datos.get("inicio") or None,
-        interval_minutes=project["interval_minutes"],
-        status="awaiting_calibration",
-    )
-    traffic_db.log_event(proyecto_id, "video", "Se subió un video", nombre)
-    return {"accepted": [traffic_db.get_video_job(job_id)], "rejected": []}
+        raise HTTPException(404, detail={"mensaje": "La intersección ya no existe."})
+    inicio = _inicio_valido(datos.get("inicio"))
+    candado = _candado(subida_id)
+    if candado.locked():
+        raise HTTPException(409, detail={
+            "recibido": ruta.stat().st_size if ruta.exists() else 0, "ocupado": True,
+            "mensaje": "Este archivo todavía se está subiendo desde otra pestaña."})
+    async with candado:
+        hecho = _job_de_subida(subida_id)
+        if hecho is not None:
+            # Lo que una segunda subida del mismo archivo alcanzó a escribir.
+            ruta.unlink(missing_ok=True)
+            return {"accepted": [hecho], "rejected": []}
+        if not ruta.exists():
+            raise HTTPException(404, detail={"mensaje": "El servidor no tiene este archivo; vuelve a "
+                                                         "elegirlo para subirlo de nuevo."})
+        recibido = ruta.stat().st_size
+        if recibido != tamano:
+            raise HTTPException(409, detail={"recibido": recibido,
+                                             "mensaje": f"Faltan {tamano - recibido} bytes del archivo."})
+        destino = _safe_stored_path(nombre)
+        ruta.replace(destino)
+        job_id = traffic_db.create_video_job(
+            original_name=nombre,
+            stored_path=str(destino),
+            size_bytes=recibido,
+            source_label=project["name"],
+            project_id=proyecto_id,
+            video_start_time=inicio,
+            interval_minutes=project["interval_minutes"],
+            status="awaiting_calibration",
+        )
+        traffic_db.update_video_job(job_id, subida_id=subida_id)
+        traffic_db.log_event(proyecto_id, "video", "Se subió un video", nombre)
+        return {"accepted": [traffic_db.get_video_job(job_id)], "rejected": []}
+
+
+@router.put("/{job_id}/inicio")
+def poner_inicio(job_id: int, datos: dict):
+    """La hora real en que empieza un video ya subido y todavía sin contar.
+    Sin ella sus cruces no caen en ningún intervalo del reporte (los videos
+    de Juárez se llaman por el minuto, 00.mp4 … 59.mp4, y la hora no sale
+    del nombre)."""
+    job = traffic_db.get_video_job(job_id)
+    if job is None:
+        raise HTTPException(404, detail={"mensaje": "Video no encontrado."})
+    if job["status"] not in ("awaiting_calibration", "queued", "error"):
+        raise HTTPException(409, detail={
+            "mensaje": "Este video ya se contó o se está contando: cambiar su hora movería sus "
+                       "cruces. Bórralo y vuelve a subirlo con la hora correcta."})
+    inicio = _inicio_valido(datos.get("inicio"))
+    if inicio is None:
+        raise HTTPException(400, detail={"mensaje": "Falta la fecha y la hora de inicio."})
+    traffic_db.update_video_job(job_id, video_start_time=inicio)
+    traffic_db.log_event(job.get("project_id"), "video", "Se corrigió la hora de un video",
+                         f"{job['original_name']}: {inicio}")
+    return traffic_db.get_video_job(job_id)
 
 
 @router.get("")

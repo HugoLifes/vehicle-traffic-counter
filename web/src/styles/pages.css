@@ -345,6 +345,18 @@
 .staging-file-row .sf-progreso .job-progress { flex: 1 1 auto; }
 .staging-file-row .sf-start { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
 .staging-file-row .sf-start > span { font-size: var(--text-xs); color: var(--text-muted); }
+/* Fecha para todos y hora de la carpeta: los videos de Juárez vienen por
+   minuto (00.mp4 … 59.mp4) en una carpeta por hora. */
+.sf-todos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+  margin-block-end: var(--space-3); font-size: var(--text-xs); color: var(--text-muted); }
+.sf-todos input, .sf-todos select { font-family: var(--font-mono); }
+/* Corregir la hora de un video ya subido, dentro de su fila. */
+.job-row .job-info .sf-start { display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--space-2); margin-block-start: var(--space-2); }
+.job-row .job-info .sf-start input { font-family: var(--font-mono); }
+.job-row .sin-hora { color: var(--critical, #b42318); font-weight: 600; }
+.enlace-boton { background: none; border: 0; padding: 0; font: inherit; color: var(--accent);
+  text-decoration: underline; cursor: pointer; }
 .staging-file-row input[type="date"],
 .staging-file-row input[type="time"] {
   font-family: var(--font-mono);

@@ -26,6 +26,9 @@ services:
       # Cambiar aquí la fuente de la cámara en vivo sin tocar el YAML.
       # "0" = primera webcam USB, o una URL rtsp://... para cámara IP.
       - CAMERA_SOURCE=${CAMERA_SOURCE:-0}
+      # Exigir que data/uploads sea el disco externo de los videos (lleva el
+      # archivo .disco_aforo). Ver src/storage/disco_videos.py.
+      - AFORO_DISCO_VIDEOS=${AFORO_DISCO_VIDEOS:-1}
 
     ports:
       - "8080:8080"
@@ -34,6 +37,12 @@ services:
       # Lo que debe persistir entre reinicios del contenedor.
       - ./models:/app/models
       - ./data:/app/data
+      # Los videos subidos van al disco USB de 2 TB, no al SSD del sistema
+      # (5-oct-2026: 19 GB y creciendo; un aforo frontal de 12 h son ~12 GB).
+      # Va DESPUÉS de ./data para tapar esa subcarpeta. Si el disco no está
+      # montado, Docker crea aquí una carpeta vacía en el SSD: sin la marca
+      # .disco_aforo, la plataforma rechaza las subidas y lo dice en Subir.
+      - ${AFORO_DIR_VIDEOS:-/mnt/videos/aforo/uploads}:/app/data/uploads
       - ./configs:/app/configs
 
       # El código de Python se monta desde el host, de SOLO LECTURA.
