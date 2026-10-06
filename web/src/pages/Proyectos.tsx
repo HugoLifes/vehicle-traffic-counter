@@ -21,6 +21,7 @@ import { Link } from 'react-router-dom';
 import { Page } from '../components/Page';
 import { Button, EmptyState, Notice } from '../components/ui';
 import { ProjectForm } from '../components/ProjectForm';
+import { Almacenamiento } from '../components/Almacenamiento';
 import { IconArrowRight, IconPin, IconVideo } from '../components/Icons';
 import { useCreateProject, useProjects } from '../lib/queries';
 import { errorMessage } from '../lib/api';
@@ -132,6 +133,7 @@ export default function Proyectos() {
           {totalVideos === 1 ? 'video procesado' : 'videos procesados'}
         </p>
       )}
+      <Almacenamiento compacto />
 
       {creating && (
         <ProjectForm

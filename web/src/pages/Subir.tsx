@@ -43,6 +43,7 @@ import {
 } from '../lib/format';
 import type { VideoJob } from '../lib/types';
 import { ConfirmDialog } from '../components/ui';
+import { Almacenamiento } from '../components/Almacenamiento';
 
 const ALLOWED = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg'];
 
@@ -685,6 +686,8 @@ export default function Subir() {
           e.target.value = '';
         }}
       />
+
+      <Almacenamiento />
 
       {almacen?.problema && (
         <div className="notice-stack">

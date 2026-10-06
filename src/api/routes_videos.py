@@ -310,11 +310,10 @@ async def terminar_subida(subida_id: str, datos: dict):
     if project is None:
         raise HTTPException(404, detail={"mensaje": "La intersección ya no existe."})
     inicio = _inicio_valido(datos.get("inicio"))
+    # Si otra pestaña está escribiendo este archivo, se espera a que acabe:
+    # después, o ya lo registró ella (y se devuelve ese mismo video) o falta
+    # algo y se dice cuánto.
     candado = _candado(subida_id)
-    if candado.locked():
-        raise HTTPException(409, detail={
-            "recibido": ruta.stat().st_size if ruta.exists() else 0, "ocupado": True,
-            "mensaje": "Este archivo todavía se está subiendo desde otra pestaña."})
     async with candado:
         hecho = _job_de_subida(subida_id)
         if hecho is not None:

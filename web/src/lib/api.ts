@@ -420,6 +420,9 @@ export interface Almacenamiento {
   conectado: boolean;
   libre_gb: number;
   total_gb: number;
+  usado_videos_gb: number;
+  gb_por_hora: number | null;
+  horas_que_caben: number | null;
   problema: string | null;
 }
 export const getAlmacenamiento = () => request<Almacenamiento>('/api/videos/almacenamiento');
