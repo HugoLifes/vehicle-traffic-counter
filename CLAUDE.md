@@ -2940,6 +2940,39 @@ velocidad normal.
 Ojo al medirlo: con un minuto de video y TensorRT, el conteo termina antes
 de abrir la transmisión y sale "0.1 cuadros/s". Medir con varios minutos.
 
+### Más rápido que la grabación: leer y preparar en otro hilo (6-oct-2026)
+
+Perfilado el procesador real en el Orin con TensorRT: 72 ms por cuadro,
+**todo en fila** — detectar 26 (GPU), leer el video 10.5 (CPU), reducir la
+franja para la red 10 (CPU), el resto ~25. Mientras el CPU leía y reducía,
+la GPU esperaba. `src/engine/lector.py` (`LectorAdelantado`) lee y prepara el
+cuadro siguiente en otro hilo (cv2 suelta el GIL) con la misma reducción de
+la letterbox de ultralytics (`VehicleDetector.preparar`), y las cajas salen
+de la GPU de una vez. Sobre copias de la base, 4 minutos (16:10, 13:31,
+18:10, 22:30): **162 de 162 cruces idénticos campo por campo** y 0.67–0.77x
+→ **1.10–1.44x** del tiempo real. Por la plataforma, 5 min de video en 4.2
+min mirando el video en vivo, que llega a 7.7 cuadros/s por internet.
+
+**El decodificador de hardware se descartó, medido**: leer con
+`nvv4l2decoder` por GStreamer cuesta 46 ms por cuadro contra 10.6 del CPU
+(copiar 2560x1440 por una tubería cuesta más que decodificar), y los colores
+salen distintos (2.5 niveles de media), lo que movería las detecciones. Los
+23 ms de "leer" que se tenían anotados eran con el CPU compartido.
+
+### El pedazo que viaja pegado al pesado ya no se cuenta (6-oct-2026)
+
+`perfil_deteccion.PedazosDePesado`, `quitar_pedazos_de_pesado` en el perfil
+(encendido en los proyectos 7 y 9 y por omisión en cámaras de vehículos
+grandes). Lo que separa el frente del autobús de un auto real no es dónde
+nace sino lo de después: ≥ 60 % de su vida dentro (≥ 0.8) del MISMO pesado y
+moviéndose ≤ 0.45 respecto a su caja. Por el camino de producción, 12
+minutos: quita exactamente los 7 pedazos esperados (vistos a ojo: frentes de
+autobús, la defensa de un tráiler, el chasis de un tractor, faros como moto)
+y 0 en los 5 de control, que incluyen los 5 autos que "nació dentro"
+borraba; todo lo demás idéntico. En la emulación de 70 minutos no toca nada
+en los minutos normales. Se le escapan ~5 (la bomba de una pipa sobresale
+de la caja). Lo ya contado no cambia hasta recontar.
+
 ### Los videos viven en el disco USB de 2 TB (5-oct-2026)
 
 `data/uploads` ya no es del SSD: el compose monta encima
