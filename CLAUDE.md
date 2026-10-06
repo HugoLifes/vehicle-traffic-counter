@@ -2912,6 +2912,34 @@ imagen, donde el montaje de `./data` los tapa. Con `data/` entera ignorada
 42.4 a **15.5 GB**, y la reconstrucción para un cambio de interfaz tardó
 minutos. Al agregar una carpeta grande que se monta, ignorarla también.
 
+### TensorRT y el video en vivo fluido (6-oct-2026)
+
+**TensorRT FP16 encendido** (`use_tensorrt: true`). Un motor sirve para UN
+tamaño de entrada exacto (franja + `input_size`), así que se crea por
+proyecto con `tools/exportar_tensorrt.py --proyecto N` (~9 min de GPU, con
+la cola vacía) y el detector lo toma solo si existe; si no, el `.pt`. El
+proyecto 7 (y todo lo que copie su calibración) usa
+`models/yolov8s_448x1280_fp16.engine`. Medido sobre esa franja, 300 cuadros
+de día y 300 de noche: 1 944 y 298 detecciones con los dos, misma clase en
+99.6 y 100 %, 63 -> 30 ms por cuadro. Por la plataforma, 16:10–16:14: 83/76
+contra 83/77 guardado (el que falta es el primer segundo sin el archivo de
+las 16:09). **El proceso entero solo pasa de ~0.62x a 0.72x del tiempo
+real**: detectar ya es ~30 de ~80 ms; lo siguiente es leer el video
+(2560x1440 decodificado en el CPU), o sea el decodificador de hardware.
+
+**El video en vivo se veía como diapositivas** porque se dibujaba un cuadro
+por segundo de video y el navegador pedía foto por foto. Ahora es una
+transmisión MJPEG (`/api/videos/live-stream`) que manda el cuadro más nuevo
+y salta los intermedios con red lenta; mientras alguien mira se dibujan 8
+cuadros por segundo de video (sin nadie mirando, 1, como antes). A 800 px y
+calidad 60: 47 KB por cuadro, **5.4 cuadros/s por la dirección pública a 2
+Mb/s** (a 1280 px y 70 eran 154 KB y 7.4 Mb/s). Va al ritmo del análisis,
+0.72x: más lento que la grabación pero fluido. El video ya contado se ve a
+velocidad normal.
+
+Ojo al medirlo: con un minuto de video y TensorRT, el conteo termina antes
+de abrir la transmisión y sale "0.1 cuadros/s". Medir con varios minutos.
+
 ### Los videos viven en el disco USB de 2 TB (5-oct-2026)
 
 `data/uploads` ya no es del SSD: el compose monta encima
