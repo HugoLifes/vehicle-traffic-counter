@@ -106,8 +106,8 @@ raiz = Path(tempfile.mkdtemp())
 for ruta in pd.MODELOS_CAMARA_GRANDE.values():
     (raiz / ruta).write_bytes(b"x")
 nms, perfil = pd.aplicar_tipo_camara("grandes", None, raiz)
-comprobar(nms and perfil == pd.MODELOS_CAMARA_GRANDE,
-          "cámara de vehículos grandes: cajas entre clases y los dos clasificadores")
+comprobar(nms and perfil == {**pd.MODELOS_CAMARA_GRANDE, "quitar_pedazos_de_pesado": True},
+          "cámara de vehículos grandes: cajas entre clases, los dos clasificadores y pedazos de pesado")
 nms, perfil = pd.aplicar_tipo_camara(
     "grandes", json.dumps({"umbral_clase": {"motorcycle": 0.1}}), raiz)
 comprobar(perfil.get("umbral_clase") == {"motorcycle": 0.1} and "clasificador_pesados" in perfil,
@@ -117,7 +117,8 @@ comprobar(not nms and perfil == {"umbral_clase": {"motorcycle": 0.1}},
           "cámara de vehículos chicos: quita la comparación entre clases y los clasificadores")
 vacia = Path(tempfile.mkdtemp())
 nms, perfil = pd.aplicar_tipo_camara("grandes", None, vacia)
-comprobar(nms and perfil == {}, "sin los modelos en el equipo no se piden clasificadores")
+comprobar(nms and perfil == {"quitar_pedazos_de_pesado": True},
+          "sin los modelos en el equipo no se piden clasificadores")
 comprobar(pd.tipo_camara({"nms_agnostico": 1}) == "grandes"
           and pd.tipo_camara({"nms_agnostico": 0}) == "chicos", "el tipo se lee del proyecto")
 
@@ -151,6 +152,42 @@ for c in ANIDADAS:
     quitada = len(pd.quitar_anidadas([g, ch], c.get("contencion", 0.9))) == 1
     comprobar(quitada == c["es_pedazo"],
               f"{c['descripcion']}: {'se quita' if quitada else 'se queda'}")
+
+# Pedazos que viajan pegados al pesado. Recorridos sintéticos con la forma de
+# los casos reales medidos (6-oct-2026): el frente del autobús va dentro de
+# su caja todo el tiempo y en el mismo lugar; el auto que sale de detrás del
+# tráiler nace dentro y se separa; el que rebasa al autobús va encimado pero
+# se mueve respecto a él.
+
+
+def recorrido(pp_, cuadros):
+    for rastros in cuadros:
+        pp_.observar(rastros)
+
+
+def r_(id_, clase, x1, y1, x2, y2):
+    return {"id": id_, "class_name": clase, "bbox": [x1, y1, x2, y2]}
+
+
+pp = pd.PedazosDePesado()
+recorrido(pp, [[r_(1, "bus", 300 + 8 * n, 700, 900 + 8 * n, 980),
+                r_(2, "car", 320 + 8 * n, 830, 470 + 8 * n, 960)] for n in range(20)])
+comprobar(pp.es_pedazo(2), "frente del autobús que viaja con él: pedazo")
+
+pp = pd.PedazosDePesado()
+recorrido(pp, [[r_(1, "truck", 100, 600, 900, 980),
+                r_(2, "car", 600 + 25 * n, 850, 760 + 25 * n, 960)] for n in range(30)])
+comprobar(not pp.es_pedazo(2), "auto que sale de detrás del tráiler: se cuenta")
+
+pp = pd.PedazosDePesado()
+recorrido(pp, [[r_(1, "bus", 300 + 5 * n, 700, 900 + 5 * n, 980),
+                r_(2, "car", 300 + 15 * n, 840, 470 + 15 * n, 960)] for n in range(40)])
+comprobar(not pp.es_pedazo(2), "auto que rebasa al autobús, encimado: se cuenta")
+
+pp = pd.PedazosDePesado()
+recorrido(pp, [[r_(2, "car", 600 + 10 * n, 850, 760 + 10 * n, 960)] for n in range(10)])
+comprobar(not pp.es_pedazo(2) and not pp.es_pedazo(99),
+          "sin pesado cerca, o rastro desconocido: se cuenta")
 
 print(f"\n{fallos} fallos")
 sys.exit(1 if fallos else 0)

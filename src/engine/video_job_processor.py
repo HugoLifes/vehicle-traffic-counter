@@ -518,6 +518,9 @@ class VideoJobProcessor:
             recorridos = {}
             quitar_nacidos = bool(perfil.get('quitar_nacidos_en_pesado'))
             rastros_vistos, nacidos_en_pesado = set(), set()
+            pedazos = (perfil_deteccion.PedazosDePesado()
+                       if perfil.get('quitar_pedazos_de_pesado') else None)
+            pedazos_quitados = 0
             clases_rastro = {}
             confianzas_rastro = {}
 
@@ -651,6 +654,8 @@ class VideoJobProcessor:
                     if perfil.get('quitar_anidadas'):
                         dets = perfil_deteccion.quitar_anidadas(dets, perfil['quitar_anidadas'])
                     tracks = tracker.update(dets)
+                    if pedazos is not None:
+                        pedazos.observar(tracks)
                     if quitar_nacidos:
                         for tr in tracks:
                             if tr['id'] not in rastros_vistos:
@@ -709,6 +714,8 @@ class VideoJobProcessor:
                     detections = perfil_deteccion.quitar_anidadas(
                         detections, perfil['quitar_anidadas'])
                 tracks = tracker.update(detections)
+                if pedazos is not None:
+                    pedazos.observar(tracks)
                 # Donde APARECE cada rastro: si nace casi entero dentro de un
                 # autobús o camión es un pedazo de él (frente, chasis, faro)
                 # y su cruce no se cuenta. Ver perfil_deteccion.
@@ -776,6 +783,11 @@ class VideoJobProcessor:
                             velocidades.append((lane_id, m['track_id'], m['segundos']))
                     for crossing in crossings['in'] + crossings['out']:
                         if crossing['track_id'] in nacidos_en_pesado:
+                            continue
+                        # Frente del autobús, chasis, faro: viaja pegado al
+                        # pesado y no es otro vehículo. Ver PedazosDePesado.
+                        if pedazos is not None and pedazos.es_pedazo(crossing['track_id']):
+                            pedazos_quitados += 1
                             continue
                         track = next(
                             (t for t in vistos if t['id'] == crossing['track_id']),
@@ -999,6 +1011,9 @@ class VideoJobProcessor:
                 # Los avisos se GUARDAN en el video, no solo en el registro:
                 # quien opera la plataforma no lee el registro del contenedor,
                 # y un aviso que nadie ve es lo mismo que no avisar.
+                if pedazos_quitados:
+                    logging.info(f"{job['original_name']}: {pedazos_quitados} cruces no contados "
+                                 f"por viajar pegados a un autobús o camión")
                 avisos = []
                 if zonas and det_crudas:
                     descartado = 1 - det_en_zona / det_crudas

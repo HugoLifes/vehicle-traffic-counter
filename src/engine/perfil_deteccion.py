@@ -66,6 +66,8 @@ def leer(proyecto: Optional[Dict]) -> Dict:
         limpio["horas_subtipo"] = (horas[0], horas[1])
     if perfil.get("quitar_nacidos_en_pesado") is True:
         limpio["quitar_nacidos_en_pesado"] = True
+    if perfil.get("quitar_pedazos_de_pesado") is True:
+        limpio["quitar_pedazos_de_pesado"] = True
     for clave in ("clasificador_pesados", "clasificador_livianos"):
         if isinstance(perfil.get(clave), str) and perfil[clave].strip():
             limpio[clave] = perfil[clave].strip()
@@ -117,9 +119,13 @@ def aplicar_tipo_camara(tipo: str, perfil_actual, raiz) -> tuple:
             # no detiene el conteo, pero sí llena el registro de errores.
             if clave not in perfil and (Path(raiz) / ruta).exists():
                 perfil[clave] = ruta
+        # Medido solo con vehículos de 115-150 px (cámara frontal): ver
+        # PedazosDePesado.
+        perfil.setdefault("quitar_pedazos_de_pesado", True)
         return True, perfil
     for clave in MODELOS_CAMARA_GRANDE:
         perfil.pop(clave, None)
+    perfil.pop("quitar_pedazos_de_pesado", None)
     return False, perfil
 
 
@@ -170,6 +176,77 @@ def nacio_dentro_de_pesado(caja, rastros: List[Dict], propio_id=None,
         if ix * iy >= contencion * area:
             return r.get("id")
     return None
+
+
+class PedazosDePesado:
+    """El rastro que VIAJA pegado a un autobús o camión no es un vehículo:
+    es su frente, su chasis o un faro detectados aparte.
+
+    Lo que lo distingue de un auto real no es dónde nace —un auto que sale de
+    detrás de un tráiler también nace dentro de él, y por eso "nació dentro"
+    borraba autos reales— sino lo que pasa DESPUÉS: el pedazo pasa casi toda
+    su vida dentro de la caja del MISMO pesado y en el mismo lugar relativo a
+    ella; el auto real se separa o se mueve respecto a él.
+
+    Regla, al cruzar la línea: ≥ 60 % de sus cuadros dentro (≥ 0.8 de su
+    caja) de un mismo pesado del doble de área o más, y su centro se movió
+    ≤ 0.45 (suma de los rangos en x e y, en fracciones de la caja del pesado).
+
+    Medido por el camino de producción sobre 70 minutos del frontal (58 con
+    dobles conteos conocidos, 12 sin escoger), 6-oct-2026: quita 7 cruces y
+    los 7 son pedazos vistos en su cuadro exacto (frentes de autobús, la
+    defensa de un tráiler, el chasis de un tractor, faros como moto); respeta
+    los 12 autos reales etiquetados (7 junto al autobús, 5 que salen de
+    detrás de un tráiler, los que "nació dentro" borraba) y no toca nada en
+    los minutos normales. Se le escapan ~5 pedazos (la bomba de una pipa, que
+    sobresale de la caja; chasis a medias): prefiere dejar un pedazo a borrar
+    un auto.
+    """
+
+    FRACCION = 0.6
+    MOVIMIENTO = 0.45
+    CONTENCION = 0.8
+
+    def __init__(self):
+        self._vida: Dict[int, List] = {}
+
+    def observar(self, rastros: List[Dict]):
+        pesados = [r for r in rastros if r.get("class_name") in GRANDES]
+        for r in rastros:
+            x1, y1, x2, y2 = r["bbox"]
+            area = max(1.0, (x2 - x1) * (y2 - y1))
+            mejor = None
+            for g in pesados:
+                if g is r:
+                    continue
+                gx1, gy1, gx2, gy2 = g["bbox"]
+                if (gx2 - gx1) * (gy2 - gy1) < 2 * area:
+                    continue
+                ix = max(0.0, min(x2, gx2) - max(x1, gx1))
+                iy = max(0.0, min(y2, gy2) - max(y1, gy1))
+                frac = ix * iy / area
+                if frac >= self.CONTENCION and (mejor is None or frac > mejor[1]):
+                    mejor = (g, frac)
+            if mejor is None:
+                self._vida.setdefault(r["id"], []).append((None, None))
+            else:
+                gx1, gy1, gx2, gy2 = mejor[0]["bbox"]
+                rel = (((x1 + x2) / 2 - gx1) / max(1.0, gx2 - gx1),
+                       ((y1 + y2) / 2 - gy1) / max(1.0, gy2 - gy1))
+                self._vida.setdefault(r["id"], []).append((mejor[0].get("id"), rel))
+
+    def es_pedazo(self, rastro_id) -> bool:
+        vida = self._vida.get(rastro_id) or []
+        ids = [p for p, _ in vida if p is not None]
+        if not ids:
+            return False
+        padre = max(set(ids), key=ids.count)
+        con_padre = [rel for p, rel in vida if p == padre]
+        if len(con_padre) < 2 or len(con_padre) / len(vida) < self.FRACCION:
+            return False
+        xs = [a for a, _ in con_padre]
+        ys = [b for _, b in con_padre]
+        return (max(xs) - min(xs)) + (max(ys) - min(ys)) <= self.MOVIMIENTO
 
 
 def quitar_anidadas(detecciones: List[Dict], contencion: float) -> List[Dict]:
