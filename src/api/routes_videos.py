@@ -247,6 +247,19 @@ def iniciar_subida(datos: dict):
     return {"subida_id": subida_id, "recibido": min(recibido, tamano)}
 
 
+async def _rechazar(request: Request, codigo: int, detalle: dict):
+    """Rechaza un pedazo DESPUÉS de leerlo. Contestar sin leer el cuerpo
+    cierra la conexión con el pedazo a medio enviar, y el navegador no ve el
+    409 sino "conexión anulada": nunca se entera de que debía esperar o
+    seguir desde otro punto (medido por la dirección pública, 5-oct-2026)."""
+    leido = 0
+    async for trozo in request.stream():
+        leido += len(trozo)
+        if leido > PEDAZO_MAXIMO:
+            break
+    raise HTTPException(codigo, detail=detalle)
+
+
 @router.put("/subida/{subida_id}")
 async def recibir_pedazo(subida_id: str, offset: int, request: Request):
     """Un pedazo del archivo, que tiene que caer justo donde termina lo que
@@ -255,10 +268,12 @@ async def recibir_pedazo(subida_id: str, offset: int, request: Request):
     subida del mismo archivo está escribiendo, 409 con `ocupado` y espera."""
     ruta = _ruta_parcial(subida_id)
     candado = _candado(subida_id)
-    _exigir_disco()
+    problema = disco_videos.problema_para_subir()
+    if problema:
+        await _rechazar(request, 507, {"mensaje": problema})
     if candado.locked():
         actual = ruta.stat().st_size if ruta.exists() else 0
-        raise HTTPException(409, detail={
+        await _rechazar(request, 409, {
             "recibido": actual, "ocupado": True,
             "mensaje": "Este archivo ya se está subiendo (otra pestaña o un doble clic): "
                        "esta subida espera a que termine."})
@@ -266,12 +281,12 @@ async def recibir_pedazo(subida_id: str, offset: int, request: Request):
         if not ruta.exists():
             hecho = _job_de_subida(subida_id)
             if hecho is not None:
-                raise HTTPException(409, detail={"recibido": hecho["size_bytes"],
-                                                 "mensaje": "Este archivo ya estaba subido."})
+                await _rechazar(request, 409, {"recibido": hecho["size_bytes"],
+                                               "mensaje": "Este archivo ya estaba subido."})
         actual = ruta.stat().st_size if ruta.exists() else 0
         if offset != actual:
-            raise HTTPException(409, detail={"recibido": actual,
-                                             "mensaje": "El servidor ya tenía otra parte del archivo."})
+            await _rechazar(request, 409, {"recibido": actual,
+                                           "mensaje": "El servidor ya tenía otra parte del archivo."})
         escrito = 0
         with open(ruta, "ab") as f:
             async for trozo in request.stream():

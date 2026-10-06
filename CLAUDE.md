@@ -2912,6 +2912,24 @@ imagen, donde el montaje de `./data` los tapa. Con `data/` entera ignorada
 42.4 a **15.5 GB**, y la reconstrucción para un cambio de interfaz tardó
 minutos. Al agregar una carpeta grande que se monta, ignorarla también.
 
+### Los videos viven en el disco USB de 2 TB (5-oct-2026)
+
+`data/uploads` ya no es del SSD: el compose monta encima
+`/mnt/videos/aforo/uploads`, un ADATA HD710 PRO de 1.8 TB en **NTFS**
+(ntfs-3g, el kernel del Jetson no trae `ntfs3`), montado por fstab con
+`nofail`. Se copiaron los 1 149 archivos (19.7 GB, verificados por nombre y
+tamaño); la copia vieja sigue en el SSD (`~/vehicle-traffic-counter/data/uploads`
+del host) hasta que se decida borrarla.
+
+**El riesgo de un montaje es que falle callado**: sin el disco, Docker monta
+la carpeta vacía del SSD y la plataforma seguiría subiendo ahí. Por eso el
+disco lleva `.disco_aforo` y, con `AFORO_DISCO_VIDEOS=1` (solo en el compose
+del Jetson), sin esa marca las subidas responden 507 con el motivo, Subir lo
+avisa en rojo y la prueba de aceptación falla (`src/storage/disco_videos.py`).
+Si el disco se conecta después de arrancar, hay que reiniciar el contenedor.
+Los respaldos diarios de la base se copian también a `uploads/respaldos_bd/`.
+NTFS no acepta `:*?"<>|` en nombres: `_safe_stored_path` los cambia por `_`.
+
 Comandos de operación:
 
 ```bash
