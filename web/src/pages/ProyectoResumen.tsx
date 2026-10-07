@@ -11,8 +11,8 @@
   irreversible, que va aparte y al final.
 */
 
-import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -137,6 +137,15 @@ export default function ProyectoResumen() {
   const copiar = useCopyCalibration(id);
 
   const [editando, setEditando] = useState(false);
+  // ?editar=1 abre el formulario: la etiqueta del intervalo en el encabezado
+  // lleva aquí.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    if (params.get('editar')) {
+      setEditando(true);
+      setParams({}, { replace: true });
+    }
+  }, [params, setParams]);
   const [origen, setOrigen] = useState<number | ''>('');
   const [confirmarBorrado, setConfirmarBorrado] = useState(false);
   const [confirmarReconteo, setConfirmarReconteo] = useState(false);
@@ -216,7 +225,7 @@ export default function ProyectoResumen() {
             </div>
           </dl>
           <Button variant="primary" onClick={() => setEditando(true)}>
-            Editar nombre y ubicación
+            Editar la intersección
           </Button>
         </Card>
 

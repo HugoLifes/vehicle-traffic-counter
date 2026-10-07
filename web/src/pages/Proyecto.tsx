@@ -23,7 +23,7 @@
   herramientas.
 */
 
-import { NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { Page } from '../components/Page';
 import { EmptyState, Pill } from '../components/ui';
 import { IconPin } from '../components/Icons';
@@ -143,9 +143,17 @@ export default function Proyecto() {
               </p>
             )}
             <div className="proj-tags">
-              <Pill>
-                Intervalo <span className="value">{project.interval_minutes} min</span>
-              </Pill>
+              {/* Se pulsa para cambiarlo: antes solo se llegaba por "Editar
+                  nombre y ubicación" en el Resumen, y no se encontraba. */}
+              <Link
+                to={`/proyecto/${project.id}?editar=1`}
+                className="pill-enlace"
+                title="Cambiar el intervalo de conteo"
+              >
+                <Pill>
+                  Intervalo <span className="value">{project.interval_minutes} min</span>
+                </Pill>
+              </Link>
               {project.awaiting_count > 0 && (
                 <Pill tone="warning">
                   {formatNumber(project.awaiting_count)} sin calibrar
