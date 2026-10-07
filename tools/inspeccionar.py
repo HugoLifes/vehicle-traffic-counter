@@ -179,9 +179,20 @@ def main():
         lanes = carriles(info['project_id'])
         cap = cv2.VideoCapture(info['stored_path'])
         if detector is not None:
-            detector.set_detection_band(
-                VehicleDetector.band_from_lanes([l['points'] for l in lanes], 360)
-                if args.banda else None)
+            # La misma franja que producción: de las zonas si hay, si no de
+            # las líneas, con el alto REAL del cuadro. Estaba fijo en 360
+            # (la cámara vieja de 640x360) y con videos de 2560x1440 la
+            # franja salía vacía y la detección fallaba (6-oct-2026).
+            alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 360
+            banda = None
+            if args.banda:
+                from src.engine.zones import band_from_zones
+                from src.storage import traffic_db
+                zonas = traffic_db.list_zones(info['project_id'])
+                banda = band_from_zones(zonas, alto) if zonas else None
+                if banda is None and lanes:
+                    banda = VehicleDetector.band_from_lanes([l['points'] for l in lanes], alto)
+            detector.set_detection_band(banda)
 
         for k in range(args.n):
             t = args.desde + k * args.cada
