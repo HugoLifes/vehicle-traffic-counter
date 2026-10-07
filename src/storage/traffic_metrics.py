@@ -86,6 +86,9 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
     lane_metrics = []
     totals = {"in": 0, "out": 0, "total": 0}
     composition: Dict[str, int] = {}
+    # Automóvil / camioneta / pickup dentro de la A. Siempre suman la A:
+    # lo que no tiene subtipo seguro va en SIN_SUBTIPO, no se reparte.
+    subtipos: Dict[str, int] = {}
 
     for lane in lanes:
         intervals = lane["intervals"]
@@ -99,6 +102,11 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
                 n = counts.get("in", 0) + counts.get("out", 0)
                 lane_composition[vtype] = lane_composition.get(vtype, 0) + n
                 composition[vtype] = composition.get(vtype, 0) + n
+        lane_subtipos: Dict[str, int] = {}
+        for iv in intervals:
+            for sub, n in (iv.get("subtipos_A_linea") or {}).items():
+                lane_subtipos[sub] = lane_subtipos.get(sub, 0) + n
+                subtipos[sub] = subtipos.get(sub, 0) + n
 
         totals["in"] += lane_in
         totals["out"] += lane_out
@@ -111,6 +119,7 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
             "in": lane_in,
             "out": lane_out,
             "composition": lane_composition,
+            "subtipos_A": lane_subtipos,
             # None significa que en este carril el vehículo se ve demasiado
             # pequeño para separar liviano de pesado. Se propaga para que la
             # pantalla pueda decir *por qué* no hay desglose, en vez de
@@ -151,6 +160,7 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
         "interval_minutes": report["interval_minutes"],
         "totals": totals,
         "composition": composition,
+        "subtipos_A": subtipos,
         # Los porcentajes van sobre los vehículos que SÍ se pudieron
         # clasificar, no sobre el total. Repartiéndolos sobre el total, la
         # categoría "sin clasificar" salía primera con 55.6 % y la pantalla

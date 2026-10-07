@@ -149,13 +149,32 @@ export function IntervalChart({ intervals, peakIntervalStart }: IntervalChartPro
   entre dos y cuatro categorías, y una barra permite leer los porcentajes
   en línea sin comparar ángulos.
 */
+/* Los tipos de liviano dentro de la A. La SCT pide la A junta; el desglose
+   va debajo de ella, sin sacarla del total, y siempre suma la A. */
+export const SUBTIPO_LABEL: Record<string, string> = {
+  AUTO: 'Automóvil',
+  CAMIONETA: 'Camioneta (SUV, van)',
+  PICKUP: 'Pickup',
+  SIN_SUBTIPO: 'Sin subtipo (de noche o dudoso)',
+};
+const ORDEN_SUBTIPO = ['AUTO', 'CAMIONETA', 'PICKUP', 'SIN_SUBTIPO'];
+
 export function CompositionChart({
   composition,
   total,
+  subtiposA,
 }: {
   composition: Record<string, number>;
   total: number;
+  subtiposA?: Record<string, number>;
 }) {
+  const totalA = composition['A'] ?? 0;
+  // Solo si hay algún subtipo de verdad: con todo en SIN_SUBTIPO (cámara
+  // de vehículos chicos, o solo noche) el desglose no dice nada.
+  const subtipos =
+    subtiposA && totalA > 0 && Object.entries(subtiposA).some(([k, n]) => k !== 'SIN_SUBTIPO' && n > 0)
+      ? ORDEN_SUBTIPO.filter((k) => (subtiposA[k] ?? 0) > 0).map((k) => [k, subtiposA[k]] as const)
+      : [];
   const entries = Object.entries(composition)
     .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1]);
@@ -184,11 +203,23 @@ export function CompositionChart({
           por sí sola no se puede leer sin distinguir los tonos. */}
       <div className="comp-legend">
         {entries.map(([type, n]) => (
-          <div className="comp-legend-item" key={type}>
-            <span className="comp-swatch" style={{ background: vehicleColorVar(type) }} />
-            <span className="comp-label">{vehicleLabel(type)}</span>
-            <span className="comp-num">{n}</span>
-            <span className="comp-pct">{((n / total) * 100).toFixed(1)}%</span>
+          <div className="comp-legend-grupo" key={type}>
+            <div className="comp-legend-item">
+              <span className="comp-swatch" style={{ background: vehicleColorVar(type) }} />
+              <span className="comp-label">{vehicleLabel(type)}</span>
+              <span className="comp-num">{n}</span>
+              <span className="comp-pct">{((n / total) * 100).toFixed(1)}%</span>
+            </div>
+            {type === 'A' &&
+              subtipos.map(([sub, m]) => (
+                <div className="comp-legend-item comp-sub" key={sub}>
+                  <span className="comp-label">{SUBTIPO_LABEL[sub] ?? sub}</span>
+                  <span className="comp-num">{m}</span>
+                  <span className="comp-pct" title="Porcentaje dentro de los livianos (A)">
+                    {((m / totalA) * 100).toFixed(1)}% de A
+                  </span>
+                </div>
+              ))}
           </div>
         ))}
       </div>

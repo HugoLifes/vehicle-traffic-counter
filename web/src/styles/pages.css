@@ -2151,3 +2151,8 @@
 /* La etiqueta del intervalo en el encabezado lleva al formulario. */
 .pill-enlace { text-decoration: none; border-radius: 999px; }
 .pill-enlace:hover .pill, .pill-enlace:focus-visible .pill { outline: 1px solid var(--accent); }
+
+/* Desglose de la A debajo de "Liviano (A)" en la composición. */
+.comp-legend-grupo { display: flex; flex-direction: column; gap: 4px; }
+.comp-legend-item.comp-sub { padding-inline-start: 22px; font-size: var(--text-xs); color: var(--text-secondary); }
+.comp-legend-item.comp-sub .comp-pct { color: var(--text-muted); }

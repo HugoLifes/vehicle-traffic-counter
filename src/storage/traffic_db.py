@@ -1497,6 +1497,15 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
                                     bool((perfiles.get(lane["id"]) or {}).get("fino")))
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
+            # El desglose de A (automóvil, camioneta, pickup) también por
+            # línea, para la pantalla del Reporte: antes solo salía en el
+            # Excel (por calzada) y en pantalla la A era un solo bloque.
+            if clase == "A":
+                sub = subtipo_final(row["subtipo_modelo"], row["prob_subtipo"],
+                                    int(row["timestamp"][11:13]), horas_sub,
+                                    bool((perfiles.get(lane["id"]) or {}).get("fino")))
+                bucket.setdefault("subtipos_A_linea", {})
+                bucket["subtipos_A_linea"][sub] = bucket["subtipos_A_linea"].get(sub, 0) + 1
             # El sentido del informe es la calzada de CADA cruce, no la de la
             # linea: en una calibracion vieja (proyecto 11) una linea recogio
             # 221 cruces de la otra calzada, y agrupar por linea daba otro

@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, EmptyState, Notice, Pill, SelectField } from '../components/ui';
 import { IconDownload, IconPrint } from '../components/Icons';
-import { CompositionChart, IntervalChart } from '../components/charts';
+import { CompositionChart, IntervalChart, SUBTIPO_LABEL } from '../components/charts';
 import { EscenaFlujo } from '../components/EscenaFlujo';
 import { useDireccional, useMetrics } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
@@ -38,6 +38,16 @@ const INTERVALS = [5, 10, 15, 30, 60];
 function Metrics({ m }: { m: ProjectMetrics }) {
   const peak = m.peak_hour;
   const topType = Object.entries(m.composition_pct).sort((a, b) => b[1] - a[1])[0];
+  // "Automóvil 62 % · Camioneta 24 % · Pickup 13 %", sobre los livianos que
+  // sí tienen subtipo (de noche no se da; ver el desglose por carril).
+  const sub = m.subtipos_A ?? {};
+  const conSubtipo = ['AUTO', 'CAMIONETA', 'PICKUP'].reduce((t, k) => t + (sub[k] ?? 0), 0);
+  const subtiposResumen = conSubtipo
+    ? ['AUTO', 'CAMIONETA', 'PICKUP']
+        .filter((k) => sub[k])
+        .map((k) => `${SUBTIPO_LABEL[k].split(' (')[0]} ${Math.round((100 * sub[k]) / conSubtipo)} %`)
+        .join(' · ')
+    : null;
 
   return (
     /*
@@ -130,6 +140,12 @@ function Metrics({ m }: { m: ProjectMetrics }) {
               {m.sin_clasificar > 0 &&
                 ` · sobre ${formatNumber(m.totals.total - m.sin_clasificar)} de ${formatNumber(m.totals.total)} vehículos`}
             </div>
+            {/* Los livianos no son un solo tipo: cuántos son automóvil,
+                camioneta y pickup (sin contar los que no tienen subtipo
+                seguro, que se declaran en el desglose de cada carril). */}
+            {topType[0] === 'A' && subtiposResumen && (
+              <div className="m-sub">{subtiposResumen}</div>
+            )}
           </Card>
         )}
 
@@ -300,7 +316,11 @@ function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinu
         <Card className="chart-card">
           <h3>Composición vehicular</h3>
           <p className="chart-sub">Proporción por tipo sobre el total del carril.</p>
-          <CompositionChart composition={lane.composition} total={lane.total} />
+          <CompositionChart
+            composition={lane.composition}
+            total={lane.total}
+            subtiposA={lane.subtipos_A}
+          />
         </Card>
       )}
 
