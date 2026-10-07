@@ -15,8 +15,6 @@ import { IconClose, IconEye, IconTrash, IconUpload, IconVideo } from '../compone
 import {
   useAnotarVideo,
   useDeleteVideo,
-  useDiagnosticar,
-  useDiagnostico,
   useStartCounting,
   keys,
   useVideos,
@@ -163,6 +161,7 @@ function JobRow({
   const start = job.video_start_time ? job.video_start_time.slice(11, 19) : 'sin hora';
   /* Un video sin hora no cae en ningún intervalo del reporte. Mientras no se
      haya contado, la hora se corrige aquí sin volver a subirlo. */
+  const qcFila = useQueryClient();
   const corregible = ['awaiting_calibration', 'queued', 'error'].includes(job.status);
   const [editHora, setEditHora] = useState(false);
   const [fechaE, setFechaE] = useState(job.video_start_time?.slice(0, 10) ?? todayISO());
@@ -180,50 +179,11 @@ function JobRow({
     }
   }
 
-  /* Diagnóstico del encuadre: dice si vale la pena contar este video antes
-     de gastar horas en hacerlo. Corre sobre la misma GPU que la cola, así
-     que el backend lo rechaza mientras haya videos contándose. */
-  const diagnosticar = useDiagnosticar();
-  const qcFila = useQueryClient();
-  /* La revisión corre en la cola de la GPU: mientras está pendiente el botón
-     lo dice, y en cuanto termina se lee el resultado. */
-  const revisando = job.diag_estado === 'en_cola' || job.diag_estado === 'revisando';
-  const estabaRevisando = useRef(revisando);
-  useEffect(() => {
-    if (estabaRevisando.current && !revisando) {
-      void qcFila.invalidateQueries({ queryKey: ['diagnostico', job.id] });
-    }
-    estabaRevisando.current = revisando;
-  }, [revisando, job.id, qcFila]);
-  const textoRevisar =
-    job.diag_estado === 'en_cola'
-      ? 'Revisión en cola…'
-      : job.diag_estado === 'revisando'
-        ? 'Revisando encuadre…'
-        : null;
   /* Video con detecciones: lo deja el conteo si el proyecto lo pide, o se
      genera después sobre un video ya contado, sin recontarlo. */
   const anotar = useAnotarVideo();
   const tieneVideo = Boolean(job.output_video_path);
   const anotando = job.anotado_estado === 'en_cola' || job.anotado_estado === 'generando';
-  /* Los avisos son lo útil del diagnóstico —dicen qué cambiar de la cámara—,
-     así que cuando el encuadre NO sale bueno el detalle se abre solo:
-     esconder "esta perspectiva va a costar exactitud" detrás de un clic es
-     no avisar. El usuario puede cerrarlo, y entonces manda su elección. */
-  const [verDetalle, setVerDetalle] = useState<boolean | null>(null);
-  const resumen = job.diag_color
-    ? { color: job.diag_color, veredicto: job.diag_veredicto, puntaje: job.diag_puntaje }
-    : null;
-  const abierto = verDetalle ?? (resumen ? resumen.color !== 'verde' : false);
-  /* El detalle (avisos, exactitud esperable) se pide solo si se muestra. */
-  const { data: diag } = useDiagnostico(job.id, Boolean(resumen) && abierto);
-  const d = diag?.datos?.diagnostico;
-  const TONO: Record<string, 'good' | 'warning' | 'critical'> = {
-    verde: 'good',
-    ambar: 'warning',
-    rojo: 'critical',
-  };
-
   return (
     <>
       <div className="job-row">
@@ -292,27 +252,6 @@ function JobRow({
             : JOB_STATUS_LABEL[job.status]}
         </Pill>
 
-        {resumen ? (
-          <button
-            type="button"
-            className="pill-boton"
-            aria-expanded={abierto}
-            title={abierto ? 'Ocultar el detalle del encuadre' : 'Ver por qué y qué cambiar'}
-            onClick={() => setVerDetalle(!abierto)}
-          >
-            <Pill tone={TONO[resumen.color]} dot>
-              Encuadre {resumen.veredicto} · {resumen.puntaje}/100
-            </Pill>
-          </button>
-        ) : (
-          <Button
-            onClick={() => diagnosticar.mutate({ jobId: job.id })}
-            disabled={diagnosticar.isPending || revisando}
-          >
-            {textoRevisar ?? (diagnosticar.isPending ? 'Pidiendo…' : 'Revisar encuadre')}
-          </Button>
-        )}
-
         {job.status === 'done' && anotando && (
           <Pill tone="accent" dot live>
             {job.anotado_estado === 'en_cola'
@@ -348,14 +287,6 @@ function JobRow({
         </IconButton>
       </div>
 
-      {job.diag_estado === 'error' && (
-        <div className="notice-stack">
-          <Notice tone="warning" title="No se pudo revisar el encuadre">
-            {job.diag_error || 'La revisión falló.'} Puedes volver a pedirla.
-          </Notice>
-        </div>
-      )}
-
       {job.anotado_estado === 'error' && (
         <div className="notice-stack">
           <Notice tone="warning" title="No se pudo generar el video con detecciones">
@@ -374,53 +305,6 @@ function JobRow({
           <Notice tone="warning" title="Revisa este video antes de entregar">
             {job.aviso}
           </Notice>
-        </div>
-      )}
-
-      {d && abierto && (
-        /*
-          Qué le pasa a este encuadre y qué se puede hacer. El veredicto solo
-          no sirve de nada: lo accionable es el aviso ("el vehículo mide 22 px",
-          "imagen sobreexpuesta", "los rastros mueren a media escena").
-        */
-        <div className="job-diagnostico rise">
-          <div className="jd-head">
-            <span className="jd-title">
-              Encuadre {d.veredicto} · {d.puntaje}/100
-              {d.razon_esperada
-                ? ` · exactitud esperable ${d.razon_esperada[0].toFixed(2)}×–${d.razon_esperada[1].toFixed(2)}× del conteo real`
-                : ' · con este encuadre no se puede prometer exactitud'}
-            </span>
-            <Button
-              onClick={() => diagnosticar.mutate({ jobId: job.id })}
-              disabled={diagnosticar.isPending || revisando}
-            >
-              {textoRevisar ?? (diagnosticar.isPending ? 'Pidiendo…' : 'Revisar de nuevo')}
-            </Button>
-          </div>
-
-          {d.avisos.length > 0 ? (
-            <div className="notice-stack">
-              {d.avisos.map((a, i) => (
-                <Notice
-                  key={i}
-                  tone={d.color === 'rojo' ? 'critical' : 'warning'}
-                  title={i === 0 ? 'Esta perspectiva puede afectar el aforo' : undefined}
-                >
-                  {a}
-                </Notice>
-              ))}
-            </div>
-          ) : (
-            <Notice tone="good" title="El encuadre no tiene pegas">
-              El vehículo se ve bastante grande y los rastros entran y salen por donde deben.
-            </Notice>
-          )}
-
-          <p className="jd-fuente">
-            Medido sobre este mismo video ({d.etapa}), antes de contarlo. No es una predicción del
-            modelo: son las señales que en este proyecto se contrastaron contra conteos manuales.
-          </p>
         </div>
       )}
 

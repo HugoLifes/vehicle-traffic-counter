@@ -114,11 +114,7 @@ Para cambiar la contraseña, otra vez `bash tools/poner_acceso.sh`.
 2. **Subir.** Arrastra los videos. Revisa que el *inicio real* de cada uno sea
    el correcto antes de subir. Para muchos videos o internet lento, mejor por
    WinSCP (abajo).
-3. **Revisar encuadre** (en Subir, sobre un video). Califica en un minuto si
-   el video sirve: tamaño del vehículo, exposición, nitidez. Si sale "no
-   recomendable", lee los avisos: casi siempre es la cámara, y contar no lo
-   arregla.
-4. **Calibrar.**
+3. **Calibrar.**
    - **Zonas de calzada**: rodea cada calzada con un polígono. Sirven para
      separar los sentidos y descartar lo que pasa fuera de la vía.
    - **Líneas de conteo**: una por calzada, atada a su zona. Ponla **donde el
@@ -133,10 +129,10 @@ Para cambiar la contraseña, otra vez `bash tools/poner_acceso.sh`.
      cámara, porque los faros cortan el recorrido antes de la segunda línea.
    - "Ver por dónde pasan los vehículos" muestra los rastros para comprobar
      que la línea los corta de través.
-5. **Empezar conteo.** Los videos entran a la cola y se procesan uno por uno.
+4. **Empezar conteo.** Los videos entran a la cola y se procesan uno por uno.
    Con la cámara frontal va algo más rápido que la grabación: una hora de
    video en ~45–55 minutos.
-6. **Reporte.** Volumen por intervalo, composición, velocidad y hora pico.
+5. **Reporte.** Volumen por intervalo, composición, velocidad y hora pico.
    Desde ahí se descarga el Excel.
 
 ### Subir muchos videos por WinSCP
