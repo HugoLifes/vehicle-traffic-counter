@@ -162,7 +162,8 @@ function JobRow({
   /* Un video sin hora no cae en ningún intervalo del reporte. Mientras no se
      haya contado, la hora se corrige aquí sin volver a subirlo. */
   const qcFila = useQueryClient();
-  const corregible = ['awaiting_calibration', 'queued', 'error'].includes(job.status);
+  // También ya contado: el servidor mueve sus vehículos a la hora nueva.
+  const corregible = job.status !== 'processing';
   const [editHora, setEditHora] = useState(false);
   const [fechaE, setFechaE] = useState(job.video_start_time?.slice(0, 10) ?? todayISO());
   const [horaE, setHoraE] = useState(job.video_start_time?.slice(11, 19) ?? '');

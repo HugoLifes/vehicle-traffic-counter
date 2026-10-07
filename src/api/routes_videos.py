@@ -346,23 +346,55 @@ async def terminar_subida(subida_id: str, datos: dict):
 
 @router.put("/{job_id}/inicio")
 def poner_inicio(job_id: int, datos: dict):
-    """La hora real en que empieza un video ya subido y todavía sin contar.
-    Sin ella sus cruces no caen en ningún intervalo del reporte (los videos
-    de Juárez se llaman por el minuto, 00.mp4 … 59.mp4, y la hora no sale
-    del nombre)."""
+    """La hora real en que empieza un video. Sin ella sus cruces no caen en
+    ningún intervalo del reporte (los videos de Juárez se llaman por el
+    minuto, 00.mp4 … 59.mp4, y la hora no sale del nombre).
+
+    En un video YA contado mueve también sus cruces, sin recontar: cada cruce
+    guarda su número de cuadro, así que su hora es inicio + cuadro / fps. Pasó
+    con Campos Eliseos (6-oct-2026): 13 de 14 videos contados sin hora, sus
+    cruces quedaron con la hora en que se procesaron y el reporte mostraba 1
+    vehículo de 13."""
+    from datetime import datetime, timedelta
     job = traffic_db.get_video_job(job_id)
     if job is None:
         raise HTTPException(404, detail={"mensaje": "Video no encontrado."})
-    if job["status"] not in ("awaiting_calibration", "queued", "error"):
+    if job["status"] == "processing":
         raise HTTPException(409, detail={
-            "mensaje": "Este video ya se contó o se está contando: cambiar su hora movería sus "
-                       "cruces. Bórralo y vuelve a subirlo con la hora correcta."})
+            "mensaje": "Este video se está contando ahora mismo; espera a que termine."})
     inicio = _inicio_valido(datos.get("inicio"))
     if inicio is None:
         raise HTTPException(400, detail={"mensaje": "Falta la fecha y la hora de inicio."})
+
+    con = traffic_db.get_connection()
+    cruces = con.execute("SELECT id, timestamp, cuadro FROM crossings WHERE job_id = ?",
+                         (job_id,)).fetchall()
+    if cruces:
+        if con.execute("SELECT 1 FROM movimientos WHERE job_id = ? LIMIT 1", (job_id,)).fetchone():
+            raise HTTPException(409, detail={
+                "mensaje": "Este video es de un aforo direccional ya contado: su hora no se puede "
+                           "mover sin volver a contarlo."})
+        nuevo = datetime.fromisoformat(inicio)
+        fps = job.get("fps") or 0
+        cambios = []
+        for cid, ts, cuadro in cruces:
+            if cuadro is not None and fps > 0:
+                hora = nuevo + timedelta(seconds=cuadro / fps)
+            elif job.get("video_start_time") and ts:
+                # Sin cuadro guardado (cruces de antes del 23-sep-2026), se
+                # corre lo mismo que se corrió el inicio.
+                hora = datetime.fromisoformat(ts) + (nuevo - datetime.fromisoformat(job["video_start_time"]))
+            else:
+                raise HTTPException(409, detail={
+                    "mensaje": "Los vehículos de este video no guardaron su cuadro y el video no "
+                               "tenía hora: hay que volver a contarlo con la hora puesta."})
+            cambios.append((hora.strftime("%Y-%m-%d %H:%M:%S"), cid))
+        with con:
+            con.executemany("UPDATE crossings SET timestamp = ? WHERE id = ?", cambios)
     traffic_db.update_video_job(job_id, video_start_time=inicio)
     traffic_db.log_event(job.get("project_id"), "video", "Se corrigió la hora de un video",
-                         f"{job['original_name']}: {inicio}")
+                         f"{job['original_name']}: {inicio}"
+                         + (f" ({len(cruces)} vehículos movidos a esa hora)" if cruces else ""))
     return traffic_db.get_video_job(job_id)
 
 

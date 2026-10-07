@@ -14,7 +14,7 @@ import { Card, EmptyState, Notice, Pill, SelectField } from '../components/ui';
 import { IconDownload, IconPrint } from '../components/Icons';
 import { CompositionChart, IntervalChart, SUBTIPO_LABEL } from '../components/charts';
 import { EscenaFlujo } from '../components/EscenaFlujo';
-import { useDireccional, useMetrics } from '../lib/queries';
+import { useDireccional, useMetrics, useVideos } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
 import {
   errorMessage,
@@ -547,6 +547,11 @@ export default function Reporte() {
   // el selector solo lo cambia para esta vista, sin tocar el proyecto.
   const effective = minutes ?? project?.interval_minutes ?? 15;
   const { data: m, isLoading, isError, error } = useMetrics(projectId, effective);
+  // Un video contado sin hora de inicio no cae en ningún intervalo: sus
+  // vehículos no salen en el reporte. Pasó en Campos Eliseos (13 de 14
+  // videos): el reporte decía 1 vehículo donde se contaron 13.
+  const { data: videos } = useVideos(projectId ?? undefined);
+  const sinHora = (videos ?? []).filter((v) => v.status === 'done' && !v.video_start_time).length;
   const { data: od, isLoading: cargandoOd } = useDireccional(projectId, effective);
   const hayDireccional = (od?.movimientos.length ?? 0) + (od?.incompletos.length ?? 0) > 0;
 
@@ -631,6 +636,14 @@ export default function Reporte() {
             </Link>
           }
         />
+      )}
+
+      {sinHora > 0 && (
+        <Notice tone="warning" title={`${sinHora} ${sinHora === 1 ? 'video contado no tiene' : 'videos contados no tienen'} hora de inicio`}>
+          Sus vehículos no aparecen en este reporte porque no caen en ningún intervalo. Ponles la
+          hora real en <Link to={`/proyecto/${projectId}/subir`}>Subir</Link> («poner hora») y el
+          reporte los incluye sin volver a contar.
+        </Notice>
       )}
 
       {m && m.lanes.length > 0 && (
