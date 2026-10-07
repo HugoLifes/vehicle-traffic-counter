@@ -341,6 +341,9 @@ export interface LaneMetrics {
   composition: Record<string, number>;
   /* Desglose de la A (AUTO, CAMIONETA, PICKUP, SIN_SUBTIPO); suma la A. */
   subtipos_A?: Record<string, number>;
+  /* Clase de REFERENCIA de lo que la validada no pudo clasificar (vehículo
+     chico, de noche o sin escala). No va al entregable. */
+  provisional?: Record<string, number>;
   /* null = en este carril el vehículo se ve demasiado pequeño para separar
      liviano de pesado, así que no se entrega desglose por tipo. */
   umbral_pesado_px: number | null;
@@ -365,6 +368,7 @@ export interface ProjectMetrics {
      como si fueran un tipo de vehículo más. */
   composition_pct: Record<string, number>;
   subtipos_A?: Record<string, number>;
+  provisional?: Record<string, number>;
   sin_clasificar: number;
   sin_clasificar_pct: number;
   peak_hour: PeakHour | null;

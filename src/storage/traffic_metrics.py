@@ -89,6 +89,8 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
     # Automóvil / camioneta / pickup dentro de la A. Siempre suman la A:
     # lo que no tiene subtipo seguro va en SIN_SUBTIPO, no se reparte.
     subtipos: Dict[str, int] = {}
+    # Clase de referencia de lo que la validada no resolvió (provisional).
+    provisional: Dict[str, int] = {}
 
     for lane in lanes:
         intervals = lane["intervals"]
@@ -102,6 +104,11 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
                 n = counts.get("in", 0) + counts.get("out", 0)
                 lane_composition[vtype] = lane_composition.get(vtype, 0) + n
                 composition[vtype] = composition.get(vtype, 0) + n
+        lane_provisional: Dict[str, int] = {}
+        for iv in intervals:
+            for c, n in (iv.get("provisional") or {}).items():
+                lane_provisional[c] = lane_provisional.get(c, 0) + n
+                provisional[c] = provisional.get(c, 0) + n
         lane_subtipos: Dict[str, int] = {}
         for iv in intervals:
             for sub, n in (iv.get("subtipos_A_linea") or {}).items():
@@ -120,6 +127,7 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
             "out": lane_out,
             "composition": lane_composition,
             "subtipos_A": lane_subtipos,
+            "provisional": lane_provisional,
             # None significa que en este carril el vehículo se ve demasiado
             # pequeño para separar liviano de pesado. Se propaga para que la
             # pantalla pueda decir *por qué* no hay desglose, en vez de
@@ -161,6 +169,7 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
         "totals": totals,
         "composition": composition,
         "subtipos_A": subtipos,
+        "provisional": provisional,
         # Los porcentajes van sobre los vehículos que SÍ se pudieron
         # clasificar, no sobre el total. Repartiéndolos sobre el total, la
         # categoría "sin clasificar" salía primera con 55.6 % y la pantalla

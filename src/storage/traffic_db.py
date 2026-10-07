@@ -1374,7 +1374,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     # frente, la forma no se ve y el subtipo seria inventado.
     horas_sub = _perfil.leer(get_project(project_id)).get("horas_subtipo", (7, 19))
     from src.engine.clasificacion import (CONFIANZA_MINIMA, MEDIDO, ESTIMADO,
-                                          NO_RESOLUBLE, clasificar,
+                                          NO_RESOLUBLE, SIN_RESOLVER, clasificar,
                                           nivel_de_calzada, perfil_de_calzada)
 
     # Dos preguntas distintas, y mezclarlas fue un error que costo una
@@ -1429,6 +1429,15 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
         for lane in lanes
     }
     umbrales = {k: v[1] for k, v in mejor.items()}
+    # Escala de referencia para la clasificación PROVISIONAL de lo que la
+    # validada deja sin resolver (ver clasificacion.clasificar_provisional).
+    from src.engine.clasificacion import clasificar_provisional, umbral_de_referencia
+    umbral_ref = {
+        lane["id"]: umbral_de_referencia(
+            f["bbox_height"] for f in rows
+            if f["lane_id"] == lane["id"] and f["vehicle_type"] == "car")
+        for lane in lanes
+    }
 
     # Perfil del carril: tamaño y silueta de SU automovil. Es lo que decide
     # si ademas de liviano/pesado se pueden separar MOTO y AUTOBUS. Va por
@@ -1497,6 +1506,13 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
                                     bool((perfiles.get(lane["id"]) or {}).get("fino")))
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
+            # Lo que la validada no pudo clasificar, con la clase de
+            # referencia. Aparte: no entra en by_vehicle_type ni al Excel.
+            if clase == SIN_RESOLVER:
+                prov = clasificar_provisional(row["vehicle_type"], row["bbox_height"],
+                                              umbral_ref.get(lane["id"]))
+                bucket.setdefault("provisional", {})
+                bucket["provisional"][prov] = bucket["provisional"].get(prov, 0) + 1
             # El desglose de A (automóvil, camioneta, pickup) también por
             # línea, para la pantalla del Reporte: antes solo salía en el
             # Excel (por calzada) y en pantalla la A era un solo bloque.

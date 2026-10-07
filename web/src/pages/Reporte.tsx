@@ -38,6 +38,14 @@ const INTERVALS = [5, 10, 15, 30, 60];
 function Metrics({ m }: { m: ProjectMetrics }) {
   const peak = m.peak_hour;
   const topType = Object.entries(m.composition_pct).sort((a, b) => b[1] - a[1])[0];
+  // Sin nada validado, la dominante de la clasificación provisional.
+  const prov = Object.entries(m.provisional ?? {}).filter(([k]) => k !== 'SIN_RESOLVER');
+  const totalProv = prov.reduce((t, [, n]) => t + n, 0);
+  const topProvisional = totalProv
+    ? (prov
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => [k, Math.round((1000 * n) / totalProv) / 10] as const)[0] ?? null)
+    : null;
   // "Automóvil 62 % · Camioneta 24 % · Pickup 13 %", sobre los livianos que
   // sí tienen subtipo (de noche no se da; ver el desglose por carril).
   const sub = m.subtipos_A ?? {};
@@ -125,6 +133,19 @@ function Metrics({ m }: { m: ProjectMetrics }) {
             <span className={`m-flag ${peak.flujo_irregular ? 'warn' : 'ok'}`}>
               {peak.flujo_irregular ? 'Flujo irregular (< 0.85)' : 'Flujo parejo (≥ 0.85)'}
             </span>
+          </Card>
+        )}
+
+        {!topType && topProvisional && (
+          <Card className="metric-card">
+            <div className="m-label">
+              Composición dominante <Pill tone="warning">provisional</Pill>
+            </div>
+            <div className="m-value">{topProvisional[1]}%</div>
+            <div className="m-sub">
+              {VEHICLE_LABEL_PLURAL[topProvisional[0]] ?? topProvisional[0]} · no validada: el
+              vehículo se ve chico o es de noche
+            </div>
           </Card>
         )}
 
@@ -264,6 +285,12 @@ function Velocidad({ lane }: { lane: LaneMetrics }) {
 /* --- Reporte por carril -------------------------------------------------- */
 
 function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinutes: number }) {
+  const totalProvisional = Object.values(lane.provisional ?? {}).reduce((t, n) => t + n, 0);
+  // Todo el carril quedó sin clasificar: la composición validada sería una
+  // barra de "Sin clasificar" al 100 %, y se muestra solo la provisional.
+  const soloProvisional =
+    totalProvisional > 0 &&
+    Object.entries(lane.composition).every(([k, n]) => k === 'SIN_RESOLVER' || n === 0);
   if (!lane.intervals.length) {
     return (
       <section className="lane-report">
@@ -312,7 +339,7 @@ function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinu
         <IntervalChart intervals={lane.intervals} peakIntervalStart={peakStart} />
       </Card>
 
-      {lane.total > 0 && (
+      {lane.total > 0 && !soloProvisional && (
         <Card className="chart-card">
           <h3>Composición vehicular</h3>
           <p className="chart-sub">Proporción por tipo sobre el total del carril.</p>
@@ -321,6 +348,27 @@ function LaneReport({ lane, intervalMinutes }: { lane: LaneMetrics; intervalMinu
             total={lane.total}
             subtiposA={lane.subtipos_A}
           />
+        </Card>
+      )}
+
+      {/* Lo que la clasificación validada no pudo resolver, con la clase que
+          el detector alcanzó a ver. Se muestra porque esconderlo tira
+          información, pero aparte y marcado: no va al Excel ni al total por
+          tipo, y si la cámara mejora (de día, vehículo más grande) la misma
+          calzada pasa sola a la clasificación validada. */}
+      {totalProvisional > 0 && (
+        <Card className="chart-card provisional">
+          <h3>
+            Composición provisional <Pill tone="warning">no validada</Pill>
+          </h3>
+          <p className="chart-sub">
+            {soloProvisional
+              ? 'En este carril la clase no se puede garantizar'
+              : `${formatNumber(totalProvisional)} vehículos de este carril no se pudieron clasificar con seguridad`}{' '}
+            (el vehículo se ve chico, es de noche o hay pocos automóviles para medir la escala).
+            Esto es lo que el detector alcanzó a ver: sirve de referencia, no para el entregable.
+          </p>
+          <CompositionChart composition={lane.provisional ?? {}} total={totalProvisional} />
         </Card>
       )}
 

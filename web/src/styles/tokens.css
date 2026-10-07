@@ -100,6 +100,9 @@
   --veh-bus: #6b34a1;
   --veh-motorcycle: #0d6b72;
   --veh-other: #4d5967;
+  /* Provisional: un `truck` sin escala para saber si es pickup o camión.
+     Toma el color del camión en cada tema. */
+  --veh-CAMIONETA_O_CAMION: var(--veh-truck);
 
   /* Tipografía */
   --font-display: 'Overpass', 'Segoe UI', system-ui, sans-serif;

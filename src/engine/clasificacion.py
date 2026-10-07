@@ -199,6 +199,49 @@ def clasificar(tipo_coco: str, alto: Optional[float],
     return CAMION if fino else PESADO
 
 
+# Clase provisional de un `truck` de COCO sin escala para separarlo: puede
+# ser una pickup (A) o un camion, y no se finge saber cual.
+CAMIONETA_O_CAMION = "CAMIONETA_O_CAMION"
+# Automoviles minimos para sacar una escala de referencia, aunque no alcance
+# para la validada (30): con menos, la mediana del alto no dice nada.
+AUTOS_REFERENCIA = 5
+
+
+def umbral_de_referencia(alturas_de_autos: Iterable[float]) -> Optional[float]:
+    """El mismo multiplo de la regla validada sobre los automoviles que haya,
+    sin pedir 30 ni confianza minima. Solo para la clasificacion provisional."""
+    alturas = [h for h in alturas_de_autos if h and h > 0]
+    if len(alturas) < AUTOS_REFERENCIA:
+        return None
+    return MULTIPLO * statistics.median(alturas)
+
+
+def clasificar_provisional(tipo_coco: str, alto: Optional[float],
+                           umbral_ref: Optional[float]) -> str:
+    """Clase de REFERENCIA donde la validada no resuelve (vehiculo chico, de
+    noche, o pocos automoviles para la escala).
+
+    Es lo que el detector alcanzo a ver, traducido sin mas: `car` -> A,
+    `motorcycle` -> MOTO, `bus` -> B, y el `truck` separado por alto si hay
+    escala de referencia. NO va al entregable: se muestra aparte y marcada
+    como provisional. Existe porque esconderlo todo tiraba informacion que
+    el dueno queria ver (Campos Eliseos de noche, 6-oct-2026), y porque en
+    cuanto llegue el video de dia la misma calzada puede subir sola a la
+    clasificacion validada.
+    """
+    if tipo_coco in ("car", "bicycle"):
+        return LIVIANO
+    if tipo_coco == "motorcycle":
+        return MOTO
+    if tipo_coco == "bus":
+        return AUTOBUS
+    if tipo_coco == "truck":
+        if umbral_ref and alto:
+            return LIVIANO if alto <= umbral_ref else CAMION
+        return CAMIONETA_O_CAMION
+    return SIN_RESOLVER
+
+
 def clasificar_calzada(cruces: list[dict]) -> tuple[dict[str, int], Optional[float]]:
     """Reparte los cruces de UNA calzada y devuelve (conteos, umbral usado).
 
