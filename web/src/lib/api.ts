@@ -143,8 +143,23 @@ export const startCounting = (id: number) =>
 export const listLanes = (projectId: number) =>
   request<Lane[]>(`/api/lanes?project_id=${projectId}`);
 
-export const createLane = (data: { project_id: number; name: string; points: [Point, Point] }) =>
-  request<Lane>('/api/lanes', json(data));
+export const createLane = (data: {
+  project_id: number;
+  name: string;
+  points: [Point, Point];
+  zone_id?: number | null;
+}) => request<Lane>('/api/lanes', json(data));
+
+/* Mover la línea, atarla a su calzada (zone_id; 0 la desata) o su tramo. */
+export const updateLane = (
+  laneId: number,
+  body: { name?: string; points?: [Point, Point]; zone_id?: number; tramo?: Tramo },
+) =>
+  request<Lane>(`/api/lanes/${laneId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
 export const renameLane = (laneId: number, name: string) =>
   request<Lane>(`/api/lanes/${laneId}`, {
@@ -175,6 +190,13 @@ export const createZone = (data: {
   points: Point[];
   kind?: string;
 }) => request<Zone>('/api/zones', json(data));
+
+export const updateZone = (zoneId: number, body: { name?: string; points?: Point[] }) =>
+  request<Zone>(`/api/zones/${zoneId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
 export const renameZone = (zoneId: number, name: string) =>
   request<Zone>(`/api/zones/${zoneId}`, {

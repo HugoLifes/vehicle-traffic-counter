@@ -254,7 +254,7 @@ export function useCreateLane(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
     ...conAviso({
-      mutationFn: (data: { name: string; points: [Point, Point] }) =>
+      mutationFn: (data: { name: string; points: [Point, Point]; zone_id?: number | null }) =>
         api.createLane({ project_id: projectId, ...data }),
       exito: (_d, v) => ({ titulo: 'Carril guardado', detalle: v.name }),
       fallo: 'No se pudo guardar el carril',

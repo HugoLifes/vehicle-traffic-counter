@@ -114,21 +114,38 @@ Para cambiar la contraseña, otra vez `bash tools/poner_acceso.sh`.
 2. **Subir.** Arrastra los videos. Revisa que el *inicio real* de cada uno sea
    el correcto antes de subir. Para muchos videos o internet lento, mejor por
    WinSCP (abajo).
-3. **Calibrar.**
-   - **Zonas de calzada**: rodea cada calzada con un polígono. Sirven para
-     separar los sentidos y descartar lo que pasa fuera de la vía.
-   - **Líneas de conteo**: una por calzada, atada a su zona. Ponla **donde el
-     vehículo se ve grande** y haz que **cruce el ancho completo de su
-     calzada**; alargarla un poco hacia la vecina no duplica nada, dejarla
-     corta sí pierde vehículos.
-   - **Tramo de velocidad** (opcional): una segunda línea sobre una marca
+3. **Calibrar.** La imagen de la cámara ocupa la pantalla; a la izquierda
+   queda la lista de calzadas. Una **calzada** es una calle con un sentido de
+   circulación: su zona y su línea de conteo, del mismo color.
+   - **+ Calzada** (tecla N): primero rodea la calle con un polígono (clic en
+     cada esquina; se cierra con Enter, doble clic o tocando el primer
+     punto), luego cruza la calle con su **línea de conteo** (dos clics) y
+     ponle nombre: es el que sale en el reporte y el Excel. La zona separa
+     los sentidos y descarta lo que pasa fuera de la vía.
+   - Pon la línea **donde el vehículo se ve grande** y haz que **cruce el
+     ancho completo de su calzada**; alargarla un poco hacia la vecina no
+     duplica nada, dejarla corta sí pierde vehículos. La lista lo revisa
+     mientras dibujas: avisa si la línea deja fuera parte de la calle, si va
+     a lo largo del tránsito en vez de cruzarlo, o si está pegada a la orilla
+     de la imagen.
+   - **Corregir**: arrastra un vértice, el extremo de una línea o la figura
+     entera. Del punto medio de un borde sale un vértice nuevo; clic derecho
+     quita uno. La rueda del ratón acerca la imagen (y `0` la ajusta de
+     nuevo) para atinarle a calzadas angostas. Los cambios quedan pendientes
+     hasta **Guardar cambios**; Ctrl+Z deshace. Al guardar, los videos ya
+     contados quedan con la calibración anterior hasta volver a contarlos.
+   - Si una línea aparece en **Líneas sin calzada**, átala a la suya con el
+     selector: sin calzada, cuenta los vehículos de todas las calles.
+   - **Tramo de velocidad** (opcional, «+ medir velocidad» en la tarjeta de
+     la calzada): una segunda línea sobre una marca
      del pavimento que cruce la calzada, **a unos 8–12 m** de la línea de
      conteo, con la distancia medida con cinta. Medido en Cd. Juárez: a
      ~8.5 m el percentil 85 quedó a 0.6–1.5 km/h de las mangueras y de noche
      se midió al 79 % de los vehículos; a ~17 m, solo al 36 % hacia la
      cámara, porque los faros cortan el recorrido antes de la segunda línea.
-   - "Ver por dónde pasan los vehículos" muestra los rastros para comprobar
-     que la línea los corta de través.
+   - La capa **Rastro** muestra por dónde pasan los vehículos (de lo ya
+     contado) para comprobar que la línea los corta de través; **Detecciones**
+     enseña lo que ve la IA en el cuadro en pausa.
 4. **Empezar conteo.** Los videos entran a la cola y se procesan uno por uno.
    Con la cámara frontal va algo más rápido que la grabación: una hora de
    video en ~45–55 minutos.

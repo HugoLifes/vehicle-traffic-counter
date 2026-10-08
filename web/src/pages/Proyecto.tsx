@@ -23,7 +23,7 @@
   herramientas.
 */
 
-import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { Page } from '../components/Page';
 import { EmptyState, Pill } from '../components/ui';
 import { IconPin } from '../components/Icons';
@@ -87,6 +87,9 @@ export default function Proyecto() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { data: projects, isLoading } = useProjects();
+  /* En Calibrar el encabezado se reduce a una fila: la imagen de la cámara
+     necesita la pantalla, y las cifras del aforo no ayudan a dibujar. */
+  const compacta = useMatch('/proyecto/:projectId/calibrar') !== null;
 
   const id = projectId && /^\d+$/.test(projectId) ? Number(projectId) : null;
   const project = projects?.find((p) => p.id === id) ?? null;
@@ -127,7 +130,7 @@ export default function Proyecto() {
       {/* Identidad y pestañas dentro del mismo panel: son el armazón de la
           intersección, y separarlas en dos bloques sueltos hacía que las
           pestañas parecieran pertenecer al contenido de abajo. */}
-      <div className="proj-shell">
+      <div className={compacta ? 'proj-shell is-compacta' : 'proj-shell'}>
         <div className="proj-head">
           <div className="proj-identity">
             <h1 className="proj-name">{project.name}</h1>

@@ -452,46 +452,17 @@
 .live-hint { font-size: var(--text-xs); color: var(--text-muted); margin: var(--space-3) 0 0; }
 
 /* ----------------------------------------------------------------
-   Calibrar
+   Calibrar: el estudio
+
+   Tipo tablero de tránsito: la imagen de la cámara ocupa todo y los
+   controles flotan encima. El fondo del escenario es oscuro en los dos
+   temas a propósito: es la "sala" donde se ve el video, y la imagen se lee
+   mejor rodeada de oscuro que de blanco. Los paneles sí siguen el tema.
    ---------------------------------------------------------------- */
 
-.calib-layout {
-  display: grid;
-  /* La mesa de trabajo manda: el panel de carriles se encoge antes que
-     ella, y la estructura de dos columnas se sostiene hasta que el video
-     deja de verse con el detalle suficiente para apuntar. */
-  grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
-  gap: var(--space-5);
-  align-items: start;
-}
-/* Carriles y zonas se apilan en la columna derecha, no debajo del video:
-   las dos se dibujan MIRANDO la mesa de trabajo, así que mandarlas abajo
-   obligaría a hacer scroll entre el lienzo y el panel a cada punto. */
-@media (min-width: 941px) {
-  .calib-main { grid-row: 1 / span 2; }
-  .lane-panel { grid-column: 2; }
-}
-@media (max-width: 940px) {
-  .calib-layout { grid-template-columns: minmax(0, 1fr); }
-}
-
-/* Texto de ayuda de los paneles de Calibrar. Solo tenía estilo dentro de
-   "Empezar conteo" y de las zonas; en el panel de carriles heredaba el
-   tamaño del cuerpo y se leía como un titular. */
+/* Texto de ayuda: lo usan también el asistente y otros paneles. */
 .sc-info { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; }
-.zone-panel .sc-info { margin-bottom: var(--space-3); }
 
-.calib-main { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
-.calib-main > .section-title { margin: 0; }
-
-
-.canvas-tools {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  margin-top: var(--space-3);
-}
 .toggle-heat {
   display: inline-flex;
   align-items: center;
@@ -500,96 +471,420 @@
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  /* Etiqueta y casilla comparten un solo blanco de clic. */
   padding: var(--space-05) 0;
 }
 .toggle-heat input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
-.toggle-heat input:disabled { cursor: not-allowed; }
 .toggle-heat:has(input:disabled) { opacity: 0.55; cursor: not-allowed; }
-.toggle-heat input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.tool-hint { font-size: var(--text-xs); color: var(--text-muted); }
-.tool-hint strong { color: var(--text-secondary); }
 
-.calib-hint {
-  margin-top: var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  background: var(--accent-soft);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
+.estudio {
+  --est-escenario: #0b0f15;
+  --est-tinta: #e8edf4;
+  --est-tinta-2: #a5b1c2;
+  --est-vidrio: color-mix(in srgb, var(--surface-1) 93%, transparent);
+  --est-panel-ancho: 312px;
+  --ws-barra-alto: 92px;
+  position: relative;
+  min-height: 520px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--est-escenario);
+  box-shadow: 0 0 0 1px var(--border), 0 8px 30px var(--shadow);
+  isolation: isolate;
 }
 
-.lane-panel { padding: var(--space-4); }
-.lane-panel h2 {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  margin: 0 0 var(--space-3);
+/* Los paneles flotantes comparten piel: vidrio del tema, sombra larga. */
+.est-panel,
+.est-herramientas,
+.est-instruccion,
+.est-pendiente,
+.est-guardar {
+  position: absolute;
+  z-index: 3;
+  background: var(--est-vidrio);
+  backdrop-filter: blur(14px) saturate(1.2);
+  color: var(--text-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px var(--border), 0 10px 28px rgb(0 0 0 / 0.28);
 }
-.lane-list { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); }
 
-.lane-item {
+/* --- Barra de herramientas (arriba, junto al panel) ----------------- */
+.est-herramientas {
+  top: var(--space-3);
+  left: calc(var(--est-panel-ancho) + var(--space-3) * 2);
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-05);
-  border-radius: var(--radius-md);
-  box-shadow: 0 0 0 1px var(--border);
+  gap: 2px;
+  padding: 4px;
+  flex-wrap: wrap;
 }
-.lane-item .lane-swatch { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; margin-inline-start: 4px; }
-.lane-item .lane-name-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: none;
+.est-herramientas > button {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-secondary);
   background: none;
-  font-family: var(--font-display);
+  border: 0;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.est-herramientas > button:hover:not(:disabled) { color: var(--text-primary); background: var(--surface-2); }
+.est-herramientas > button.is-on { background: var(--accent); color: var(--accent-ink); }
+.est-sep { width: 1px; align-self: stretch; margin: 6px; background: var(--border); }
+.est-capa {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--text-primary);
-  padding: var(--space-05);
-  /* Radio concéntrico: 10px exterior − 6px de relleno = 4px interior. */
-  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
 }
-.lane-item .lane-name-input:focus-visible { outline: 2px solid var(--accent); background: var(--surface-0); }
+.est-capa input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; cursor: inherit; }
+.est-capa:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
 
-/* El tramo de velocidad es una propiedad del carril, no otro objeto: va
-   como una fila discreta bajo su nombre, alineada con el texto y no con la
-   muestra de color. */
-.lane-block { display: flex; flex-direction: column; gap: var(--space-1); }
-.lane-tramo {
+/* --- Instrucción del paso actual (arriba, bajo las herramientas) ----
+   Arriba y no abajo: abajo tapaba la calzada cercana, que es justo donde
+   se dibuja. Arriba suele quedar cielo. */
+.est-instruccion {
+  left: calc(var(--est-panel-ancho) + var(--space-3) * 2);
+  right: var(--space-3);
+  top: 64px;
+  width: fit-content;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-3);
-  padding-inline-start: calc(12px + 4px + var(--space-2) + var(--space-05));
+  gap: var(--space-2) var(--space-3);
+  padding: 10px 12px 10px 16px;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  border-left: 4px solid var(--accent);
+}
+.est-instruccion > span:first-child { flex: 1 1 260px; max-width: 62ch; }
+.est-instruccion-acciones { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+
+/* Botones chicos de los paneles flotantes. */
+.est-instruccion button,
+.est-pendiente-acciones button,
+.est-guardar button,
+.est-vacio button,
+.est-boton {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 7px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.est-instruccion button:hover,
+.est-pendiente-acciones button:hover,
+.est-guardar button:hover:not(:disabled),
+.est-vacio button:hover:not(:disabled),
+.est-boton:hover:not(:disabled) { background: var(--border); }
+.estudio button.is-primario { background: var(--accent); color: var(--accent-ink); }
+.estudio button.is-primario:hover:not(:disabled) { background: var(--accent-strong); }
+.estudio button:disabled { opacity: 0.5; cursor: not-allowed; }
+.estudio button:focus-visible,
+.estudio input:focus-visible,
+.estudio select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.estudio kbd {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+/* --- Formulario para terminar lo dibujado ---------------------------
+   Arriba, como la instrucción: en el centro tapaba justo lo que se acaba
+   de dibujar. */
+.est-pendiente {
+  left: calc(var(--est-panel-ancho) + var(--space-3) * 2);
+  top: 64px;
+  width: min(460px, calc(100% - var(--est-panel-ancho) - var(--space-3) * 3));
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  z-index: 4;
+}
+.est-pendiente label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   color: var(--text-secondary);
 }
-.lane-tramo .tramo-accion {
-  border: none;
-  background: none;
-  padding: 2px 0;
+.est-pendiente input {
   font: inherit;
+  font-size: var(--text-base);
   font-weight: 600;
-  color: var(--accent);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
 }
-.lane-tramo .tramo-accion:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
-.lane-tramo .tramo-accion:focus-visible { outline: 2px solid var(--accent); border-radius: 3px; }
+.est-pendiente-acciones { display: flex; justify-content: flex-end; gap: var(--space-2); }
 
-.new-lane-form { display: flex; gap: var(--space-2); margin-top: var(--space-3); align-items: flex-end; }
-.new-lane-form .field { flex: 1 1 auto; }
+/* --- Cambios sin guardar (arriba a la derecha) ---------------------- */
+.est-guardar {
+  /* Una fila bajo la barra de herramientas, para no taparla nunca. */
+  top: 64px;
+  right: var(--space-3);
+  max-width: min(560px, calc(100% - var(--est-panel-ancho) - var(--space-3) * 3));
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 8px 8px 8px 14px;
+  font-size: var(--text-sm);
+  border-left: 4px solid var(--warning);
+  z-index: 4;
+}
+.est-guardar > span { flex: 1 1 200px; color: var(--text-secondary); line-height: 1.4; }
 
-.start-counting {
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
+/* --- Panel de calzadas (izquierda, a todo lo alto) ------------------- */
+.est-panel {
+  top: var(--space-3);
+  left: var(--space-3);
+  bottom: calc(var(--ws-barra-alto) + var(--space-3));
+  width: var(--est-panel-ancho);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.est-panel-cab {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+.est-panel-cab h2 { margin: 0; font-size: var(--text-lg); font-weight: 800; letter-spacing: -0.01em; }
+.est-panel-sub { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.est-panel-cuerpo {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.est-panel-pie {
   border-top: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
-.start-counting .sc-info { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-3); }
+.est-boton { justify-content: center; width: 100%; padding-block: 10px; }
+.est-estado { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.45; }
+.est-estado.is-aviso { color: var(--warning); font-weight: 600; }
+.est-estado.is-bien { color: var(--good); font-weight: 600; }
+
+.est-vacio { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-2) var(--space-1); }
+.est-vacio p { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; }
+.est-vacio button { align-self: flex-start; padding: 10px 16px; }
+
+/* Una calzada: tarjeta con el filo de su color. El color es el mismo de
+   su zona y su línea en la imagen: es lo que ata la fila a lo dibujado. */
+.est-calzada {
+  --c: var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  box-shadow: 0 0 0 1px var(--border), inset 4px 0 0 var(--c);
+  padding: 6px 6px 8px 12px;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.est-calzada.is-sel { box-shadow: 0 0 0 2px var(--c), inset 4px 0 0 var(--c); }
+.est-calzada-cab { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.est-punto {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--c);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent);
+}
+.est-nombre {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 6px;
+}
+.est-nombre:hover { background: var(--surface-2); }
+.est-nombre:focus { background: var(--surface-0); }
+.est-icono {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.est-icono:hover { color: var(--critical); background: var(--critical-soft); }
+.est-calzada-cuerpo { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 0 18px; }
+.est-fila { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.est-enlace {
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.est-enlace:hover:not(:disabled) { color: var(--accent); }
+.est-enlace.est-sec { color: var(--accent); }
+.est-accion {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.est-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 2px 4px 2px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.est-chip button {
+  font: inherit;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.est-chip button:hover { color: var(--text-primary); background: var(--border); }
+
+.est-ok { margin: 0; font-size: var(--text-xs); font-weight: 600; color: var(--good); }
+.est-avisos { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.est-avisos li {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+.est-avisos li.is-error { background: var(--critical-soft); color: var(--critical); }
+.est-avisos li.is-aviso { background: var(--warning-soft); color: var(--warning); }
+.est-avisos:not(.is-compacto) li { font-size: var(--text-sm); }
+
+.est-grupo { display: flex; flex-direction: column; gap: 6px; margin-top: var(--space-2); }
+.est-grupo h3 {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.est-suelta {
+  --c: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.est-nombre-fijo {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.est-suelta select {
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+.est-nota { margin: 0; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; }
+.est-nota a { color: var(--accent); font-weight: 600; }
+.est-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--critical);
+  background: var(--critical-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+/* En pantalla angosta no hay sitio para flotar: el panel baja bajo la
+   imagen y la imagen ocupa el ancho entero. */
+@media (max-width: 900px) {
+  .estudio {
+    --est-panel-ancho: 0px;
+    height: auto !important;
+    overflow: visible;
+    background: transparent;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .estudio > .workspace { position: relative; height: min(70vh, 560px); border-radius: var(--radius-lg); overflow: hidden; }
+  .est-panel { position: static; width: auto; }
+  .est-herramientas { left: var(--space-3); right: var(--space-3); }
+  .est-instruccion { left: var(--space-3); right: var(--space-3); bottom: auto; top: 64px; }
+  .est-pendiente { left: var(--space-3); right: var(--space-3); width: auto; }
+  .est-guardar { position: sticky; top: auto; bottom: var(--space-3); right: auto; max-width: none; }
+}
 
 /* ----------------------------------------------------------------
    Reporte
@@ -861,265 +1156,224 @@
 }
 
 /* ----------------------------------------------------------------
-   Mesa de trabajo: el video con sus controles y el lienzo de líneas
+   Mesa de trabajo: el video, con zoom y desplazamiento, y su barra
    ---------------------------------------------------------------- */
 
 .workspace {
-  background: var(--surface-1);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 0 0 1px var(--border), 0 1px 3px var(--shadow);
-  padding: var(--space-4);
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  background: var(--est-escenario, #0b0f15);
+  outline: none;
 }
 
-.ws-head { display: flex; gap: var(--space-3); flex-wrap: wrap; }
-.ws-head .field { flex: 1 1 260px; max-width: 420px; }
-
-/*
-  El escenario reserva la proporción del video antes de que llegue el
-  primer cuadro; si no, la página salta de alto al cargar y los controles
-  se mueven bajo el cursor.
-*/
-.ws-stage {
+/* El escenario recorta: la imagen se acerca dentro de él, y lo que sale
+   de los bordes no empuja la página. */
+.ws-escena {
   position: relative;
-  width: 100%;
-  background: #000;
-  border-radius: var(--radius-md);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
-  /* Contorno de imagen: negro puro al 10% en claro, blanco puro en oscuro.
-     Un gris teñido recogería el fondo y se leería como suciedad en el borde. */
-  outline: 1px solid rgb(0 0 0 / 0.1);
-  outline-offset: -1px;
+  touch-action: none;
+  background:
+    radial-gradient(circle at 60% 40%, rgb(255 255 255 / 0.04), transparent 65%),
+    var(--est-escenario, #0b0f15);
 }
-:root[data-theme="dark"] .ws-stage { outline-color: rgb(255 255 255 / 0.1); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .ws-stage { outline-color: rgb(255 255 255 / 0.1); }
-}
+.ws-vacia { display: grid; place-items: center; color: var(--est-tinta-2, #a5b1c2); font-size: var(--text-sm); }
 
-.ws-stage img,
-.ws-stage video,
-.ws-stage canvas {
+/* El marco lleva la imagen y la capa de dibujo juntas: el zoom es una
+   transformación del marco, así que las dos se mueven a la vez y nunca se
+   desalinean. */
+.ws-marco {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 20px 50px rgb(0 0 0 / 0.5);
+  background: #000;
+}
+.ws-marco > img,
+.ws-marco > video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
 }
-.ws-stage img,
-.ws-stage video { object-fit: contain; }
-/* Mientras se reproduce se ve el <video> y en pausa el cuadro exacto: los
-   dos están siempre montados y solo se esconde el que no toca, para que el
-   cambio no parpadee. */
-.ws-stage .is-oculto { visibility: hidden; }
-/* El lienzo solo pinta: los clics los recoge el contenedor, que es quien
-   conoce la escala entre píxeles del video y píxeles de pantalla. */
-.ws-stage canvas { pointer-events: none; }
+/* En pausa se ve el cuadro exacto; reproduciendo, el <video>. Los dos
+   están montados y solo se esconde el que no toca, para que no parpadee. */
+.ws-marco .is-oculto { visibility: hidden; }
 
-.ws-stage.is-drawing { cursor: crosshair; }
-/* Mientras se marca la línea, un borde de acento deja claro que el
-   lienzo está esperando clics — el cursor solo no basta, y en pantalla
-   táctil no existe. */
-.ws-stage.is-drawing { outline: 2px solid var(--accent); outline-offset: -2px; }
-
-.ws-stage-empty {
-  aspect-ratio: 16 / 9;
-  display: grid;
-  place-items: center;
-  background: var(--surface-2);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  padding: var(--space-5);
-  text-align: center;
-}
-.ws-stage-empty p { margin: 0; max-width: 40ch; }
-
-.ws-error {
+.ws-insignias {
   position: absolute;
-  inset-inline: var(--space-4);
-  bottom: var(--space-4);
-  margin: 0;
-  background: var(--critical);
-  color: var(--critical-ink);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  text-align: center;
-}
-
-/* --- Controles de transporte ------------------------------------- */
-
-.ws-transport {
+  z-index: 2;
+  right: var(--space-3);
+  top: var(--space-3);
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
 }
-
-.ws-buttons { display: flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; }
-.ws-play { gap: 7px; padding-inline: 14px; }
-
-.ws-scrub {
-  flex: 1 1 200px;
-  min-width: 140px;
-  accent-color: var(--accent);
-  height: 24px;   /* alto de agarre cómodo, aunque la barra se vea fina */
-  cursor: pointer;
-}
-.ws-scrub:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
-
-.ws-time {
-  flex: 0 0 auto;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.ws-speed { display: flex; align-items: center; gap: var(--space-05); flex: 0 0 auto; }
-.ws-speed > span {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-.ws-speed select {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  padding: var(--space-05) 8px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-strong);
-  background: var(--surface-1);
-  color: var(--text-primary);
-}
-.ws-speed select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-.ws-hint { font-size: var(--text-xs); color: var(--text-muted); margin: 0; line-height: 1.6; }
-.ws-hint kbd {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-  background: var(--surface-2);
-  border-radius: 4px;
-  padding: 1px 5px;
-  color: var(--text-secondary);
-}
-
-@media (max-width: 620px) {
-  /* En móvil la barra de tiempo se lleva su propia fila: compartirla con
-     cinco botones la dejaba tan corta que no se podía apuntar. */
-  .ws-scrub { flex: 1 1 100%; order: 3; }
-  .ws-buttons { flex: 1 1 auto; justify-content: center; }
-}
-
-/* --- Cabecera de la mesa: segmento y fuente del video ------------------ */
-
-.ws-head {
-  display: flex;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-.ws-head .field { flex: 1 1 240px; max-width: 400px; }
-
-.ws-source { border: none; margin: 0; padding: 0; min-width: 0; flex: 0 1 auto; }
-.ws-source legend {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  padding: 0;
-  margin-bottom: var(--space-05);
-}
-
-/* Control segmentado hecho con radios reales: las flechas del teclado se
-   mueven entre las opciones y el lector de pantalla anuncia "1 de 2". */
-.ws-source-options {
-  display: inline-flex;
-  background: var(--surface-2);
-  border-radius: var(--radius-md);
-  padding: 3px;
-  gap: 3px;
-}
-.ws-source-options label {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  /* 34px de alto: la opción es el objetivo, no el círculo del radio. */
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 7px;   /* radio concéntrico: 10 exterior − 3 de relleno */
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color var(--dur-fast) var(--ease-out),
-              color var(--dur-fast) var(--ease-out);
-}
-/* El radio queda invisible pero sigue enfocable y anunciable: se estira
-   sobre toda la etiqueta en vez de ocultarse con display:none. */
-.ws-source-options input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: inherit;
-}
-.ws-source-options label:hover { color: var(--text-primary); }
-/* La opción activa se distingue por fondo, color Y peso, no solo color. */
-.ws-source-options label.is-on {
-  background: var(--surface-1);
-  color: var(--accent);
-  font-weight: 800;
-  box-shadow: 0 1px 2px var(--shadow);
-}
-.ws-source-options label:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.ws-source-options label.is-off { color: var(--text-muted); cursor: not-allowed; }
-
-.ws-source-hint {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin: var(--space-05) 0 0;
-  max-width: 44ch;
-  line-height: 1.5;
-}
-
-/* --- Distintivo sobre el video ---------------------------------------- */
-
-/* Abajo al centro: el video con detecciones lleva su marcador por sentido
-   en las dos esquinas de arriba, y ahí la etiqueta tapaba el de la derecha. */
 .ws-badge {
-  position: absolute;
-  bottom: var(--space-3);
-  left: 50%;
-  transform: translateX(-50%);
   white-space: nowrap;
-  background: rgba(4, 8, 14, 0.78);
+  background: rgb(4 8 14 / 0.8);
   color: #fff;
   font-size: var(--text-xs);
   font-weight: 700;
   padding: 4px 10px;
   border-radius: 999px;
-  pointer-events: none;
   letter-spacing: 0.02em;
 }
-/* El aviso de dibujo va al lado contrario para no taparse con el otro. */
-.ws-badge-draw {
-  bottom: auto;
-  top: var(--space-3);
-  left: var(--space-3);
-  transform: none;
-  background: var(--accent);
-  color: var(--accent-ink);
+.ws-badge.is-error { background: var(--critical); color: var(--critical-ink); }
+
+/* Zoom: abajo a la derecha, como en un mapa. */
+.ws-zoom {
+  position: absolute;
+  z-index: 2;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgb(14 19 27 / 0.86);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 6px 18px rgb(0 0 0 / 0.35);
 }
+.ws-zoom button {
+  font: inherit;
+  min-width: 48px;
+  height: 38px;
+  border: 0;
+  background: none;
+  color: var(--est-tinta, #e8edf4);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ws-zoom button.mono {
+  font-size: var(--text-xs);
+  color: var(--est-tinta-2, #a5b1c2);
+  border-block: 1px solid rgb(255 255 255 / 0.08);
+  font-variant-numeric: tabular-nums;
+}
+.ws-zoom button:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); }
+.ws-zoom button:disabled { opacity: 0.35; cursor: default; }
+.ws-zoom button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* --- Barra de transporte, abajo y de lado a lado ------------------- */
+.ws-barra {
+  flex: 0 0 auto;
+  min-height: var(--ws-barra-alto, 92px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px var(--space-4);
+  background: #0f141c;
+  border-top: 1px solid rgb(255 255 255 / 0.07);
+  color: var(--est-tinta, #e8edf4);
+}
+.ws-barra-fila { display: flex; align-items: center; gap: 4px var(--space-2); flex-wrap: wrap; min-width: 0; }
+.ws-barra .btn-icon { color: var(--est-tinta-2, #a5b1c2); }
+.ws-barra .btn-icon:hover:not(:disabled) { color: #fff; background: rgb(255 255 255 / 0.08); }
+.ws-barra .btn-icon.is-accent { color: #7aabff; }
+.ws-play {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 0;
+  background: #fff;
+  color: #0b0f15;
+  cursor: pointer;
+  margin-inline: 2px;
+}
+.ws-play:hover { background: #dfe7f2; }
+.ws-play:focus-visible { outline: 2px solid #7aabff; outline-offset: 2px; }
+.ws-scrub {
+  flex: 1 1 200px;
+  min-width: 120px;
+  accent-color: #7aabff;
+  height: 24px;
+  cursor: pointer;
+}
+.ws-time {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--est-tinta, #e8edf4);
+  font-variant-numeric: tabular-nums;
+  min-width: 8ch;
+  text-align: right;
+}
+.ws-mini-select {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--est-tinta, #e8edf4);
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  color-scheme: dark;
+}
+.ws-mini-select:focus-visible { outline: 2px solid #7aabff; outline-offset: 1px; }
+.ws-barra-info { font-size: var(--text-xs); color: var(--est-tinta-2, #a5b1c2); }
+.ws-segmento { flex: 0 1 340px; min-width: 0; max-width: 100%; }
+.ws-segmento-solo { font-weight: 600; color: var(--est-tinta, #e8edf4); }
+.ws-fuente {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 0.06);
+}
+.ws-fuente button {
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--est-tinta-2, #a5b1c2);
+  background: none;
+  border: 0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ws-fuente button.is-on { background: rgb(255 255 255 / 0.14); color: #fff; }
+.ws-fuente button:disabled { opacity: 0.4; cursor: not-allowed; }
+.ws-fuente button:focus-visible { outline: 2px solid #7aabff; outline-offset: 1px; }
+.ws-atajos { margin-left: auto; white-space: nowrap; }
+.ws-atajos kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: rgb(255 255 255 / 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-inline: 1px;
+}
+@media (max-width: 1100px) { .ws-atajos { display: none; } }
+
+/* --- Capa de dibujo ------------------------------------------------- */
+.lienzo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  touch-action: none;
+}
+.lienzo.is-dibujando { cursor: crosshair; }
+.lienzo .lz-figura { cursor: pointer; }
+.lienzo .lz-asa { cursor: grab; }
+.lienzo .lz-asa:active { cursor: grabbing; }
+
 
 /* --- Diagnóstico del encuadre en la cola ------------------------------ */
 
@@ -1238,6 +1492,13 @@
 }
 
 .proj-identity { min-width: 0; flex: 1 1 340px; }
+/* Compacta (Calibrar): nombre y pestañas en una sola franja. */
+.proj-shell.is-compacta { display: flex; align-items: center; flex-wrap: wrap; margin-bottom: var(--space-3); }
+.proj-shell.is-compacta .proj-head { padding: var(--space-2) var(--space-4); flex: 1 1 260px; }
+.proj-shell.is-compacta .proj-name { font-size: var(--text-lg); margin: 0; }
+.proj-shell.is-compacta :is(.proj-address, .proj-tags, .proj-notes, .proj-stats) { display: none; }
+.proj-shell.is-compacta .proj-tools { flex: 0 1 auto; border-top: 0; }
+
 .proj-name {
   font-size: var(--text-xl);
   font-weight: 800;

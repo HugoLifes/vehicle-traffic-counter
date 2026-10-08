@@ -75,6 +75,9 @@ export interface Lane {
   points: [Point, Point];
   /* Tramo de velocidad: null si la línea solo cuenta. */
   tramo?: Tramo | null;
+  /* La calzada (zona) a la que está atada: solo cuenta los vehículos que
+     pisan esa zona. null = cuenta los de cualquier calzada. */
+  zone_id?: number | null;
 }
 
 /**
@@ -86,6 +89,7 @@ export interface Lane {
 export interface Tramo {
   linea: [Point, Point];
   distancia_m: number;
+  origen?: 'pavimento' | 'mangueras' | 'mapa' | null;
 }
 
 /* Velocidad de punto de un grupo de vehículos, en km/h. */

@@ -1,100 +1,76 @@
 /*
-  Calibración de carriles.
+  Calibrador: la imagen de la cámara ocupando la pantalla y los controles
+  flotando encima, como en un tablero de tránsito.
 
-  La pantalla se organiza alrededor de la mesa de trabajo: el video con
-  sus controles ocupa el lugar principal y el panel de carriles va al
-  lado. Antes el lienzo era un cuadro fijo colgado bajo la barra de
-  pasos, lo que lo hacía parecer un accesorio de la guía en vez de la
-  herramienta central de la pantalla — que es lo que realmente es.
+  Se calibra por CALZADA, no por piezas sueltas. Una calzada es su zona (el
+  área de la calle) + su línea de conteo + opcionalmente el tramo de
+  velocidad, del mismo color y atadas entre sí. Antes la línea y la zona se
+  dibujaban en tarjetas distintas y la pantalla no ofrecía forma de
+  atarlas: las líneas de Campos Eliseos quedaron sueltas y cada una contaba
+  los vehículos de las dos calles (8-oct-2026).
 
-  Calibrar va ANTES de contar a propósito: sin líneas definidas el
-  sistema tendría que inventarse una, y una línea inventada que no cruza
-  la vía produce un aforo de cero sin avisar de nada.
+  Todo lo dibujado se corrige arrastrando: vértices, extremos, la figura
+  entera; un vértice nuevo se saca del punto medio de un borde. Los cambios
+  de forma quedan en un borrador hasta "Guardar": mover una línea marca
+  como desactualizados todos los videos ya contados, y en el proyecto 7 eso
+  ofrecía recontar 731 videos y borrar la revisión de 879 pesados. Un
+  arrastre accidental no puede costar eso.
+
+  Cada calzada se revisa en vivo (components/calib/geometria.ts): que la
+  línea cruce toda la calle, que vaya de través y que no esté pegada a la
+  orilla de la imagen. Son los tres errores que ya costaron conteos.
 */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ConfirmDialog, EmptyState } from '../components/ui';
+import { VideoWorkspace, calzadaColor, ACCESO_COLORS } from '../components/VideoWorkspace';
+import { Lienzo, type LineaFig, type Seleccion, type ZonaFig } from '../components/calib/Lienzo';
+import { revisarCalzada, type Aviso } from '../components/calib/geometria';
 import {
-  Button,
-  Card,
-  ConfirmDialog,
-  EmptyState,
-  IconButton,
-  Notice,
-  TextField,
-} from '../components/ui';
-import { IconClose } from '../components/Icons';
-import { VideoWorkspace, laneColor, zoneColor } from '../components/VideoWorkspace';
-import {
-  useCreateLane,
-  useDeleteLane,
+  keys,
+  useCalibrationStatus,
   useLanes,
-  useRenameLane,
+  useRecount,
   useStartCounting,
   useVideos,
-  useCalibrationStatus,
-  useRecount,
-  useCreateZone,
-  useDeleteZone,
-  useRenameZone,
-  useSetTramo,
   useZones,
 } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
-import { fetchImage, heatmapUrl, listVideoSegments } from '../lib/api';
+import * as api from '../lib/api';
+import { errorMessage, fetchImage, heatmapUrl, listVideoSegments } from '../lib/api';
 import { plural } from '../lib/format';
 import type { FuenteVideo, Lane, Point, Zone } from '../lib/types';
 
-/**
- * Revisa que la línea recién dibujada sirva para contar.
- *
- * Los dos errores que de verdad arruinan un aforo:
- *  · Línea demasiado corta: los vehículos pasan por los lados sin tocarla.
- *  · Línea paralela al tránsito: el vehículo avanza A LO LARGO de ella en
- *    vez de cruzarla, así que casi nunca dispara un conteo.
- *
- * Se avisa pero no se bloquea: puede haber escenas donde el usuario sepa
- * algo que esta comprobación no.
- */
-function validarLinea(p1: Point, p2: Point, anchoVideo: number, hayRastro: boolean): string[] {
-  const problemas: string[] = [];
-  const largo = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-  const pctAncho = (largo / anchoVideo) * 100;
+type Herramienta = 'seleccionar' | 'calzada' | 'acceso' | 'linea' | 'tramo';
 
-  if (pctAncho < 15) {
-    problemas.push(
-      `La línea mide solo ${Math.round(pctAncho)} % del ancho de la imagen. Si no cubre el carril completo, los vehículos pasan por los lados sin contarse.`,
-    );
-  }
-
-  if (hayRastro) {
-    const angulo = Math.abs((Math.atan2(p2[1] - p1[1], p2[0] - p1[0]) * 180) / Math.PI) % 180;
-    if (angulo < 25 || angulo > 155) {
-      problemas.push(
-        'La línea quedó casi horizontal. Si el tránsito también circula en horizontal, los vehículos avanzan a lo largo de ella y no la cruzan. Activa "Ver por dónde pasan los vehículos" y dibújala atravesando ese rastro.',
-      );
-    }
-  }
-
-  return problemas;
+interface Borrador {
+  zonas: Record<number, Point[]>;
+  lineas: Record<number, [Point, Point]>;
+  tramos: Record<number, [Point, Point]>;
 }
+const VACIO: Borrador = { zonas: {}, lineas: {}, tramos: {} };
+const hayCambios = (b: Borrador) =>
+  Object.keys(b.zonas).length + Object.keys(b.lineas).length + Object.keys(b.tramos).length;
+
+/** Lo que falta para terminar de dibujar algo: un nombre o una distancia. */
+type Pendiente =
+  | { tipo: 'calzada'; zona: Point[]; linea: [Point, Point] | null }
+  | { tipo: 'acceso'; zona: Point[] }
+  | { tipo: 'linea'; zonaId: number; linea: [Point, Point] }
+  | { tipo: 'tramo'; laneId: number; linea: [Point, Point] };
+
+const NEUTRO = '#d0d6de';
 
 export default function Calibrar() {
   const { projectId, projects } = useProjectParam();
-
+  const qc = useQueryClient();
   const { data: lanes } = useLanes(projectId);
   const { data: zones } = useZones(projectId);
-  const createZone = useCreateZone(projectId ?? 0);
-  const renameZone = useRenameZone(projectId ?? 0);
-  const removeZone = useDeleteZone(projectId ?? 0);
   const { data: calibStatus } = useCalibrationStatus(projectId);
-  const recontar = useRecount();
   const { data: jobs } = useVideos(projectId ?? undefined);
-  const createLane = useCreateLane(projectId ?? 0);
-  const renameLane = useRenameLane(projectId ?? 0);
-  const removeLane = useDeleteLane(projectId ?? 0);
-  const setTramo = useSetTramo(projectId ?? 0);
+  const recontar = useRecount();
   const startCounting = useStartCounting();
 
   const { data: segments, isLoading: cargandoVideos } = useQuery({
@@ -103,752 +79,803 @@ export default function Calibrar() {
     enabled: projectId !== null,
   });
 
-  /*
-    El segmento y la fuente se leen de la URL en la primera carga. Es lo
-    que hace que "Revisar cuadro a cuadro" desde la cola aterrice en el
-    video correcto y ya con las detecciones puestas, en vez de dejar al
-    usuario buscándolo entre los segmentos.
-  */
   const [params] = useSearchParams();
   const [jobId, setJobId] = useState<number | null>(null);
-  const [fuente, setFuente] = useState<FuenteVideo>(
-    params.get('ver') === 'procesado' ? 'procesado' : 'original',
-  );
+  const [fuente, setFuente] = useState<FuenteVideo>(params.get('ver') === 'procesado' ? 'procesado' : 'original');
   const [heatmap, setHeatmap] = useState<HTMLImageElement | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [verHeatmap, setVerHeatmap] = useState(false);
   const [verDetecciones, setVerDetecciones] = useState(false);
+  const [tamano, setTamano] = useState<{ ancho: number; alto: number } | null>(null);
 
-  const [drawMode, setDrawMode] = useState(false);
-  /* 'linea' dibuja una línea de conteo (2 puntos); 'zona' dibuja el área de
-     una calzada (3 o más). Comparten el mismo lienzo y el mismo arreglo de
-     puntos porque para el usuario es el mismo gesto: marcar sobre el video. */
-  const [drawKind, setDrawKind] = useState<'linea' | 'zona'>('linea');
-  /* Qué clase de zona se está dibujando. Un acceso se dibuja con el mismo
-     gesto que una calzada, pero significa otra cosa: de dónde viene y a
-     dónde va el vehículo, no en qué calzada cruzó la línea. */
-  const [zonaKind, setZonaKind] = useState<'calzada' | 'acceso'>('calzada');
-  const [points, setPoints] = useState<Point[]>([]);
-  const [zoneToDelete, setZoneToDelete] = useState<Zone | null>(null);
-  const [newName, setNewName] = useState('');
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [hint, setHint] = useState<string | null>(null);
-  const [toDelete, setToDelete] = useState<Lane | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
-  /* Carril al que se le está dibujando el tramo de velocidad. Mientras no
-     sea null, los dos puntos que se marquen son la SEGUNDA línea de ese
-     carril y no un carril nuevo. */
-  const [tramoDe, setTramoDe] = useState<Lane | null>(null);
+  const [herr, setHerr] = useState<Herramienta>('seleccionar');
+  const [puntos, setPuntos] = useState<Point[]>([]);
+  /* Calzada a medias: ya se cerró la zona y falta su línea. */
+  const [zonaNueva, setZonaNueva] = useState<Point[] | null>(null);
+  /* Para 'linea' el id de la zona; para 'tramo' el del carril. */
+  const [objetivo, setObjetivo] = useState<number | null>(null);
+  const [pendiente, setPendiente] = useState<Pendiente | null>(null);
+  const [nombre, setNombre] = useState('');
   const [distancia, setDistancia] = useState('');
-  const distanciaRef = useRef<HTMLInputElement>(null);
+  const [seleccion, setSeleccion] = useState<Seleccion>(null);
+  const [borrador, setBorrador] = useState<Borrador>(VACIO);
+  const historial = useRef<Borrador[]>([]);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [borrar, setBorrar] = useState<{ tipo: 'calzada' | 'acceso' | 'linea'; id: number; nombre: string } | null>(null);
+  const estudioRef = useRef<HTMLDivElement>(null);
+  const [altoEstudio, setAltoEstudio] = useState(640);
+  /* Bajo 900 px el panel deja de flotar (ver .estudio en pages.css). */
+  const [angosto, setAngosto] = useState(() => window.matchMedia('(max-width: 900px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const cambio = () => setAngosto(mq.matches);
+    mq.addEventListener('change', cambio);
+    return () => mq.removeEventListener('change', cambio);
+  }, []);
 
-  const segment = segments?.find((s) => s.job_id === jobId) ?? null;
+  /* El estudio ocupa lo que queda de pantalla bajo el encabezado. */
+  useEffect(() => {
+    const medir = () => {
+      const top = estudioRef.current?.getBoundingClientRect().top ?? 0;
+      setAltoEstudio(Math.max(520, window.innerHeight - Math.max(0, top) - 12));
+    };
+    medir();
+    window.addEventListener('resize', medir);
+    return () => window.removeEventListener('resize', medir);
+  }, [segments]);
 
-  // Al llegar la lista de videos se elige el primero; al cambiar de
-  // intersección se descarta lo que hubiera a medio dibujar, para no
-  // arrastrar puntos de una escena a otra.
   useEffect(() => {
     if (!segments || !segments.length) {
       setJobId(null);
     } else {
       const pedido = Number(params.get('job'));
-      const existe = segments.some((s) => s.job_id === pedido);
-      setJobId(existe ? pedido : segments[0].job_id);
+      // De arranque, un video de día a media mañana si lo hay: calibrar sobre
+      // la noche o el amanecer es calibrar a ciegas.
+      const deDia = segments.find((s) => {
+        const h = Number(s.hora_inicio?.slice(11, 13));
+        return h >= 9 && h <= 16;
+      });
+      setJobId(segments.some((s) => s.job_id === pedido) ? pedido : (deDia ?? segments[0]).job_id);
     }
-    setPoints([]);
-    setDrawMode(false);
-    setWarnings([]);
-    setHint(null);
-    setTramoDe(null);
+    cancelar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segments, params]);
 
-  // El rastro de movimiento es opcional: si el proyecto no tiene conteos
-  // previos no existe, y calibrar a mano sigue siendo posible.
   useEffect(() => {
     setHeatmap(null);
-    setShowHeatmap(false);
+    setVerHeatmap(false);
     if (projectId === null) return;
-    let cancelled = false;
+    let cancelado = false;
     fetchImage(heatmapUrl(projectId))
-      .then((img) => !cancelled && setHeatmap(img))
+      .then((img) => !cancelado && setHeatmap(img))
       .catch(() => undefined);
     return () => {
-      cancelled = true;
+      cancelado = true;
     };
   }, [projectId]);
 
-  /* El ancho real del video lo descubre la mesa al cargar el primer
-     cuadro; la validación de la línea lo necesita para saber qué
-     proporción de la calzada cubre. */
-  const [anchoVideo, setAnchoVideo] = useState<number | null>(null);
+  /* --- Modelo: calzadas, accesos y líneas sueltas, con el borrador ---- */
+  const calzadas = useMemo(
+    () => (zones ?? []).filter((z) => z.kind === 'calzada' || z.kind === 'excluir'),
+    [zones],
+  );
+  const accesos = useMemo(() => (zones ?? []).filter((z) => z.kind === 'acceso'), [zones]);
+  const colorZona = useCallback(
+    (z: Zone) =>
+      z.kind === 'acceso'
+        ? ACCESO_COLORS[accesos.findIndex((a) => a.id === z.id) % ACCESO_COLORS.length]
+        : z.kind === 'excluir'
+          ? '#c85050'
+          : calzadaColor(calzadas.findIndex((c) => c.id === z.id)),
+    [accesos, calzadas],
+  );
+  const lineasDe = (zonaId: number) => (lanes ?? []).filter((l) => l.zone_id === zonaId);
+  const sueltas = (lanes ?? []).filter((l) => !l.zone_id || !(zones ?? []).some((z) => z.id === l.zone_id));
 
-  const onCanvasPoint = useCallback(
-    (p: Point) => {
-      // Una zona acumula vértices sin tope: el usuario decide cuándo la
-      // cierra. Solo se le exige que tenga al menos 3 para encerrar un área.
-      if (drawKind === 'zona') {
-        setPoints((prev) => [...prev, p]);
-        setHint(
-          points.length + 1 >= 3
-            ? 'Sigue marcando el contorno, o cierra la zona cuando ya rodee la calzada.'
-            : 'Marca las esquinas de la calzada. Con 3 puntos ya se puede cerrar.',
-        );
+  const geoZona = (z: Zone) => borrador.zonas[z.id] ?? z.points;
+  const geoLinea = (l: Lane) => borrador.lineas[l.id] ?? l.points;
+  const geoTramo = (l: Lane) => (l.tramo ? borrador.tramos[l.id] ?? l.tramo.linea : null);
+
+  const ancho = tamano?.ancho ?? 1920;
+  const alto = tamano?.alto ?? 1080;
+
+  const avisosDe = (z: Zone): Aviso[] => {
+    if (z.kind !== 'calzada') return [];
+    const ls = lineasDe(z.id);
+    if (!ls.length) return revisarCalzada(geoZona(z), null, ancho, alto);
+    return ls.flatMap((l) => revisarCalzada(geoZona(z), geoLinea(l), ancho, alto));
+  };
+
+  const zonasFig: ZonaFig[] = (zones ?? []).map((z) => ({
+    id: z.id,
+    nombre: z.name,
+    color: colorZona(z),
+    puntos: geoZona(z),
+    acceso: z.kind === 'acceso',
+  }));
+  const lineasFig: LineaFig[] = (lanes ?? []).map((l) => {
+    const z = (zones ?? []).find((q) => q.id === l.zone_id);
+    const t = geoTramo(l);
+    return {
+      id: l.id,
+      nombre: l.name,
+      color: z ? colorZona(z) : NEUTRO,
+      puntos: geoLinea(l),
+      tramo: t && l.tramo ? { linea: t, distancia_m: l.tramo.distancia_m } : null,
+      alerta: z ? avisosDe(z).some((a) => a.nivel === 'error') : true,
+    };
+  });
+
+  /* --- Edición ------------------------------------------------------- */
+  /* Un arrastre entero es un solo paso de "deshacer": se guarda el estado de
+     antes de empezar a arrastrar, no cada movimiento del ratón. */
+  const borradorRef = useRef(borrador);
+  borradorRef.current = borrador;
+  const arrastrando = useRef(false);
+  const onMover = useCallback((tipo: 'zona' | 'linea' | 'tramo', id: number, p: Point[]) => {
+    const b = borradorRef.current;
+    if (!arrastrando.current) {
+      arrastrando.current = true;
+      historial.current = [...historial.current.slice(-49), b];
+    }
+    const nuevo =
+      tipo === 'zona'
+        ? { ...b, zonas: { ...b.zonas, [id]: p } }
+        : tipo === 'linea'
+          ? { ...b, lineas: { ...b.lineas, [id]: [p[0], p[1]] as [Point, Point] } }
+          : { ...b, tramos: { ...b.tramos, [id]: [p[0], p[1]] as [Point, Point] } };
+    borradorRef.current = nuevo;
+    setBorrador(nuevo);
+  }, []);
+  const onFinMover = useCallback(() => {
+    arrastrando.current = false;
+  }, []);
+  const deshacer = useCallback(() => {
+    const prev = historial.current.pop();
+    if (prev) setBorrador(prev);
+  }, []);
+
+  async function guardarBorrador() {
+    setGuardando(true);
+    setError(null);
+    try {
+      for (const [id, p] of Object.entries(borrador.zonas)) await api.updateZone(Number(id), { points: p });
+      for (const [id, p] of Object.entries(borrador.lineas)) await api.updateLane(Number(id), { points: p });
+      for (const [id, p] of Object.entries(borrador.tramos)) {
+        const l = lanes?.find((q) => q.id === Number(id));
+        if (l?.tramo) await api.updateLane(l.id, { tramo: { ...l.tramo, linea: p } });
+      }
+      setBorrador(VACIO);
+      historial.current = [];
+      await refrescar();
+    } catch (e) {
+      setError(`No se pudieron guardar los cambios: ${errorMessage(e)}`);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  async function refrescar() {
+    if (projectId === null) return;
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: keys.lanes(projectId) }),
+      qc.invalidateQueries({ queryKey: keys.zones(projectId) }),
+      qc.invalidateQueries({ queryKey: keys.projects }),
+      qc.invalidateQueries({ queryKey: ['calibration-status', projectId] }),
+    ]);
+  }
+
+  /* --- Dibujo -------------------------------------------------------- */
+  function cancelar() {
+    setHerr('seleccionar');
+    setPuntos([]);
+    setZonaNueva(null);
+    setObjetivo(null);
+    setPendiente(null);
+    setError(null);
+  }
+
+  function empezar(h: Herramienta, obj: number | null = null) {
+    setHerr(h);
+    setPuntos([]);
+    setZonaNueva(null);
+    setObjetivo(obj);
+    setPendiente(null);
+    setSeleccion(null);
+    setError(null);
+  }
+
+  const onPunto = (p: Point) => {
+    if (herr === 'calzada' || herr === 'acceso') {
+      if (zonaNueva) {
+        // Segundo paso de la calzada: la línea.
+        const next = [...puntos, p];
+        if (next.length === 2) {
+          setPendiente({ tipo: 'calzada', zona: zonaNueva, linea: [next[0], next[1]] });
+          setNombre(`Calzada ${calzadas.length + 1}`);
+          setPuntos([]);
+        } else setPuntos(next);
         return;
       }
-      setPoints((prev) => {
-        if (prev.length >= 2) return prev;
-        const next = [...prev, p];
-        if (next.length === 2 && tramoDe) {
-          setDrawMode(false);
-          setWarnings([]);
-          setDistancia(tramoDe.tramo ? String(tramoDe.tramo.distancia_m) : '');
-          setHint('Escribe la distancia en metros entre esta línea y la de conteo.');
-          setTimeout(() => distanciaRef.current?.focus(), 0);
-          return next;
+      setPuntos((prev) => [...prev, p]);
+      return;
+    }
+    if (herr === 'linea' || herr === 'tramo') {
+      const next = [...puntos, p];
+      if (next.length < 2) {
+        setPuntos(next);
+        return;
+      }
+      setPuntos([]);
+      if (herr === 'linea' && objetivo !== null) {
+        setPendiente({ tipo: 'linea', zonaId: objetivo, linea: [next[0], next[1]] });
+      } else if (herr === 'tramo' && objetivo !== null) {
+        const l = lanes?.find((q) => q.id === objetivo);
+        setDistancia(l?.tramo ? String(l.tramo.distancia_m) : '');
+        setPendiente({ tipo: 'tramo', laneId: objetivo, linea: [next[0], next[1]] });
+      }
+    }
+  };
+
+  const cerrarZona = () => {
+    if (puntos.length < 3) return;
+    if (herr === 'acceso') {
+      setPendiente({ tipo: 'acceso', zona: puntos });
+      setNombre(`Acceso ${accesos.length + 1}`);
+      setPuntos([]);
+    } else {
+      setZonaNueva(puntos);
+      setPuntos([]);
+    }
+  };
+
+  async function guardarPendiente(sinLinea = false) {
+    if (!pendiente || projectId === null) return;
+    setError(null);
+    try {
+      if (pendiente.tipo === 'calzada' || (pendiente.tipo === 'acceso' && !sinLinea)) {
+        const z = await api.createZone({
+          project_id: projectId,
+          name: nombre.trim() || 'Calzada',
+          points: pendiente.zona,
+          kind: pendiente.tipo === 'acceso' ? 'acceso' : 'calzada',
+        });
+        if (pendiente.tipo === 'calzada' && pendiente.linea && !sinLinea) {
+          await api.createLane({
+            project_id: projectId,
+            name: nombre.trim() || 'Calzada',
+            points: pendiente.linea,
+            zone_id: z.id,
+          });
         }
-        if (next.length === 2 && segment) {
-          setDrawMode(false);
-          setWarnings(validarLinea(next[0], next[1], anchoVideo ?? 640, heatmap !== null));
-          setNewName(`Carril ${(lanes?.length ?? 0) + 1}`);
-          setHint('Ponle nombre al carril y guárdalo.');
-          setTimeout(() => {
-            nameRef.current?.focus();
-            nameRef.current?.select();
-          }, 0);
-        } else {
-          setHint('Ahora marca el segundo punto, al otro lado del carril.');
+      } else if (pendiente.tipo === 'linea') {
+        const z = zones?.find((q) => q.id === pendiente.zonaId);
+        await api.createLane({
+          project_id: projectId,
+          name: z?.name ?? 'Calzada',
+          points: pendiente.linea,
+          zone_id: pendiente.zonaId,
+        });
+      } else if (pendiente.tipo === 'tramo') {
+        const d = Number(distancia.replace(',', '.'));
+        if (!(d > 0 && d <= 500)) {
+          setError('Escribe la distancia en metros entre las dos líneas (entre 0 y 500).');
+          return;
         }
-        return next;
-      });
-    },
-    [segment, heatmap, lanes, drawKind, points.length, tramoDe],
-  );
-
-  function iniciarTramo(lane: Lane) {
-    setTramoDe(lane);
-    setDrawKind('linea');
-    setDrawMode(true);
-    setPoints([]);
-    setWarnings([]);
-    setHint(
-      `Marca la segunda línea del tramo de "${lane.name}": cruzando la misma calzada, a unos 8–12 m de la de conteo, sobre algo que se pueda medir en el pavimento (una junta de losa, una raya). Un tramo más largo pierde vehículos, sobre todo de noche.`,
-    );
+        const l = lanes?.find((q) => q.id === pendiente.laneId);
+        await api.updateLane(pendiente.laneId, {
+          tramo: { linea: pendiente.linea, distancia_m: d, origen: l?.tramo?.origen ?? null },
+        });
+      }
+      await refrescar();
+      cancelar();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   }
 
-  /* Sin volver a dibujar: la base guarda el tiempo de paso, así que una
-     distancia corregida recalcula todas las velocidades sin volver a contar. */
-  function corregirDistancia(lane: Lane) {
-    if (!lane.tramo) return;
-    setTramoDe(lane);
-    setDrawMode(false);
-    setWarnings([]);
-    setPoints([lane.tramo.linea[0], lane.tramo.linea[1]]);
-    setDistancia(String(lane.tramo.distancia_m));
-    setHint('Corrige la distancia. Las velocidades ya medidas se recalculan sin volver a contar.');
-    setTimeout(() => distanciaRef.current?.focus(), 0);
+  async function guardarSinLinea() {
+    if (!zonaNueva || projectId === null) return;
+    try {
+      await api.createZone({ project_id: projectId, name: `Calzada ${calzadas.length + 1}`, points: zonaNueva, kind: 'calzada' });
+      await refrescar();
+      cancelar();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   }
 
-  const distanciaNum = Number(distancia.replace(',', '.'));
-  const distanciaValida =
-    distancia.trim() !== '' && Number.isFinite(distanciaNum) && distanciaNum > 0 && distanciaNum <= 500;
-
-  async function saveTramo() {
-    if (!tramoDe || points.length !== 2 || !distanciaValida) return;
-    const soloDistancia =
-      !!tramoDe.tramo &&
-      JSON.stringify(tramoDe.tramo.linea) === JSON.stringify([points[0], points[1]]);
-    await setTramo.mutateAsync({
-      laneId: tramoDe.id,
-      tramo: { linea: [points[0], points[1]], distancia_m: distanciaNum },
-    });
-    setPoints([]);
-    setTramoDe(null);
-    setDistancia('');
-    setHint(
-      soloDistancia
-        ? 'Distancia corregida. Las velocidades ya medidas se recalcularon con ella.'
-        : 'Tramo guardado. Los videos que se cuenten a partir de ahora ya miden velocidad; los que ya estaban contados hay que volver a contarlos.',
-    );
+  async function confirmarBorrado() {
+    if (!borrar) return;
+    try {
+      if (borrar.tipo === 'linea') await api.deleteLane(borrar.id);
+      else {
+        for (const l of lineasDe(borrar.id)) await api.deleteLane(l.id);
+        await api.deleteZone(borrar.id);
+      }
+      setSeleccion(null);
+      await refrescar();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+    setBorrar(null);
   }
 
-  async function saveLane() {
-    if (points.length !== 2 || !newName.trim() || projectId === null) return;
-    await createLane.mutateAsync({ name: newName.trim(), points: [points[0], points[1]] });
-    setPoints([]);
-    setNewName('');
-    setWarnings([]);
-    setHint('Carril guardado. Puedes agregar otro o editar los que ya existen.');
+  async function atar(laneId: number, zoneId: number) {
+    try {
+      await api.updateLane(laneId, { zone_id: zoneId });
+      await refrescar();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   }
 
-  async function saveZone() {
-    if (points.length < 3 || !newName.trim() || projectId === null) return;
-    await createZone.mutateAsync({ name: newName.trim(), points, kind: zonaKind });
-    setPoints([]);
-    setNewName('');
-    setDrawKind('linea');
-    setHint(
-      zonaKind === 'acceso'
-        ? 'Acceso guardado. Con dos o más, cada vehículo queda con su origen y su destino.'
-        : 'Zona guardada. Los cruces que ocurran dentro se le atribuyen a ella.',
-    );
+  async function renombrar(tipo: 'zona' | 'linea', id: number, n: string) {
+    const v = n.trim();
+    if (!v) return;
+    try {
+      if (tipo === 'zona') {
+        await api.updateZone(id, { name: v });
+        // La línea de una calzada lleva su nombre: es lo que sale en el Excel.
+        for (const l of lineasDe(id)) if (l.name !== v) await api.updateLane(l.id, { name: v });
+      } else await api.updateLane(id, { name: v });
+      await refrescar();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   }
 
-  function cancelarDibujo() {
-    setPoints([]);
-    setDrawMode(false);
-    setDrawKind('linea');
-    setWarnings([]);
-    setHint(null);
-    setTramoDe(null);
-  }
+  /* --- Teclado -------------------------------------------------------- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName)) return;
+      if (e.key === 'Escape') cancelar();
+      else if ((e.key === 'Backspace' || e.key === 'Delete') && puntos.length) {
+        e.preventDefault();
+        setPuntos((p) => p.slice(0, -1));
+      } else if (e.key === 'Enter' && (herr === 'calzada' || herr === 'acceso') && !zonaNueva) cerrarZona();
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        deshacer();
+      } else if (e.key.toLowerCase() === 'v' && !pendiente) cancelar();
+      else if (e.key.toLowerCase() === 'n' && !pendiente) empezar('calzada');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [puntos, herr, zonaNueva, pendiente, deshacer]);
 
+  /* --- Estado del conteo ---------------------------------------------- */
   const awaiting = (jobs ?? []).filter((j) => j.status === 'awaiting_calibration');
-  const otrosProyectos = (projects ?? []).filter((p) => p.id !== projectId);
   const laneCount = lanes?.length ?? 0;
-  const accesoCount = zones?.filter((z) => z.kind === 'acceso').length ?? 0;
-  /* Listo para contar: una línea (aforo por sección) o dos accesos (aforo
-     direccional; con uno solo no hay movimiento posible). Misma regla que
-     routes_projects._calibrado en el backend. */
-  const calibrado = laneCount > 0 || accesoCount >= 2;
+  const calibrado = laneCount > 0 || accesos.length >= 2;
   const sinVideos = projectId !== null && !cargandoVideos && (segments?.length ?? 0) === 0;
+  const otros = (projects ?? []).filter((p) => p.id !== projectId);
+  const cambios = hayCambios(borrador);
+
+  const dibujando = herr !== 'seleccionar' && !pendiente;
+  const colorDibujo =
+    herr === 'acceso'
+      ? ACCESO_COLORS[accesos.length % ACCESO_COLORS.length]
+      : herr === 'calzada'
+        ? calzadaColor(calzadas.length)
+        : herr === 'linea' && objetivo !== null
+          ? colorZona(zones!.find((z) => z.id === objetivo)!)
+          : (lineasFig.find((l) => l.id === objetivo)?.color ?? '#ffffff');
+
+  /* Lo recién dibujado sigue a la vista mientras se le pone nombre, y la
+     zona mientras se traza su línea: antes desaparecía y había que nombrar
+     a ciegas. */
+  const zonaPrevia =
+    pendiente?.tipo === 'calzada' || pendiente?.tipo === 'acceso' ? pendiente.zona : zonaNueva;
+  const lineaPrevia =
+    pendiente?.tipo === 'calzada' || pendiente?.tipo === 'linea' ? pendiente.linea : null;
+  const zonasLienzo: ZonaFig[] = zonaPrevia
+    ? [...zonasFig, { id: -1, nombre: nombre, color: colorDibujo, puntos: zonaPrevia, acceso: herr === 'acceso' }]
+    : zonasFig;
+  const lineasLienzo: LineaFig[] = lineaPrevia
+    ? [...lineasFig, { id: -1, nombre: nombre || 'Nueva', color: colorDibujo, puntos: lineaPrevia }]
+    : lineasFig;
+
+  const instruccion = (() => {
+    if (herr === 'calzada' && !zonaNueva)
+      return puntos.length < 3
+        ? 'Rodea la calle: marca las esquinas de la calzada, desde donde aparecen los vehículos hasta donde salen.'
+        : 'Sigue marcando, o cierra la zona: clic en el primer punto, doble clic o Enter.';
+    if (herr === 'calzada' && zonaNueva)
+      return puntos.length === 0
+        ? 'Ahora la línea de conteo: un punto en una orilla de la calle…'
+        : '…y el otro en la orilla de enfrente, cruzándola de través, donde el vehículo se vea grande.';
+    if (herr === 'acceso')
+      return 'Rodea el brazo del acceso, con sus carriles de entrada y salida, hasta la orilla de la imagen.';
+    if (herr === 'linea') return puntos.length === 0 ? 'Marca un extremo de la línea, en una orilla de la calle.' : 'Ahora el otro extremo, en la orilla de enfrente.';
+    if (herr === 'tramo')
+      return 'Segunda línea del tramo de velocidad: a unos 8–12 m de la de conteo, sobre una marca que se pueda medir en el pavimento.';
+    return null;
+  })();
+
+  if (projectId === null) {
+    return <EmptyState title="Elige una intersección" body="Las calzadas se calibran por intersección." />;
+  }
+  if (sinVideos) {
+    return (
+      <EmptyState
+        title="Esta intersección todavía no tiene videos"
+        body="Las calzadas se dibujan sobre el video real, no sobre un plano."
+        action={
+          <Link className="btn btn-primary" to={`/proyecto/${projectId}/subir`}>
+            Subir videos
+          </Link>
+        }
+      />
+    );
+  }
+
+  const segmentosOrdenados = segments ?? [];
 
   return (
-    <>
-
-      {sinVideos && (
-        <EmptyState
-          title="Esta intersección todavía no tiene videos"
-          body="Para calibrar hace falta la grabación: las líneas se dibujan sobre el video real, no sobre un plano."
-          action={
-            <Link className="btn btn-primary" to={`/proyecto/${projectId}/subir`}>
-              Subir videos
-            </Link>
-          }
-        />
-      )}
-
-      {projectId === null && (
-        <EmptyState
-          title="Elige una intersección"
-          body="Los carriles se definen por intersección y los comparten todos sus videos."
-        />
-      )}
-
-      {projectId !== null && !sinVideos && (
-        <div className="calib-layout">
-          <div className="calib-main">
-            <h2 className="section-title">Mesa de trabajo</h2>
-
-            <VideoWorkspace
-              segments={segments ?? []}
-              jobId={jobId}
-              onJobChange={setJobId}
-              lanes={lanes ?? []}
-              zones={zones ?? []}
-              drawing={points}
-              drawMode={drawMode}
-              drawKind={drawKind}
-              onCanvasPoint={onCanvasPoint}
-              showDetections={verDetecciones}
+    <div className="estudio" ref={estudioRef} style={{ height: altoEstudio }}>
+      <VideoWorkspace
+        segments={segmentosOrdenados}
+        jobId={jobId}
+        onJobChange={setJobId}
+        fuente={fuente}
+        onFuenteChange={setFuente}
+        showDetections={verDetecciones}
+        pausar={dibujando}
+        onTamano={(a, h) => setTamano({ ancho: a, alto: h })}
+        margenes={angosto ? { arriba: 60 } : { izquierda: 336, arriba: 64, derecha: 16, abajo: 12 }}
+      >
+        {(c) =>
+          fuente === 'procesado' ? null : (
+            <Lienzo
+              ancho={c.ancho}
+              alto={c.alto}
+              unidad={c.unidad}
+              zonas={zonasLienzo}
+              lineas={lineasLienzo}
+              seleccion={seleccion}
+              onSeleccion={setSeleccion}
+              editable={herr === 'seleccionar' && !pendiente}
+              onMover={onMover}
+              onFinMover={onFinMover}
+              dibujo={
+                dibujando
+                  ? {
+                      tipo: (herr === 'calzada' || herr === 'acceso') && !zonaNueva ? 'poligono' : 'segmento',
+                      puntos,
+                      color: colorDibujo,
+                    }
+                  : null
+              }
+              onPunto={onPunto}
+              onCerrar={cerrarZona}
+              detecciones={c.detecciones}
               heatmap={heatmap}
-              showHeatmap={showHeatmap}
-              fuente={fuente}
-              onFuenteChange={setFuente}
-              onTamano={(a) => setAnchoVideo(a)}
+              verHeatmap={verHeatmap}
+              onFondoPointerDown={c.onFondoPointerDown}
             />
+          )
+        }
+      </VideoWorkspace>
 
-            <div className="canvas-tools">
-              <label className="toggle-heat">
-                <input
-                  type="checkbox"
-                  checked={showHeatmap}
-                  disabled={heatmap === null}
-                  onChange={(e) => setShowHeatmap(e.target.checked)}
-                />
-                <span>Ver por dónde pasan los vehículos</span>
-              </label>
-              <label className="toggle-heat">
-                <input
-                  type="checkbox"
-                  checked={verDetecciones}
-                  disabled={fuente === 'procesado'}
-                  onChange={(e) => setVerDetecciones(e.target.checked)}
-                />
-                <span>Ver lo que detecta la IA ahora</span>
-              </label>
-              <span className="tool-hint">
-                {verDetecciones
-                  ? /* Se explica el gris porque es el dato más útil de todos:
-                       una caja descartada sobre la calzada significa que la
-                       zona está mal dibujada, y se ve antes de reprocesar. */
-                    'Verde: detección firme. Naranja: confianza baja. Gris punteado: descartada por quedar fuera de las zonas. Pausa el video para calcularlas.'
-                  : heatmap === null
-                    ? 'El rastro aparece cuando la intersección ya tiene conteos.'
-                    : 'Dibuja la línea cruzando ese rastro, no a lo largo de él.'}
-              </span>
-            </div>
+      {/* --- Barra de herramientas ------------------------------------ */}
+      <div className="est-herramientas" role="toolbar" aria-label="Herramientas de calibración">
+        <button type="button" className={herr === 'seleccionar' ? 'is-on' : undefined} onClick={cancelar} title="Seleccionar y mover (V)">
+          Mover
+        </button>
+        <button type="button" className={herr === 'calzada' ? 'is-on' : undefined} onClick={() => empezar('calzada')} disabled={fuente === 'procesado'} title="Nueva calzada: zona + línea (N)">
+          + Calzada
+        </button>
+        <button type="button" className={herr === 'acceso' ? 'is-on' : undefined} onClick={() => empezar('acceso')} disabled={fuente === 'procesado'} title="Acceso para el aforo direccional">
+          + Acceso
+        </button>
+        <span className="est-sep" />
+        <label className="est-capa" title={heatmap ? 'Por dónde pasan los vehículos (de lo ya contado)' : 'Aparece cuando la intersección ya tiene conteos'}>
+          <input type="checkbox" checked={verHeatmap} disabled={!heatmap} onChange={(e) => setVerHeatmap(e.target.checked)} />
+          Rastro
+        </label>
+        <label className="est-capa" title="Lo que detecta la IA en el cuadro en pausa. Gris punteado: fuera de las zonas.">
+          <input type="checkbox" checked={verDetecciones} disabled={fuente === 'procesado'} onChange={(e) => setVerDetecciones(e.target.checked)} />
+          Detecciones
+        </label>
+      </div>
 
-            {/* Región educada: el estado del dibujo cambia sin que se pueda
-                ver el cursor, así que hay que anunciarlo. */}
-            <div role="status" aria-live="polite">
-              {hint && <p className="calib-hint">{hint}</p>}
-            </div>
-
-            {warnings.length > 0 && (
-              <div className="notice-stack" style={{ marginTop: 'var(--space-3)' }}>
-                {warnings.map((w, i) => (
-                  /* Ámbar y no rojo: es una advertencia sobre la calidad de
-                     la medición, no un error que impida guardar. */
-                  <Notice key={i} tone="warning" title="Revisa esta línea">
-                    {w}
-                  </Notice>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <Card className="lane-panel">
-            <h2>Carriles</h2>
-
-            <div className="lane-list">
-              {laneCount === 0 && (
-                <EmptyState
-                  title="Sin carriles todavía"
-                  body="Un carril es la línea que los vehículos tienen que cruzar para ser contados."
-                />
+      {/* --- Instrucción del paso actual --------------------------------- */}
+      {(instruccion || fuente === 'procesado') && !pendiente && (
+        <div className="est-instruccion" role="status" aria-live="polite">
+          <span>
+            {fuente === 'procesado'
+              ? 'Se calibra sobre el video Original: el de detecciones trae las líneas de cuando se contó.'
+              : instruccion}
+          </span>
+          {dibujando && (
+            <span className="est-instruccion-acciones">
+              {puntos.length > 0 && (
+                <button type="button" onClick={() => setPuntos((p) => p.slice(0, -1))}>
+                  Deshacer punto <kbd>⌫</kbd>
+                </button>
               )}
-            </div>
-
-            {/* Reutilizar la calibración de otra intersección vive en el
-                Resumen del proyecto, no aquí: es una acción sobre el
-                proyecto entero y no parte de dibujar líneas. Estaba en los
-                dos sitios a la vez, con dos nombres y dos estilos
-                distintos; aquí queda el camino, no una segunda copia. */}
-            {laneCount === 0 && (zones?.length ?? 0) === 0 && otrosProyectos.length > 0 && (
-              <p className="sc-info">
-                ¿Ya calibraste esta cámara antes? Puedes{' '}
-                <Link to={`/proyecto/${projectId}`}>
-                  copiar la calibración de otra intersección
-                </Link>{' '}
-                en vez de volver a dibujarla.
-              </p>
-            )}
-
-            <div className="lane-list">
-              {lanes?.map((lane, i) => (
-                <div className="lane-block" key={lane.id}>
-                  <div className="lane-item">
-                    <span className="lane-swatch" style={{ background: laneColor(i) }} />
-                    <input
-                      className="lane-name-input"
-                      defaultValue={lane.name}
-                      aria-label={`Nombre del carril ${lane.name}`}
-                      onBlur={(e) => {
-                        const name = e.target.value.trim();
-                        if (name && name !== lane.name) renameLane.mutate({ laneId: lane.id, name });
-                      }}
-                    />
-                    <IconButton
-                      label={`Eliminar el carril ${lane.name}`}
-                      tone="danger"
-                      onClick={() => setToDelete(lane)}
-                    >
-                      <IconClose />
-                    </IconButton>
-                  </div>
-                  {/* Velocidad: una segunda línea y la distancia medida
-                      entre las dos, como las mangueras del contador de ejes. */}
-                  <div className="lane-tramo">
-                    {lane.tramo ? (
-                      <>
-                        <span>Mide velocidad · tramo de {lane.tramo.distancia_m} m</span>
-                        <button
-                          type="button"
-                          className="tramo-accion"
-                          disabled={points.length > 0}
-                          onClick={() => corregirDistancia(lane)}
-                        >
-                          Corregir distancia
-                        </button>
-                        <button
-                          type="button"
-                          className="tramo-accion"
-                          disabled={!segment || fuente === 'procesado' || points.length > 0}
-                          onClick={() => iniciarTramo(lane)}
-                        >
-                          Mover la línea
-                        </button>
-                        <button
-                          type="button"
-                          className="tramo-accion"
-                          disabled={setTramo.isPending}
-                          onClick={() => setTramo.mutate({ laneId: lane.id, tramo: null })}
-                        >
-                          Quitar
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className="tramo-accion"
-                        disabled={!segment || fuente === 'procesado' || points.length > 0}
-                        onClick={() => iniciarTramo(lane)}
-                      >
-                        Medir velocidad en este carril
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {tramoDe ? (
-              points.length === 2 ? (
-                <>
-                  <div className="new-lane-form rise">
-                    <TextField
-                      label="Distancia entre las dos líneas (m)"
-                      ref={distanciaRef}
-                      value={distancia}
-                      inputMode="decimal"
-                      placeholder="15"
-                      onChange={(e) => setDistancia(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void saveTramo();
-                        }
-                      }}
-                    />
-                    <Button
-                      variant="primary"
-                      onClick={() => void saveTramo()}
-                      disabled={setTramo.isPending || !distanciaValida}
-                    >
-                      Guardar tramo
-                    </Button>
-                  </div>
-                  {/* La distancia es lo único que no se ve en el video y lo
-                      que más pesa: el contador de ejes ote-pte de Juárez la
-                      tenía mal capturada y reportó 93 km/h en una avenida
-                      urbana. Se dice cómo medirla. */}
-                  <p className="sc-info" style={{ marginTop: 'var(--space-2)' }}>
-                    Mídela en el pavimento, en el sentido en que circulan los vehículos: con cinta en
-                    campo, o con la regla de un mapa satelital entre dos marcas que se vean en el video
-                    (juntas del pavimento, rayas, postes). Si está mal, todas las velocidades salen mal
-                    en la misma proporción.
-                  </p>
-                  <Button block onClick={cancelarDibujo} style={{ marginTop: 'var(--space-2)' }}>
-                    Cancelar
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <p className="sc-info">
-                    Tramo de <strong>{tramoDe.name}</strong>: marca{' '}
-                    {points.length === 0 ? 'el primer punto' : 'el segundo punto'} de la segunda
-                    línea, a unos 10 o 20 m de la de conteo. Trázala sobre una marca que cruce la
-                    calzada de lado a lado (raya de alto, orilla del paso peatonal, junta del
-                    pavimento), y la de conteo igual: una línea trazada a ojo no sigue la
-                    perspectiva y cada carril queda con otra distancia.
-                  </p>
-                  <Button block onClick={cancelarDibujo}>
-                    Cancelar
-                  </Button>
-                </>
-              )
-            ) : drawKind === 'zona' ? (
-              <>
-                <p className="sc-info">
-                  {points.length < 3
-                    ? zonaKind === 'acceso'
-                      ? `Rodea el brazo completo del acceso, con sus carriles de entrada y de salida, hasta la orilla de la imagen (${points.length}/3 mínimo).`
-                      : `Marca las esquinas de la calzada sobre el video (${points.length}/3 mínimo).`
-                    : `${points.length} puntos marcados. Ponle nombre y cierra la zona.`}
-                </p>
-                {points.length >= 3 && (
-                  <div className="new-lane-form rise">
-                    <TextField
-                      label={zonaKind === 'acceso' ? 'Nombre del acceso' : 'Nombre de la zona'}
-                      ref={nameRef}
-                      value={newName}
-                      placeholder={zonaKind === 'acceso' ? 'Acceso norte' : 'Calzada norte'}
-                      onChange={(e) => setNewName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void saveZone();
-                        }
-                      }}
-                    />
-                    <Button
-                      variant="primary"
-                      onClick={() => void saveZone()}
-                      disabled={createZone.isPending || !newName.trim()}
-                    >
-                      Cerrar zona
-                    </Button>
-                  </div>
-                )}
-                <Button block onClick={cancelarDibujo} style={{ marginTop: 'var(--space-2)' }}>
-                  Cancelar
-                </Button>
-
-              </>
-            ) : points.length === 2 ? (
-              <>
-                <div className="new-lane-form rise">
-                  <TextField
-                    label="Nombre del carril"
-                    ref={nameRef}
-                    value={newName}
-                    placeholder="Acceso Norte"
-                    onChange={(e) => setNewName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        void saveLane();
-                      }
-                    }}
-                  />
-                  <Button
-                    variant="primary"
-                    onClick={() => void saveLane()}
-                    disabled={createLane.isPending || !newName.trim()}
-                  >
-                    Guardar
-                  </Button>
-                </div>
-                {/* Salida del error más probable: marcar mal los dos puntos.
-                    Sin esto, la única forma de deshacer un clic torcido era
-                    guardar la línea mala y borrarla después. */}
-                <Button block onClick={cancelarDibujo} style={{ marginTop: 'var(--space-2)' }}>
-                  Volver a marcar la línea
-                </Button>
-              </>
-            ) : drawMode ? (
-              <>
-                <p className="sc-info">
-                  Marca {points.length === 0 ? 'el primer punto' : 'el segundo punto'} sobre el
-                  video, a un lado del carril.
-                </p>
-                <Button block onClick={cancelarDibujo}>
-                  Cancelar
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="primary"
-                  block
-                  disabled={!segment || fuente === 'procesado'}
-                  onClick={() => {
-                    setDrawMode(true);
-                    setPoints([]);
-                    setWarnings([]);
-                    setHint('Pausa el video donde se vea bien el tránsito y marca el primer punto.');
-                  }}
-                >
-                  Nuevo carril
-                </Button>
-                {fuente === 'procesado' && (
-                  /* Un control deshabilitado sin explicación es una
-                     puerta cerrada sin cartel: aquí se dice por qué y
-                     cómo abrirla. */
-                  <p className="sc-info" style={{ marginTop: 'var(--space-2)' }}>
-                    Los carriles se dibujan sobre el video original. La versión con detecciones ya
-                    tiene las líneas quemadas en la imagen, así que unas nuevas no coincidirían con
-                    lo que se ve. Cambia a <strong>Original</strong> para seguir calibrando.
-                  </p>
-                )}
-              </>
-            )}
-
-
-            {/* El botón de arrancar solo aparece cuando hay algo que
-                arrancar: carriles definidos Y videos esperando. Así no se
-                puede lanzar un conteo sobre una línea que no existe. */}
-            {/* La pregunta que esto contesta es "¿el video ya está contado
-                con estas líneas o con las de antes?". Editar la geometría
-                no cambia por sí solo ningún conteo ya guardado, y sin este
-                aviso no había forma de notarlo. */}
-            {(calibStatus?.stale ?? 0) > 0 && calibrado && (
-              <div className="start-counting">
-                <Notice tone="warning" title="Los conteos son de una calibración anterior">
-                  {plural(
-                    calibStatus?.stale ?? 0,
-                    'video ya contado se procesó',
-                    'videos ya contados se procesaron',
-                  )}{' '}
-                  antes del último cambio de líneas o zonas, así que sus números y su video
-                  anotado siguen siendo los de la geometría vieja.
-                </Notice>
-                <Button
-                  variant="primary"
-                  block
-                  disabled={recontar.isPending}
-                  style={{ marginTop: 'var(--space-3)' }}
-                  onClick={() => projectId !== null && recontar.mutate(projectId)}
-                >
-                  {recontar.isPending ? 'Reencolando…' : 'Volver a contar con estas líneas'}
-                </Button>
-
-              </div>
-            )}
-
-            {(calibStatus?.stale ?? 0) === 0 &&
-              (calibStatus?.awaiting ?? 0) === 0 &&
-              calibrado &&
-              (jobs?.some((j) => j.status === 'done') ?? false) && (
-                <div className="start-counting">
-                  <Notice tone="good" title="Los conteos están al día">
-                    Todos los videos se contaron con las líneas y zonas que ves ahora.
-                  </Notice>
-                </div>
+              {(herr === 'calzada' || herr === 'acceso') && !zonaNueva && puntos.length >= 3 && (
+                <button type="button" className="is-primario" onClick={cerrarZona}>
+                  Cerrar zona <kbd>Enter</kbd>
+                </button>
               )}
-
-            {awaiting.length > 0 && calibrado && (
-              <div className="start-counting">
-                <p className="sc-info">
-                  {plural(awaiting.length, 'video esperando', 'videos esperando')},{' '}
-                  {plural(laneCount, 'carril definido', 'carriles definidos')} y{' '}
-                  {plural(accesoCount, 'acceso', 'accesos')}.
-                </p>
-                <Button
-                  variant="primary"
-                  block
-                  disabled={startCounting.isPending}
-                  onClick={() => projectId !== null && startCounting.mutate(projectId)}
-                >
-                  {startCounting.isPending ? 'Iniciando…' : 'Empezar conteo'}
-                </Button>
-              </div>
-            )}
-
-
-          </Card>
-
-          {/* Las zonas van en su propia tarjeta y no mezcladas con los
-              carriles: son cosas distintas y confundirlas es justo el
-              error que llevó a dibujar líneas paralelas a la vía. */}
-          <Card className="lane-panel zone-panel">
-            <h2>Zonas</h2>
-            <p className="sc-info">
-              La línea dice <strong>dónde</strong> se cuenta; la zona de calzada dice{' '}
-              <strong>cuál calzada</strong> es. En perspectiva las dos calzadas quedan una encima de
-              la otra y una sola línea cruza ambas — sin zonas no hay forma de separar los sentidos.
-            </p>
-            <p className="sc-info">
-              Para el <strong>aforo direccional</strong> dibuja un <strong>acceso</strong> por cada
-              brazo de la intersección. El primer acceso que pisa un vehículo es su origen y el
-              último, su destino. Cada acceso tiene que llegar hasta la orilla de la imagen, que es
-              donde el vehículo aparece por primera vez.
-            </p>
-
-            <div className="lane-list">
-              {(zones?.length ?? 0) === 0 && (
-                <EmptyState
-                  title="Sin zonas todavía"
-                  body="Rodea cada calzada con un polígono. Lo que quede fuera deja de contarse."
-                />
+              {herr === 'calzada' && zonaNueva && puntos.length === 0 && (
+                <button type="button" onClick={() => void guardarSinLinea()}>
+                  Guardar sin línea
+                </button>
               )}
-              {zones?.map((zone, i) => (
-                <div className="lane-item" key={zone.id}>
-                  <span className="lane-swatch" style={{ background: zoneColor(i, zone.kind) }} />
-                  <input
-                    className="lane-name-input"
-                    defaultValue={zone.name}
-                    aria-label={`Nombre de la zona ${zone.name}`}
-                    onBlur={(e) => {
-                      const name = e.target.value.trim();
-                      if (name && name !== zone.name) renameZone.mutate({ zoneId: zone.id, name });
-                    }}
-                  />
-                  <span className="sc-info">{zone.kind === 'acceso' ? 'acceso' : zone.kind}</span>
-                  <IconButton
-                    label={`Eliminar la zona ${zone.name}`}
-                    tone="danger"
-                    onClick={() => setZoneToDelete(zone)}
-                  >
-                    <IconClose />
-                  </IconButton>
-                </div>
-              ))}
-            </div>
-
-            {drawKind !== 'zona' && points.length === 0 && (
-              <>
-                <Button
-                  block
-                  disabled={!segment || fuente === 'procesado'}
-                  onClick={() => {
-                    setZonaKind('calzada');
-                    setDrawKind('zona');
-                    setDrawMode(true);
-                    setPoints([]);
-                    setWarnings([]);
-                    setNewName(`Calzada ${(zones?.length ?? 0) + 1}`);
-                    setHint('Marca las esquinas de la calzada. Con 3 puntos ya se puede cerrar.');
-                  }}
-                >
-                  Nueva zona de calzada
-                </Button>
-                <Button
-                  block
-                  disabled={!segment || fuente === 'procesado'}
-                  style={{ marginTop: 'var(--space-2)' }}
-                  onClick={() => {
-                    setZonaKind('acceso');
-                    setDrawKind('zona');
-                    setDrawMode(true);
-                    setPoints([]);
-                    setWarnings([]);
-                    setNewName(`Acceso ${accesoCount + 1}`);
-                    setHint(
-                      'Rodea el brazo del acceso con sus carriles de entrada y salida, hasta la orilla de la imagen.',
-                    );
-                  }}
-                >
-                  Nuevo acceso (direccional)
-                </Button>
-              </>
-            )}
-          </Card>
+              <button type="button" onClick={cancelar}>
+                Cancelar <kbd>Esc</kbd>
+              </button>
+            </span>
+          )}
         </div>
       )}
 
-      <ConfirmDialog
-        open={zoneToDelete !== null}
-        title="¿Eliminar esta zona?"
-        body={
-          zoneToDelete
-            ? `Se borra el área "${zoneToDelete.name}". Los cruces que ya se le atribuyeron se conservan en el histórico.`
-            : ''
-        }
-        confirmLabel="Eliminar zona"
-        destructive
-        onConfirm={() => {
-          if (zoneToDelete) removeZone.mutate(zoneToDelete.id);
-          setZoneToDelete(null);
-        }}
-        onCancel={() => setZoneToDelete(null)}
-      />
+      {/* --- Formulario para terminar lo dibujado ------------------------- */}
+      {pendiente && (
+        <form
+          className="est-pendiente"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void guardarPendiente();
+          }}
+        >
+          {pendiente.tipo === 'tramo' ? (
+            <>
+              <label>
+                Distancia entre las dos líneas, en metros
+                <input autoFocus inputMode="decimal" value={distancia} placeholder="8.5" onChange={(e) => setDistancia(e.target.value)} />
+              </label>
+              <p className="est-nota">
+                Mídela en el pavimento, en el sentido del tránsito: con cinta, o con la regla de un mapa satelital entre dos marcas
+                que se vean en el video. Si está mal, todas las velocidades salen mal en la misma proporción.
+              </p>
+            </>
+          ) : pendiente.tipo === 'linea' ? (
+            <p className="est-nota">Línea de conteo de «{zones?.find((z) => z.id === pendiente.zonaId)?.name}».</p>
+          ) : (
+            <label>
+              {pendiente.tipo === 'acceso' ? 'Nombre del acceso' : 'Nombre de la calzada (así sale en el reporte y el Excel)'}
+              <input autoFocus value={nombre} onChange={(e) => setNombre(e.target.value)} />
+            </label>
+          )}
+          {pendiente.tipo === 'calzada' && pendiente.linea && (
+            <ListaAvisos avisos={revisarCalzada(pendiente.zona, pendiente.linea, ancho, alto)} />
+          )}
+          {pendiente.tipo === 'linea' && (
+            <ListaAvisos
+              avisos={revisarCalzada(zones?.find((z) => z.id === pendiente.zonaId)?.points ?? null, pendiente.linea, ancho, alto)}
+            />
+          )}
+          {error && <p className="est-error">{error}</p>}
+          <div className="est-pendiente-acciones">
+            <button type="button" onClick={cancelar}>
+              Cancelar
+            </button>
+            <button type="submit" className="is-primario">
+              {pendiente.tipo === 'tramo' ? 'Guardar tramo' : pendiente.tipo === 'linea' ? 'Guardar línea' : 'Guardar'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* --- Cambios sin guardar ------------------------------------------- */}
+      {cambios > 0 && !pendiente && !dibujando && (
+        <div className="est-guardar" role="status">
+          <span>
+            {plural(cambios, 'cambio sin guardar', 'cambios sin guardar')}
+            {(jobs ?? []).some((j) => j.status === 'done') && ' · los videos ya contados quedarán con la calibración anterior hasta recontarlos'}
+          </span>
+          <button type="button" onClick={deshacer} disabled={!historial.current.length}>
+            Deshacer <kbd>Ctrl Z</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setBorrador(VACIO);
+              historial.current = [];
+            }}
+          >
+            Descartar
+          </button>
+          <button type="button" className="is-primario" disabled={guardando} onClick={() => void guardarBorrador()}>
+            {guardando ? 'Guardando…' : 'Guardar cambios'}
+          </button>
+        </div>
+      )}
+
+      {/* --- Panel de calzadas -------------------------------------------- */}
+      <aside className="est-panel" aria-label="Calzadas">
+        <header className="est-panel-cab">
+          <h2>Calzadas</h2>
+          <span className="est-panel-sub">{plural(calzadas.length, 'calzada', 'calzadas')}</span>
+        </header>
+
+        <div className="est-panel-cuerpo">
+          {calzadas.length === 0 && accesos.length === 0 && sueltas.length === 0 && (
+            <div className="est-vacio">
+              <p>
+                Una <strong>calzada</strong> es una calle con un sentido de circulación: rodéala y crúzala con su línea de conteo.
+              </p>
+              <button type="button" className="is-primario" onClick={() => empezar('calzada')} disabled={fuente === 'procesado'}>
+                Dibujar la primera calzada
+              </button>
+              {otros.length > 0 && (
+                <p className="est-nota">
+                  ¿Ya calibraste esta cámara antes?{' '}
+                  <Link to={`/proyecto/${projectId}`}>Copia la calibración de otra intersección</Link>.
+                </p>
+              )}
+            </div>
+          )}
+
+          {calzadas.map((z) => {
+            const ls = lineasDe(z.id);
+            const avisos = avisosDe(z);
+            const sel = (seleccion?.tipo === 'zona' && seleccion.id === z.id) || ls.some((l) => seleccion?.id === l.id && seleccion.tipo !== 'zona');
+            return (
+              <section key={z.id} className={`est-calzada${sel ? ' is-sel' : ''}`} style={{ ['--c' as string]: colorZona(z) }}>
+                <div className="est-calzada-cab" onClick={() => setSeleccion({ tipo: 'zona', id: z.id })}>
+                  <span className="est-punto" />
+                  <input
+                    className="est-nombre"
+                    defaultValue={z.name}
+                    key={z.name}
+                    aria-label="Nombre de la calzada"
+                    onClick={(e) => e.stopPropagation()}
+                    onFocus={() => setSeleccion({ tipo: 'zona', id: z.id })}
+                    onBlur={(e) => e.target.value.trim() !== z.name && void renombrar('zona', z.id, e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                  />
+                  <button type="button" className="est-icono" title="Borrar la calzada y su línea" onClick={(e) => { e.stopPropagation(); setBorrar({ tipo: 'calzada', id: z.id, nombre: z.name }); }}>
+                    ×
+                  </button>
+                </div>
+                {z.kind === 'excluir' && <p className="est-nota">Zona excluida: lo que cae dentro no se cuenta.</p>}
+                {z.kind === 'calzada' && (
+                  <div className="est-calzada-cuerpo">
+                    {ls.length === 0 ? (
+                      <button type="button" className="est-accion" onClick={() => empezar('linea', z.id)} disabled={fuente === 'procesado'}>
+                        + Dibujar su línea de conteo
+                      </button>
+                    ) : (
+                      ls.map((l) => (
+                        <div key={l.id} className="est-fila">
+                          <button type="button" className="est-enlace" onClick={() => setSeleccion({ tipo: 'linea', id: l.id })}>
+                            {l.name === z.name ? 'Línea de conteo' : `Línea «${l.name}»`}
+                          </button>
+                          {l.tramo ? (
+                            <span className="est-chip" title="Tramo de velocidad">
+                              velocidad · {l.tramo.distancia_m} m
+                              <button type="button" onClick={() => empezar('tramo', l.id)} title="Volver a dibujar el tramo o cambiar la distancia">✎</button>
+                              <button type="button" onClick={() => void api.setLaneTramo(l.id, null).then(refrescar)} title="Quitar el tramo">×</button>
+                            </span>
+                          ) : (
+                            <button type="button" className="est-enlace est-sec" onClick={() => empezar('tramo', l.id)} disabled={fuente === 'procesado'}>
+                              + medir velocidad
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                    <ListaAvisos avisos={avisos} compacto />
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          {sueltas.length > 0 && (
+            <section className="est-grupo">
+              <h3>Líneas sin calzada</h3>
+              <p className="est-nota">Cuentan los vehículos de todas las calles. Átalas a su calzada:</p>
+              {sueltas.map((l) => (
+                <div key={l.id} className="est-suelta">
+                  <span className="est-nombre-fijo">{l.name}</span>
+                  <select
+                    value=""
+                    onChange={(e) => e.target.value && void atar(l.id, Number(e.target.value))}
+                    aria-label={`Calzada de ${l.name}`}
+                  >
+                    <option value="">Atar a…</option>
+                    {calzadas.map((z) => (
+                      <option key={z.id} value={z.id}>
+                        {z.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="est-icono" title="Borrar la línea" onClick={() => setBorrar({ tipo: 'linea', id: l.id, nombre: l.name })}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {accesos.length > 0 && (
+            <section className="est-grupo">
+              <h3>Accesos (direccional)</h3>
+              {accesos.map((z) => (
+                <div key={z.id} className="est-suelta" style={{ ['--c' as string]: colorZona(z) }}>
+                  <span className="est-punto" />
+                  <input
+                    className="est-nombre"
+                    defaultValue={z.name}
+                    key={z.name}
+                    onBlur={(e) => e.target.value.trim() !== z.name && void renombrar('zona', z.id, e.target.value)}
+                  />
+                  <button type="button" className="est-icono" title="Borrar el acceso" onClick={() => setBorrar({ tipo: 'acceso', id: z.id, nombre: z.name })}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {error && !pendiente && <p className="est-error">{error}</p>}
+        </div>
+
+        {/* --- Conteo ---------------------------------------------------- */}
+        <footer className="est-panel-pie">
+          {(calibStatus?.stale ?? 0) > 0 && calibrado ? (
+            <>
+              <p className="est-estado is-aviso">
+                {plural(calibStatus?.stale ?? 0, 'video contado', 'videos contados')} con una calibración anterior.
+              </p>
+              <button type="button" className="est-boton" disabled={recontar.isPending || cambios > 0} onClick={() => recontar.mutate(projectId)}>
+                {recontar.isPending ? 'Reencolando…' : 'Volver a contar con estas líneas'}
+              </button>
+            </>
+          ) : awaiting.length > 0 && calibrado ? (
+            <>
+              <p className="est-estado">{plural(awaiting.length, 'video esperando', 'videos esperando')}.</p>
+              <button type="button" className="est-boton is-primario" disabled={startCounting.isPending || cambios > 0} onClick={() => startCounting.mutate(projectId)}>
+                {startCounting.isPending ? 'Iniciando…' : 'Empezar conteo'}
+              </button>
+            </>
+          ) : calibrado && (jobs ?? []).some((j) => j.status === 'done') ? (
+            <p className="est-estado is-bien">Los conteos están al día con estas calzadas.</p>
+          ) : (
+            <p className="est-estado">Dibuja al menos una calzada con su línea para poder contar.</p>
+          )}
+          {cambios > 0 && <p className="est-nota">Guarda los cambios antes de contar.</p>}
+        </footer>
+      </aside>
 
       <ConfirmDialog
-        open={toDelete !== null}
-        title="¿Eliminar este carril?"
+        open={borrar !== null}
+        title={borrar?.tipo === 'linea' ? '¿Borrar esta línea?' : borrar?.tipo === 'acceso' ? '¿Borrar este acceso?' : '¿Borrar esta calzada?'}
         body={
-          toDelete
-            ? `Se borra la línea "${toDelete.name}". Los conteos que ya registró se conservan en el histórico.`
+          borrar
+            ? borrar.tipo === 'calzada'
+              ? `Se borran la zona «${borrar.nombre}» y su línea de conteo. Lo ya contado se conserva en el histórico.`
+              : `Se borra «${borrar.nombre}». Lo ya contado se conserva en el histórico.`
             : ''
         }
-        confirmLabel="Eliminar carril"
+        confirmLabel="Borrar"
         destructive
-        onConfirm={() => {
-          if (toDelete) removeLane.mutate(toDelete.id);
-          setToDelete(null);
-        }}
-        onCancel={() => setToDelete(null)}
+        onConfirm={() => void confirmarBorrado()}
+        onCancel={() => setBorrar(null)}
       />
-    </>
+    </div>
+  );
+}
+
+function ListaAvisos({ avisos, compacto = false }: { avisos: Aviso[]; compacto?: boolean }) {
+  if (!avisos.length) {
+    return compacto ? <p className="est-ok">✓ Línea bien puesta</p> : null;
+  }
+  return (
+    <ul className={`est-avisos${compacto ? ' is-compacto' : ''}`}>
+      {avisos.map((a, i) => (
+        <li key={i} className={a.nivel === 'error' ? 'is-error' : 'is-aviso'}>
+          {a.texto}
+        </li>
+      ))}
+    </ul>
   );
 }

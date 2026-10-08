@@ -1,47 +1,26 @@
 /*
-  Mesa de trabajo: el video de la intersección con controles de
-  reproducción, y encima el lienzo donde se dibujan las líneas de conteo.
-
-  Sirve para las dos cosas que se hacen mirando el video:
-
-   · CALIBRAR — recorrer la grabación original, pausar donde el tránsito
-     se ve claro y dibujar ahí las líneas. Antes se calibraba sobre un
-     cuadro fijo del centro, lo que obliga a adivinar: si en ese instante
-     no pasa nadie, no hay forma de saber por dónde circulan.
-
-   · REVISAR — recorrer la versión que dibujó la IA para comprobar si
-     contó bien. Es el mismo reproductor con los mismos controles, así
-     que se puede parar en el cuadro exacto de un cruce y comparar.
+  Mesa de trabajo: el video de la intersección ocupando la pantalla, con
+  zoom y desplazamiento, sus controles flotando encima, y una capa de
+  dibujo que pone quien la usa (el calibrador).
 
   Cómo se reproduce. Al darle reproducir, si el archivo lo admite (el video
   con detecciones siempre; el original si es .mp4/.mov/.webm), con un
-  <video> de verdad que el navegador transmite por partes. Pedirlo cuadro
-  por cuadro funcionaba en la red local, pero por internet cada cuadro de
-  2560x1440 tarda 2.6 s y el video se veía en cámara lenta (medido el
-  1-oct-2026 por la dirección pública). En pausa se vuelve al cuadro exacto
-  del servidor, que es lo que hace falta para calibrar y para avanzar de
-  uno en uno.
+  <video> de verdad que el navegador transmite por partes: pedirlo cuadro
+  por cuadro por internet tardaba 2.6 s por cuadro de 2560x1440 (medido el
+  1-oct-2026). En pausa se vuelve al cuadro exacto del servidor, que es lo
+  que hace falta para calibrar y para avanzar de uno en uno. Los .mkv,
+  .avi o .wmv, que el navegador no reproduce, van cuadro por cuadro.
 
-  Por qué no es SOLO un <video>: los aforos llegan en
-  .mkv, .avi o .wmv, que los navegadores no reproducen de forma fiable, y
-  un video todavía sin procesar no tiene versión en H.264 — ese
-  transcodificado ocurre después de contar, y calibrar va antes. Así que
-  los cuadros los sirve el backend uno a uno. Medido de punta a punta:
-  2.7 ms por cuadro consecutivo (369 por segundo) y 15 ms al saltar con la
-  barra de tiempo. El video original va a 15 cuadros por segundo, así que
-  sobra para verlo a velocidad real.
-
-  Usar el mismo motor para las dos fuentes tiene una ventaja que un
-  <video> nativo no da: avanzar de cuadro en cuadro sobre el video
-  anotado, que es justo lo que hace falta para verificar un conteo.
-
-  El cuadro va en un <img> y las líneas en un <canvas> transparente
-  encima. Separarlos evita redibujar la imagen completa quince veces por
-  segundo solo porque cambió un punto de una línea.
+  Zoom. Calibrar un video de 2560 px en un recuadro de 1000 obligaba a
+  poner la línea a ojo (8-oct-2026, el dueño). La rueda del mouse acerca en
+  el punto del cursor, como en un mapa; con zoom, arrastrar el fondo
+  desplaza la imagen. El zoom es una transformación CSS del marco, así que
+  la imagen, el video y la capa de dibujo se mueven juntos y la capa sigue
+  recibiendo los clics en coordenadas del video.
 */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, IconButton, SelectField } from './ui';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { IconButton } from './ui';
 import {
   IconPause,
   IconPlay,
@@ -53,93 +32,66 @@ import {
   IconJumpForward,
 } from './Icons';
 import { frameUrl, getFrameDetections, originalUrl, videoUrl } from '../lib/api';
-import type { FrameDetection, FuenteVideo, Lane, Point, VideoSegment, Zone } from '../lib/types';
+import type { FrameDetection, FuenteVideo, VideoSegment } from '../lib/types';
 
-/* Colores de carril: se dibujan sobre el video, no sobre la interfaz, así
-   que no salen de los tokens de tema. Son tonos saturados que destacan
-   contra el asfalto con cualquier iluminación. */
-export const LANE_COLORS = ['#ff5470', '#2dd4ff', '#ffd23f', '#7cff6b', '#c77dff', '#ff9f45'];
-export const laneColor = (i: number) => LANE_COLORS[i % LANE_COLORS.length];
-
-/* Las zonas usan una paleta aparte de la de los carriles a propósito: son
-   cosas distintas (un área contra una línea) y compartir colores haría
-   creer que la zona 1 y el carril 1 tienen algo que ver. */
-export const ZONE_COLORS = ['#ffbe46', '#82eb82', '#eb8ceb', '#5ac8ff'];
-export const zoneColor = (i: number, kind?: string) =>
-  kind === 'excluir' ? '#c85050' : ZONE_COLORS[i % ZONE_COLORS.length];
+/* Colores de calzada: se dibujan sobre el video, no sobre la interfaz, así
+   que no salen de los tokens de tema. Saturados para destacar contra el
+   asfalto con cualquier luz. La zona y su línea comparten color: son la
+   misma calzada. */
+export const CALZADA_COLORS = ['#ff5470', '#2dd4ff', '#ffd23f', '#7cff6b', '#c77dff', '#ff9f45'];
+export const calzadaColor = (i: number) => CALZADA_COLORS[i % CALZADA_COLORS.length];
+export const ACCESO_COLORS = ['#ffbe46', '#82eb82', '#eb8ceb', '#5ac8ff'];
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 const JUMP_SECONDS = 5;
-
-/** Vector unitario hacia el lado que el backend clasifica como "Entrada".
-    Misma fórmula (producto cruzado) que usa counter.py, para que no haya
-    sorpresas entre lo que se ve aquí y lo que de verdad cuenta el motor. */
-function entradaDirection(p1: Point, p2: Point): [number, number] {
-  const lx = p2[0] - p1[0];
-  const ly = p2[1] - p1[1];
-  const len = Math.hypot(lx, ly) || 1;
-  const perp: [number, number] = [-ly / len, lx / len];
-  return perp[0] * ly - perp[1] * lx > 0 ? perp : [-perp[0], -perp[1]];
-}
+const ZOOM_MAX = 10;
 
 function mmss(seconds: number): string {
   const s = Math.max(0, seconds);
-  const m = Math.floor(s / 60);
-  const r = Math.floor(s % 60);
-  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+export interface CapaContexto {
+  ancho: number;
+  alto: number;
+  /** Píxeles de video por píxel de pantalla, con el zoom aplicado. */
+  unidad: number;
+  detecciones: FrameDetection[];
+  /** Para que la capa pida desplazar la imagen al arrastrar el fondo. */
+  onFondoPointerDown: (e: React.PointerEvent) => void;
 }
 
 interface Props {
   segments: VideoSegment[];
   jobId: number | null;
   onJobChange: (id: number) => void;
-  lanes: Lane[];
-  /** Áreas de calzada ya guardadas. */
-  zones?: Zone[];
-  /** Puntos de la línea o del polígono que se está dibujando ahora mismo. */
-  drawing: Point[];
-  /** Si está activo, un clic en el lienzo agrega un punto. */
-  drawMode: boolean;
-  /** 'linea' marca 2 puntos; 'zona' acumula vértices hasta cerrar. */
-  drawKind?: 'linea' | 'zona';
-  onCanvasPoint: (p: Point) => void;
-  /** Pide y dibuja las cajas del detector sobre el video original. */
-  showDetections?: boolean;
-  /** Rastro de movimiento acumulado, si está disponible y encendido. */
-  heatmap: HTMLImageElement | null;
-  showHeatmap: boolean;
-  /* La fuente vive fuera del componente para que un enlace pueda
-     aterrizar directamente en "este segmento, con detecciones" — que es
-     como se llega desde la cola de procesamiento. */
   fuente: FuenteVideo;
   onFuenteChange: (f: FuenteVideo) => void;
-  /** Ancho real del video, en cuanto se conoce por el primer cuadro. */
+  showDetections?: boolean;
+  /** Mientras se dibuja, el video no se reproduce. */
+  pausar?: boolean;
   onTamano?: (ancho: number, alto: number) => void;
+  /** La capa de dibujo, dentro del marco que se acerca y se desplaza. */
+  children?: (c: CapaContexto) => ReactNode;
+  /** Espacio que tapan los paneles flotantes, en píxeles de pantalla: la
+      imagen se ajusta al hueco libre para que al abrir no quede debajo. */
+  margenes?: { izquierda?: number; arriba?: number; derecha?: number; abajo?: number };
 }
 
 export function VideoWorkspace({
   segments,
   jobId,
   onJobChange,
-  lanes,
-  zones = [],
-  drawing,
-  drawMode,
-  drawKind = 'linea',
-  onCanvasPoint,
-  showDetections = false,
-  heatmap,
-  showHeatmap,
   fuente,
   onFuenteChange,
+  showDetections = false,
+  pausar = false,
   onTamano,
+  children,
+  margenes,
 }: Props) {
   const segment = segments.find((s) => s.job_id === jobId) ?? null;
 
-  /* Dimensiones reales del video. Arrancan con lo que diga el listado (que
-     puede no saberlas) y se corrigen con el primer cuadro que llega: la
-     imagen cargada es la fuente exacta, y evita que el servidor tenga que
-     abrir cada archivo solo para medirlo. */
   const [tamano, setTamano] = useState<{ ancho: number; alto: number } | null>(null);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -150,23 +102,15 @@ export function VideoWorkspace({
 
   const imgRef = useRef<HTMLImageElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  /* Reproduciendo con el <video> (true) o mostrando el cuadro exacto. */
+  const escenaRef = useRef<HTMLDivElement>(null);
   const [modoVideo, setModoVideo] = useState(false);
   const modoVideoRef = useRef(false);
   modoVideoRef.current = modoVideo;
-  /* El navegador no pudo con el archivo (códec raro): cuadro por cuadro. */
   const [videoFallo, setVideoFallo] = useState(false);
   const [bufferizando, setBufferizando] = useState(false);
 
-  /* Detecciones del cuadro que se está viendo. Cada una cuesta una
-     inferencia de GPU (~50 ms), así que solo se piden con el video en
-     pausa: hacerlo durante la reproducción pondría al servidor a detectar
-     15 cuadros por segundo para nada, compitiendo con la cola de conteo
-     que probablemente esté corriendo al mismo tiempo. */
   const [detections, setDetections] = useState<FrameDetection[]>([]);
   const [cargandoDet, setCargandoDet] = useState(false);
-  const stageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef(0);
   frameRef.current = frame;
 
@@ -186,8 +130,86 @@ export function VideoWorkspace({
           ? originalUrl(jobId)
           : null;
 
-  // Al cambiar de segmento se vuelve al principio y se detiene: seguir
-  // reproduciendo en un punto arbitrario de otro video desorienta.
+  /* --- Encaje y zoom --------------------------------------------------- */
+  const [escena, setEscena] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [vista, setVista] = useState({ z: 1, tx: 0, ty: 0 });
+  const vistaRef = useRef(vista);
+  vistaRef.current = vista;
+  useLayoutEffect(() => {
+    const el = escenaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setEscena({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setEscena({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, [segment !== null]);
+
+  const ra = ancho && alto ? ancho / alto : 16 / 9;
+  const mi = margenes?.izquierda ?? 0;
+  const ma = margenes?.arriba ?? 0;
+  const libreW = Math.max(escena.w * 0.4, escena.w - mi - (margenes?.derecha ?? 0));
+  const libreH = Math.max(escena.h * 0.4, escena.h - ma - (margenes?.abajo ?? 0));
+  const ajuste = escena.w && escena.h ? Math.min(libreW, libreH * ra) : 0;
+  const fw = ajuste;
+  const fh = ajuste / ra;
+  const ox = Math.min(mi, escena.w - libreW) + (libreW - fw) / 2;
+  const oy = Math.min(ma, escena.h - libreH) + (libreH - fh) / 2;
+  const unidad = ancho && fw ? ancho / (fw * vista.z) : 1;
+
+  const zoomEn = useCallback(
+    (factor: number, cx?: number, cy?: number) => {
+      setVista((v) => {
+        const z2 = Math.max(1, Math.min(ZOOM_MAX, v.z * factor));
+        if (z2 === 1) return { z: 1, tx: 0, ty: 0 };
+        const px = cx ?? escena.w / 2;
+        const py = cy ?? escena.h / 2;
+        // El punto bajo el cursor se queda en su sitio.
+        const wx = (px - ox - v.tx) / v.z;
+        const wy = (py - oy - v.ty) / v.z;
+        return { z: z2, tx: px - ox - wx * z2, ty: py - oy - wy * z2 };
+      });
+    },
+    [escena.w, escena.h, ox, oy],
+  );
+
+  useEffect(() => {
+    const el = escenaRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      // Proporcional al giro: una muesca de ratón (~100) acerca 1.17×, y el
+      // panel táctil, que manda muchos eventos chicos, no salta a lo loco.
+      const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      zoomEn(Math.exp(-Math.max(-300, Math.min(300, d)) * 0.0016), e.clientX - r.left, e.clientY - r.top);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoomEn]);
+
+  const desplazar = useCallback((e: React.PointerEvent | PointerEvent) => {
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const b = { tx: vistaRef.current.tx, ty: vistaRef.current.ty };
+    const mover = (ev: PointerEvent) => {
+      setVista((v) => (v.z === 1 ? v : { ...v, tx: b.tx + ev.clientX - x0, ty: b.ty + ev.clientY - y0 }));
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover);
+      window.removeEventListener('pointerup', soltar);
+    };
+    window.addEventListener('pointermove', mover);
+    window.addEventListener('pointerup', soltar);
+  }, []);
+
+  const onFondoPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (vista.z > 1) desplazar(e);
+    },
+    [vista.z, desplazar],
+  );
+
+  /* --- Segmento y fuente ---------------------------------------------- */
   useEffect(() => {
     setFrame(0);
     setPlaying(false);
@@ -197,31 +219,21 @@ export function VideoWorkspace({
     setVideoFallo(false);
   }, [jobId]);
 
-  // Si el segmento elegido no tiene versión con detecciones, se vuelve al
-  // original en vez de dejar la pestaña marcada sobre un video que no está.
-  //
-  // La condición exige que el segmento YA se conozca. Sin eso, al abrir un
-  // enlace del tipo `?ver=procesado` la salvaguarda se disparaba en el
-  // primer render —cuando los metadatos todavía no habían llegado y por
-  // tanto `hayProcesado` era falso— y devolvía a "Original" el enlace que
-  // pedía justo lo contrario.
   useEffect(() => {
     if (!segment) return;
     if (fuente === 'procesado' && !hayProcesado) onFuenteChange('original');
   }, [segment, fuente, hayProcesado, onFuenteChange]);
 
-  // Cambiar de fuente conserva la posición: la gracia de comparar es ver
-  // el MISMO instante con y sin las cajas de la IA.
   useEffect(() => {
     setPlaying(false);
     setTerminado(false);
   }, [fuente]);
 
-  /* --- Carga de un cuadro ---------------------------------------------
-     Se precarga en un Image suelto y solo se cambia el src visible cuando
-     ya está decodificado. Asignarlo directamente dejaba el hueco en
-     blanco un instante en cada cuadro, y a quince por segundo eso es un
-     parpadeo constante. */
+  useEffect(() => {
+    if (pausar) setPlaying(false);
+  }, [pausar]);
+
+  /* --- Carga de un cuadro: precargado, sin parpadeo ------------------- */
   const loadFrame = useCallback(
     (n: number) =>
       new Promise<boolean>((resolve) => {
@@ -250,8 +262,6 @@ export function VideoWorkspace({
   );
 
   useEffect(() => {
-    // Durante la reproducción con <video> el cuadro avanza solo; pedir la
-    // imagen de cada uno sería volver a lo que se quería evitar.
     if (modoVideoRef.current) return;
     void loadFrame(frame);
   }, [frame, loadFrame]);
@@ -260,13 +270,7 @@ export function VideoWorkspace({
     if (tamano) onTamano?.(tamano.ancho, tamano.alto);
   }, [tamano, onTamano]);
 
-  /* --- Bucle de reproducción ------------------------------------------
-     Encadenado, no por intervalo: cada cuadro espera a que el anterior
-     haya llegado. Con un setInterval, un tirón de red encolaría
-     peticiones y el video se aceleraría de golpe al recuperarse. */
-  /* Reproducción con <video>. El contador y la barra siguen al video; al
-     pausar se pide el cuadro exacto donde quedó, y solo cuando llega se
-     esconde el video, para que no haya un hueco negro en medio. */
+  /* --- Reproducción con <video> -------------------------------------- */
   useEffect(() => {
     const v = videoRef.current;
     if (!playing || !fuenteVideo || !v || !total) return;
@@ -275,15 +279,12 @@ export function VideoWorkspace({
     modoVideoRef.current = true;
     v.playbackRate = speed;
     const inicio = frameRef.current / fps;
-    // Sin metadatos todavía, mover la posición no tiene efecto y el video
-    // arrancaría desde el principio en vez de donde estaba el cuadro.
     const fijarInicio = () => {
       if (Math.abs(v.currentTime - inicio) > 0.5 / fps) v.currentTime = inicio;
     };
     if (v.readyState >= 1) fijarInicio();
     else v.addEventListener('loadedmetadata', fijarInicio, { once: true });
     v.play().catch((e: unknown) => {
-      // AbortError = se pausó antes de arrancar; no es una falla del archivo.
       if (cancelado || (e instanceof DOMException && e.name === 'AbortError')) return;
       setVideoFallo(true);
     });
@@ -316,8 +317,6 @@ export function VideoWorkspace({
         setModoVideo(false);
       });
     };
-    // La velocidad y la repetición se aplican aparte: cambiarlas no debe
-    // detener y volver a arrancar el video.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, fuenteVideo, fps, total, loadFrame]);
 
@@ -328,29 +327,23 @@ export function VideoWorkspace({
     if (videoRef.current) videoRef.current.loop = repetir;
   }, [repetir]);
 
+  /* --- Reproducción cuadro por cuadro (formatos que el navegador no lee) */
   useEffect(() => {
     if (!playing || fuenteVideo || jobId === null || !total) return;
     let cancelled = false;
     let timer = 0;
-
     const periodo = 1000 / (fps * speed);
-
     const paso = async () => {
       if (cancelled) return;
       let siguiente = frameRef.current + 1;
-
       if (siguiente >= total) {
         if (!repetir) {
-          // Al terminar no se deja el botón en "Reproducir" sin más: se
-          // marca que se acabó, y el botón pasa a decir "Repetir". Sin
-          // eso, pulsar reproducir al final no hacía nada visible.
           setPlaying(false);
           setTerminado(true);
           return;
         }
         siguiente = 0;
       }
-
       const t0 = performance.now();
       const ok = await loadFrame(siguiente);
       if (cancelled) return;
@@ -360,12 +353,8 @@ export function VideoWorkspace({
       }
       frameRef.current = siguiente;
       setFrame(siguiente);
-      // Se descuenta lo que tardó en llegar, para que la velocidad
-      // elegida sea la que se ve y no dependa de la latencia.
-      const espera = Math.max(0, periodo - (performance.now() - t0));
-      timer = window.setTimeout(() => void paso(), espera);
+      timer = window.setTimeout(() => void paso(), Math.max(0, periodo - (performance.now() - t0)));
     };
-
     timer = window.setTimeout(() => void paso(), periodo);
     return () => {
       cancelled = true;
@@ -373,23 +362,14 @@ export function VideoWorkspace({
     };
   }, [playing, fuenteVideo, jobId, total, fps, speed, repetir, loadFrame]);
 
-  // Dibujar exige una imagen quieta: al empezar a marcar puntos se pausa.
-  useEffect(() => {
-    if (drawMode) setPlaying(false);
-  }, [drawMode]);
-
+  /* --- Detecciones del cuadro en pausa ------------------------------- */
   useEffect(() => {
     if (!showDetections || !segment || playing || fuente === 'procesado') {
-      // El mismo arreglo si ya estaba vacío. Un [] nuevo en cada cuadro
-      // volvía a dibujar el lienzo entero 20 veces por segundo mientras se
-      // reproducía, y en un equipo modesto eso trababa el video.
       setDetections((d) => (d.length ? [] : d));
       return;
     }
     let cancelado = false;
     setCargandoDet(true);
-    // Pequeña espera: al avanzar cuadro a cuadro con las flechas se
-    // dispararía una inferencia por pulsación.
     const t = setTimeout(() => {
       getFrameDetections(segment.job_id, frame)
         .then((r) => !cancelado && setDetections(r.detections))
@@ -399,225 +379,10 @@ export function VideoWorkspace({
     return () => {
       cancelado = true;
       clearTimeout(t);
-      window.clearTimeout(t);
     };
   }, [showDetections, segment, frame, playing, fuente]);
 
-  /* --- Lienzo de líneas ------------------------------------------------ */
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !segment || ancho === null || alto === null) return;
-
-    // Asignar el tamaño reserva de nuevo el lienzo (hasta 2560x1440, 15 MB):
-    // solo cuando cambia. Para borrar basta clearRect.
-    if (canvas.width !== ancho) canvas.width = ancho;
-    if (canvas.height !== alto) canvas.height = alto;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Sobre el video procesado la IA ya dibujó sus propias líneas y cajas.
-    // Repintar las nuestras encima duplicaría cada línea con un desfase de
-    // un píxel y haría imposible saber cuál es cuál.
-    if (fuente === 'procesado') return;
-
-    // El rastro va debajo de las líneas: sirve para juzgar si la línea
-    // cruza el tránsito o corre a lo largo de él.
-    if (showHeatmap && heatmap) {
-      ctx.globalAlpha = 0.55;
-      ctx.drawImage(heatmap, 0, 0, canvas.width, canvas.height);
-      ctx.globalAlpha = 1;
-    }
-
-    /* Las zonas van DEBAJO de las líneas: delimitan el área y las líneas
-       son lo que hay que poder ver con precisión para colocarlas bien. */
-    const poligono = (pts: Point[], color: string, label: string | null, cerrado: boolean) => {
-      if (pts.length < 2) return;
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
-      if (cerrado) ctx.closePath();
-
-      if (cerrado) {
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 0.2;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      for (const p of pts) {
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], 5.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      if (label) {
-        const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
-        const top = Math.min(...pts.map((p) => p[1]));
-        ctx.font = 'bold 13px sans-serif';
-        const w = ctx.measureText(label).width;
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.fillRect(cx - w / 2 - 5, top - 20, w + 10, 18);
-        ctx.fillStyle = color;
-        ctx.fillText(label, cx - w / 2, top - 7);
-      }
-    };
-
-    zones.forEach((z, i) => poligono(z.points, zoneColor(i, z.kind), z.name, true));
-
-    const flecha = (from: Point, dir: [number, number], color: string) => {
-      const to: Point = [from[0] + dir[0] * 26, from[1] + dir[1] * 26];
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(from[0], from[1]);
-      ctx.lineTo(to[0], to[1]);
-      ctx.stroke();
-      const a = Math.atan2(dir[1], dir[0]);
-      ctx.beginPath();
-      ctx.moveTo(to[0], to[1]);
-      ctx.lineTo(to[0] - 8 * Math.cos(a - 0.4), to[1] - 8 * Math.sin(a - 0.4));
-      ctx.lineTo(to[0] - 8 * Math.cos(a + 0.4), to[1] - 8 * Math.sin(a + 0.4));
-      ctx.closePath();
-      ctx.fill();
-    };
-
-    const linea = (p1: Point, p2: Point, color: string, label: string | null) => {
-      // Contorno oscuro bajo la línea: sobre asfalto claro o faros una
-      // línea de color plano se pierde.
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.moveTo(p1[0], p1[1]);
-      ctx.lineTo(p2[0], p2[1]);
-      ctx.stroke();
-
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(p1[0], p1[1]);
-      ctx.lineTo(p2[0], p2[1]);
-      ctx.stroke();
-
-      for (const p of [p1, p2]) {
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], 6.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      const mid: Point = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-      flecha(mid, entradaDirection(p1, p2), color);
-
-      if (label) {
-        ctx.font = 'bold 14px sans-serif';
-        const w = ctx.measureText(label).width;
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.fillRect(mid[0] + 6, mid[1] - 18, w + 10, 20);
-        ctx.fillStyle = color;
-        ctx.fillText(label, mid[0] + 11, mid[1] - 3);
-      }
-    };
-
-    /* Cajas del detector calculadas para ESTE cuadro. A diferencia de las
-       del video procesado, están al día con la calibración actual: se
-       pueden ver mientras se mueven las líneas. */
-    for (const d of detections) {
-      const [x1, y1, x2, y2] = d.bbox;
-      // Gris para lo que el filtro de zonas descartó: verlo es lo que
-      // delata una zona mal dibujada antes de gastar una hora contando.
-      const color = !d.en_zona ? '#8a8f98' : d.confidence >= 0.4 ? '#4ade80' : '#fb923c';
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash(d.en_zona ? [] : [3, 3]);
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-      ctx.setLineDash([]);
-      ctx.font = '10px sans-serif';
-      ctx.fillStyle = color;
-      ctx.fillText(d.confidence.toFixed(2), x1, Math.max(9, y1 - 2));
-    }
-
-    /* El tramo de velocidad va punteado: es la segunda manguera, no una
-       línea que cuente. Se une a la de conteo por los puntos medios y se
-       rotula con la distancia, para que se lea qué se midió en el
-       pavimento — un error en ese número escala todas las velocidades. */
-    lanes.forEach((lane, i) => {
-      if (!lane.tramo) return;
-      const color = laneColor(i);
-      const [q1, q2] = lane.tramo.linea;
-      const m1: Point = [
-        (lane.points[0][0] + lane.points[1][0]) / 2,
-        (lane.points[0][1] + lane.points[1][1]) / 2,
-      ];
-      const m2: Point = [(q1[0] + q2[0]) / 2, (q1[1] + q2[1]) / 2];
-      ctx.setLineDash([6, 5]);
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(q1[0], q1[1]);
-      ctx.lineTo(q2[0], q2[1]);
-      ctx.stroke();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(q1[0], q1[1]);
-      ctx.lineTo(q2[0], q2[1]);
-      ctx.stroke();
-      ctx.setLineDash([2, 4]);
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(m1[0], m1[1]);
-      ctx.lineTo(m2[0], m2[1]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      const texto = `${lane.tramo.distancia_m} m`;
-      const c: Point = [(m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2];
-      ctx.font = 'bold 12px sans-serif';
-      const w = ctx.measureText(texto).width;
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillRect(c[0] - w / 2 - 4, c[1] + 6, w + 8, 16);
-      ctx.fillStyle = color;
-      ctx.fillText(texto, c[0] - w / 2, c[1] + 18);
-    });
-
-    lanes.forEach((lane, i) => linea(lane.points[0], lane.points[1], laneColor(i), lane.name));
-
-    if (drawKind === 'zona') {
-      // Abierto mientras se dibuja: el área no está definida hasta cerrarla,
-      // y mostrarla rellena antes daría una idea equivocada de su forma.
-      poligono(drawing, '#ffffff', null, false);
-    } else if (drawing.length === 1) {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.beginPath();
-      ctx.arc(drawing[0][0], drawing[0][1], 6.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(drawing[0][0], drawing[0][1], 5, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (drawing.length === 2) {
-      linea(drawing[0], drawing[1], '#ffffff', null);
-    }
-  }, [segment, lanes, zones, drawing, drawKind, detections, heatmap, showHeatmap, fuente]);
-
-  /* --- Transporte ------------------------------------------------------ */
-
+  /* --- Transporte ----------------------------------------------------- */
   const irA = useCallback(
     (n: number) => {
       if (!total) return;
@@ -626,13 +391,7 @@ export function VideoWorkspace({
     },
     [total],
   );
-
-  const saltar = useCallback(
-    (segundos: number) => irA(frameRef.current + Math.round(segundos * fps)),
-    [irA, fps],
-  );
-
-  /** Reproducir, pausar, o volver a empezar si ya terminó. */
+  const saltar = useCallback((s: number) => irA(frameRef.current + Math.round(s * fps)), [irA, fps]);
   const alternarReproduccion = useCallback(() => {
     if (terminado) {
       setTerminado(false);
@@ -643,13 +402,11 @@ export function VideoWorkspace({
     setPlaying((v) => !v);
   }, [terminado]);
 
-  // Atajos de teclado dentro de la mesa. Espacio no se intercepta cuando
-  // el foco está en un botón: ahí ya significa "activar este botón".
   const onKeyDown = (e: React.KeyboardEvent) => {
-    const target = e.target as HTMLElement;
-    const esControl = ['BUTTON', 'INPUT', 'SELECT', 'A'].includes(target.tagName);
-
-    if (e.key === ' ' && !esControl) {
+    const t = e.target as HTMLElement;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName)) return;
+    const esBoton = ['BUTTON', 'A'].includes(t.tagName);
+    if (e.key === ' ' && !esBoton) {
       e.preventDefault();
       alternarReproduccion();
     } else if (e.key === 'ArrowLeft') {
@@ -662,31 +419,20 @@ export function VideoWorkspace({
       setPlaying(false);
       if (e.shiftKey) saltar(JUMP_SECONDS);
       else irA(frameRef.current + 1);
+    } else if (e.key === '+' || e.key === '=') {
+      zoomEn(1.4);
+    } else if (e.key === '-') {
+      zoomEn(1 / 1.4);
+    } else if (e.key === '0') {
+      setVista({ z: 1, tx: 0, ty: 0 });
     }
-  };
-
-  const onStageClick = (e: React.MouseEvent) => {
-    if (!segment) return;
-    // Fuera del modo dibujo, un clic en el video reproduce o pausa, que es
-    // lo que hace cualquier reproductor.
-    if (!drawMode) {
-      alternarReproduccion();
-      return;
-    }
-    const stage = stageRef.current;
-    if (!stage || ancho === null || alto === null) return;
-    const r = stage.getBoundingClientRect();
-    onCanvasPoint([
-      ((e.clientX - r.left) * ancho) / r.width,
-      ((e.clientY - r.top) * alto) / r.height,
-    ]);
   };
 
   if (!segment) {
     return (
       <div className="workspace">
-        <div className="ws-stage ws-stage-empty">
-          <p>Elige una intersección con videos para empezar a calibrar.</p>
+        <div className="ws-escena ws-vacia">
+          <p>Cargando los videos de esta intersección…</p>
         </div>
       </div>
     );
@@ -694,208 +440,165 @@ export function VideoWorkspace({
 
   const tiempo = frame / fps;
   const etiquetaTiempo = `${mmss(tiempo)} / ${mmss(segment.duracion_s)}`;
-  const etiquetaPlay = terminado ? 'Repetir' : playing ? 'Pausa' : 'Reproducir';
+  const horaReal = segment.hora_inicio
+    ? new Date(new Date(segment.hora_inicio.replace(' ', 'T')).getTime() + tiempo * 1000)
+        .toTimeString()
+        .slice(0, 8)
+    : null;
 
   return (
-    <div className="workspace" onKeyDown={onKeyDown}>
-      <div className="ws-head">
-        {segments.length > 1 && (
-          <SelectField
-            label="Segmento"
-            value={jobId ?? ''}
-            onChange={(e) => onJobChange(Number(e.target.value))}
-          >
-            {segments.map((s) => (
-              <option key={s.job_id} value={s.job_id}>
-                {s.nombre}
-                {s.hora_inicio ? ` — inicia ${s.hora_inicio.slice(11, 19)}` : ''}
-              </option>
-            ))}
-          </SelectField>
-        )}
-
-        {/*
-          Grupo de radios, no dos botones: son opciones excluyentes de una
-          misma pregunta ("¿qué video estoy viendo?"), y con radios las
-          flechas del teclado se mueven entre ellas y el lector de pantalla
-          anuncia "1 de 2".
-        */}
-        <fieldset className="ws-source">
-          <legend>Ver</legend>
-          <div className="ws-source-options">
-            <label className={fuente === 'original' ? 'is-on' : undefined}>
-              <input
-                type="radio"
-                name="fuente-video"
-                checked={fuente === 'original'}
-                onChange={() => onFuenteChange('original')}
-              />
-              <span>Original</span>
-            </label>
-            <label
-              className={`${fuente === 'procesado' ? 'is-on' : ''}${hayProcesado ? '' : ' is-off'}`}
-            >
-              <input
-                type="radio"
-                name="fuente-video"
-                checked={fuente === 'procesado'}
-                disabled={!hayProcesado}
-                onChange={() => onFuenteChange('procesado')}
-              />
-              <span>Con detecciones</span>
-            </label>
-          </div>
-          <p className="ws-source-hint">
-            {!hayProcesado
-              ? 'La versión con detecciones aparece cuando termina el conteo de este segmento.'
-              : fuente === 'procesado'
-                ? // Se aclara de QUÉ calibración son esas líneas: están quemadas
-                  // en la imagen desde que se procesó el video, así que si
-                  // después se movieron no coinciden con las de Original —
-                  // que es exactamente la confusión que provoca si no se dice.
-                  'Lo que vio la IA cuando se procesó. Sus líneas están quemadas en la imagen: si las editaste después, aquí siguen las anteriores.'
-                : 'La grabación tal como se subió. Es sobre esta donde se dibujan los carriles.'}
-          </p>
-        </fieldset>
-      </div>
-
+    <div className="workspace" onKeyDown={onKeyDown} tabIndex={-1}>
       <div
-        className={`ws-stage${drawMode ? ' is-drawing' : ''}`}
-        ref={stageRef}
-        onClick={onStageClick}
-        /* Hasta que llega el primer cuadro se reserva 16:9, para que la
-           tarjeta no salte de alto y mueva los controles bajo el cursor. */
-        style={{ aspectRatio: ancho && alto ? `${ancho} / ${alto}` : '16 / 9' }}
+        className="ws-escena"
+        ref={escenaRef}
+        onPointerDown={(e) => {
+          // Botón central: desplazar con cualquier herramienta.
+          if (e.button === 1) {
+            e.preventDefault();
+            desplazar(e);
+          }
+        }}
       >
-        <img
-          ref={imgRef}
-          alt={`Cuadro ${frame + 1} de ${segment.nombre}`}
-          className={modoVideo ? 'is-oculto' : undefined}
-        />
-        {fuenteVideo && (
-          <video
-            ref={videoRef}
-            key={fuenteVideo}
-            src={fuenteVideo}
-            className={modoVideo ? undefined : 'is-oculto'}
-            muted
-            playsInline
-            preload="metadata"
-            loop={repetir}
-            aria-hidden="true"
-            onWaiting={() => setBufferizando(true)}
-            onPlaying={() => setBufferizando(false)}
-            onPause={() => setBufferizando(false)}
-            onError={() => {
-              // Formato que el navegador no reproduce: se sigue cuadro por
-              // cuadro, como antes.
-              setVideoFallo(true);
-              setModoVideo(false);
-            }}
-          />
-        )}
-        {/* El lienzo solo pinta; los clics los recoge el contenedor, que
-            es quien conoce la escala entre píxeles del video y de pantalla. */}
-        <canvas ref={canvasRef} aria-hidden="true" />
+        <div
+          className="ws-marco"
+          style={{
+            width: fw,
+            height: fh,
+            transform: `translate(${ox + vista.tx}px, ${oy + vista.ty}px) scale(${vista.z})`,
+          }}
+        >
+          <img ref={imgRef} alt={`Cuadro ${frame + 1} de ${segment.nombre}`} className={modoVideo ? 'is-oculto' : undefined} draggable={false} />
+          {fuenteVideo && (
+            <video
+              ref={videoRef}
+              key={fuenteVideo}
+              src={fuenteVideo}
+              className={modoVideo ? undefined : 'is-oculto'}
+              muted
+              playsInline
+              preload="metadata"
+              loop={repetir}
+              aria-hidden="true"
+              onWaiting={() => setBufferizando(true)}
+              onPlaying={() => setBufferizando(false)}
+              onPause={() => setBufferizando(false)}
+              onError={() => {
+                setVideoFallo(true);
+                setModoVideo(false);
+              }}
+            />
+          )}
+          {ancho && alto && children?.({ ancho, alto, unidad, detecciones: detections, onFondoPointerDown })}
+        </div>
 
-        {/* Distintivo permanente de qué se está mirando: sin él, el video
-            anotado y el original se confunden en cuadros sin tránsito. */}
-        {fuente === 'procesado' && <span className="ws-badge">Con detecciones</span>}
-        {/* Detectar cuesta una inferencia: sin este aviso, el medio segundo
-            entre pausar y ver las cajas parece que no pasó nada. */}
-        {cargandoDet && <span className="ws-badge">Detectando…</span>}
-        {modoVideo && bufferizando && <span className="ws-badge">Cargando video…</span>}
+        <div className="ws-insignias">
+          {fuente === 'procesado' && <span className="ws-badge">Con detecciones</span>}
+          {cargandoDet && <span className="ws-badge">Detectando…</span>}
+          {modoVideo && bufferizando && <span className="ws-badge">Cargando video…</span>}
+          {loadError && <span className="ws-badge is-error">No se pudo cargar este cuadro</span>}
+        </div>
 
-        {drawMode && (
-          <span className="ws-badge ws-badge-draw">
-            {drawing.length === 0 ? 'Marca el primer punto' : 'Marca el segundo punto'}
-          </span>
-        )}
-
-        {loadError && (
-          <p className="ws-error" role="alert">
-            No se pudo cargar este cuadro del video.
-          </p>
-        )}
+        <div className="ws-zoom" role="group" aria-label="Zoom">
+          <button type="button" onClick={() => zoomEn(1 / 1.4)} aria-label="Alejar" disabled={vista.z <= 1}>
+            −
+          </button>
+          <button type="button" className="mono" onClick={() => setVista({ z: 1, tx: 0, ty: 0 })} title="Ajustar a la pantalla (0)">
+            {Math.round(vista.z * 100)}%
+          </button>
+          <button type="button" onClick={() => zoomEn(1.4)} aria-label="Acercar" disabled={vista.z >= ZOOM_MAX}>
+            +
+          </button>
+        </div>
       </div>
 
-      <div className="ws-transport">
-        <div className="ws-buttons">
-          <IconButton
-            label={`Retroceder ${JUMP_SECONDS} segundos`}
-            onClick={() => { setPlaying(false); saltar(-JUMP_SECONDS); }}
-          >
+      <div className="ws-barra">
+        <div className="ws-barra-fila">
+          <IconButton label={`Retroceder ${JUMP_SECONDS} segundos`} onClick={() => { setPlaying(false); saltar(-JUMP_SECONDS); }}>
             <IconJumpBack />
           </IconButton>
           <IconButton label="Cuadro anterior" onClick={() => { setPlaying(false); irA(frame - 1); }}>
             <IconStepBack />
           </IconButton>
-
-          <Button variant="primary" className="ws-play" onClick={alternarReproduccion}>
-            {/* El estado va en el icono Y en la palabra: quien no distinga
-                los glifos lo lee igual. */}
-            {terminado ? <IconReplay size={15} /> : playing ? <IconPause size={15} /> : <IconPlay size={15} />}
-            {etiquetaPlay}
-          </Button>
-
+          <button type="button" className="ws-play" onClick={alternarReproduccion} aria-label={terminado ? 'Repetir' : playing ? 'Pausa' : 'Reproducir'}>
+            {terminado ? <IconReplay size={16} /> : playing ? <IconPause size={16} /> : <IconPlay size={16} />}
+          </button>
           <IconButton label="Cuadro siguiente" onClick={() => { setPlaying(false); irA(frame + 1); }}>
             <IconStepForward />
           </IconButton>
-          <IconButton
-            label={`Avanzar ${JUMP_SECONDS} segundos`}
-            onClick={() => { setPlaying(false); saltar(JUMP_SECONDS); }}
-          >
+          <IconButton label={`Avanzar ${JUMP_SECONDS} segundos`} onClick={() => { setPlaying(false); saltar(JUMP_SECONDS); }}>
             <IconJumpForward />
           </IconButton>
-        </div>
 
-        {/* <input type="range"> nativo: trae el manejo de teclado, el
-            arrastre y el anuncio en lector de pantalla sin reconstruir nada. */}
-        <input
-          className="ws-scrub"
-          type="range"
-          min={0}
-          max={Math.max(0, total - 1)}
-          value={frame}
-          aria-label="Posición en el video"
-          aria-valuetext={etiquetaTiempo}
-          onChange={(e) => { setPlaying(false); irA(Number(e.target.value)); }}
-        />
+          <input
+            className="ws-scrub"
+            type="range"
+            min={0}
+            max={Math.max(0, total - 1)}
+            value={frame}
+            aria-label="Posición en el video"
+            aria-valuetext={etiquetaTiempo}
+            onChange={(e) => { setPlaying(false); irA(Number(e.target.value)); }}
+          />
+          <output className="ws-time mono" aria-live="off" title={`Cuadro ${frame + 1} de ${total}`}>
+            {horaReal ?? etiquetaTiempo}
+          </output>
 
-        <output className="ws-time mono" aria-live="off">
-          {etiquetaTiempo}
-        </output>
-
-        <IconButton
-          label={repetir ? 'Desactivar repetición continua' : 'Repetir en bucle al terminar'}
-          aria-pressed={repetir}
-          className={repetir ? 'is-accent' : undefined}
-          onClick={() => setRepetir((v) => !v)}
-        >
-          <IconRepeat />
-        </IconButton>
-
-        <label className="ws-speed">
-          <span>Velocidad</span>
-          <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+          <IconButton
+            label={repetir ? 'Desactivar repetición continua' : 'Repetir en bucle'}
+            aria-pressed={repetir}
+            className={repetir ? 'is-accent' : undefined}
+            onClick={() => setRepetir((v) => !v)}
+          >
+            <IconRepeat />
+          </IconButton>
+          <select className="ws-mini-select" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} aria-label="Velocidad">
             {SPEEDS.map((v) => (
               <option key={v} value={v}>
                 {v}×
               </option>
             ))}
           </select>
-        </label>
-      </div>
+        </div>
 
-      <p className="ws-hint">
-        Cuadro <span className="mono">{frame + 1}</span> de{' '}
-        <span className="mono">{total}</span>
-        {' · '}
-        {segment.fps} cuadros por segundo
-        {repetir ? ' · repetición continua activada' : ''}. Con el lienzo enfocado:{' '}
-        <kbd>espacio</kbd> reproduce, <kbd>←</kbd> <kbd>→</kbd> avanzan un cuadro y con{' '}
-        <kbd>Shift</kbd> saltan {JUMP_SECONDS} segundos.
-      </p>
+        <div className="ws-barra-fila ws-barra-info">
+          {segments.length > 1 ? (
+            <select
+              className="ws-mini-select ws-segmento"
+              value={jobId ?? ''}
+              onChange={(e) => onJobChange(Number(e.target.value))}
+              aria-label="Video"
+            >
+              {segments.map((s) => (
+                <option key={s.job_id} value={s.job_id}>
+                  {s.nombre}
+                  {s.hora_inicio ? ` — ${s.hora_inicio.slice(0, 16)}` : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="ws-segmento-solo">{segment.nombre}</span>
+          )}
+          <div className="ws-fuente" role="radiogroup" aria-label="Qué video ver">
+            <button type="button" role="radio" aria-checked={fuente === 'original'} className={fuente === 'original' ? 'is-on' : undefined} onClick={() => onFuenteChange('original')}>
+              Original
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={fuente === 'procesado'}
+              disabled={!hayProcesado}
+              title={hayProcesado ? 'Lo que vio la IA al contar; sus líneas son las de ese momento' : 'Aparece cuando termina el conteo de este video'}
+              className={fuente === 'procesado' ? 'is-on' : undefined}
+              onClick={() => onFuenteChange('procesado')}
+            >
+              Con detecciones
+            </button>
+          </div>
+          <span className="ws-atajos">
+            <kbd>espacio</kbd> reproduce · <kbd>←</kbd><kbd>→</kbd> cuadro · rueda: zoom
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
