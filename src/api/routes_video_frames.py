@@ -26,6 +26,7 @@ reproducir sale prácticamente gratis. Buscar solo cuesta cuando el
 usuario salta con la barra de tiempo, que es justo cuando no importa.
 """
 
+import logging
 import os
 import threading
 from collections import OrderedDict
@@ -196,8 +197,9 @@ def _cacheado(ruta: str) -> Optional[dict]:
     return _meta_cache.get((ruta, st.st_mtime_ns, st.st_size))
 
 
-def _metadatos(job: Dict) -> Optional[Dict]:
-    """Duración y dimensiones de un video."""
+def _metadatos(job: Dict, sondear: bool = True) -> Optional[Dict]:
+    """Duración y dimensiones de un video. Con `sondear=False` no abre el
+    archivo: si la base no sabe la duración, devuelve None."""
     from pathlib import Path as _Path
 
     # Se evita abrir el archivo cuando la base ya sabe lo que hace falta.
@@ -218,12 +220,17 @@ def _metadatos(job: Dict) -> Optional[Dict]:
         ancho = cacheado["ancho"] if cacheado else None
         alto = cacheado["alto"] if cacheado else None
     else:
+        if not sondear:
+            return None
         sondeo = _sondear(job["stored_path"])
         if sondeo is None:
             return None
         fps = fps or sondeo["fps"]
         total = total or sondeo["total"]
         ancho, alto = sondeo["ancho"], sondeo["alto"]
+        # Se guarda en la base: así esta petición no vuelve a abrir el archivo.
+        if sondeo["fps"] and sondeo["total"] and job.get("status") != "processing":
+            traffic_db.update_video_job(job["id"], fps=sondeo["fps"], total_frames=sondeo["total"])
 
     if not fps or not total:
         return None
@@ -265,12 +272,45 @@ def listar_videos(project_id: int):
     if traffic_db.get_project(project_id) is None:
         raise HTTPException(404, "Esa intersección no existe")
 
-    salida = []
+    # Abrir cada archivo para saber su duración cuesta: con 600 videos recién
+    # importados en el disco USB la petición pasaba de 45 s y la mesa de
+    # trabajo se quedaba diciendo "elige una intersección con videos" (8-oct-
+    # 2026). Se abren los que quepan en ~1.5 s; los demás se miden en segundo
+    # plano y salen en la siguiente petición. La duración queda guardada en la
+    # base, así que cada archivo se abre una sola vez.
+    import time as _time
+    limite = _time.monotonic() + 1.5
+    salida, faltan = [], []
     for job in traffic_db.get_video_jobs_by_project(project_id):
-        meta = _metadatos(job)
+        meta = _metadatos(job, sondear=_time.monotonic() < limite)
         if meta is not None:
             salida.append(meta)
+        elif not (job.get("fps") and job.get("total_frames")):
+            faltan.append(job)
+    if faltan:
+        _sondear_en_segundo_plano(faltan)
     return salida
+
+
+_sondeando = threading.Lock()
+
+
+def _sondear_en_segundo_plano(jobs):
+    """Mide y guarda la duración de los videos que faltan, uno a la vez y sin
+    estorbar a la petición. Si ya hay un sondeo en curso, no arranca otro."""
+    if not _sondeando.acquire(blocking=False):
+        return
+
+    def correr():
+        try:
+            for job in jobs:
+                _metadatos(job, sondear=True)
+        except Exception:
+            logging.exception("No se pudo medir la duración de los videos")
+        finally:
+            _sondeando.release()
+
+    threading.Thread(target=correr, name="sondear-videos", daemon=True).start()
 
 
 @router.get("/frame")

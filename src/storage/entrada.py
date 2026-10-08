@@ -199,6 +199,7 @@ def _copiar(proyecto, pedidos, rutas, destino: Path):
                 project_id=proyecto["id"], video_start_time=pedido.get("inicio"),
                 interval_minutes=proyecto["interval_minutes"], status="awaiting_calibration")
             traffic_db.update_video_job(job_id, subida_id=marca)
+            traffic_db.guardar_duracion(job_id, final)
             with _candado:
                 _estado["videos"].append(job_id)
         except Exception as e:

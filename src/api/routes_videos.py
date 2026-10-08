@@ -340,6 +340,7 @@ async def terminar_subida(subida_id: str, datos: dict):
             status="awaiting_calibration",
         )
         traffic_db.update_video_job(job_id, subida_id=subida_id)
+        traffic_db.guardar_duracion(job_id, destino)
         traffic_db.log_event(proyecto_id, "video", "Se subió un video", nombre)
         return {"accepted": [traffic_db.get_video_job(job_id)], "rejected": []}
 

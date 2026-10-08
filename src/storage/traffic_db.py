@@ -1068,6 +1068,22 @@ def get_counts(lane_id: Optional[int] = None) -> List[Dict]:
 
 # --- Videos subidos (procesamiento por lote, no en vivo) ---------------
 
+def guardar_duracion(job_id: int, ruta: str) -> None:
+    """Cuadros y fps del archivo, leídos una vez al registrarlo. Sin esto la
+    mesa de trabajo abría cada archivo al listar los videos (600 videos en el
+    disco USB, más de 45 s) antes de enseñar nada."""
+    try:
+        import cv2
+        cap = cv2.VideoCapture(str(ruta))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 0
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+        cap.release()
+        if fps > 0 and total > 0:
+            update_video_job(job_id, fps=fps, total_frames=total)
+    except Exception:
+        logging.exception(f"No se pudo leer la duración del video {job_id}")
+
+
 def create_video_job(
     original_name: str, stored_path: str, size_bytes: int = 0,
     source_label: str = "sin-nombre", video_start_time: Optional[str] = None,
