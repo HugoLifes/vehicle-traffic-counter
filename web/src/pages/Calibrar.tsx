@@ -176,8 +176,11 @@ export default function Calibrar() {
   const geoLinea = (l: Lane) => borrador.lineas[l.id] ?? l.points;
   const geoTramo = (l: Lane) => (l.tramo ? borrador.tramos[l.id] ?? l.tramo.linea : null);
 
-  const ancho = tamano?.ancho ?? 1920;
-  const alto = tamano?.alto ?? 1080;
+  /* Sin el tamaño real no se revisa la orilla: suponer 1920×1080 en una
+     cámara de 2560 marcaba "pegada a la orilla" a líneas a media imagen. */
+  const segActual = segments?.find((s) => s.job_id === jobId);
+  const ancho = tamano?.ancho ?? segActual?.ancho ?? null;
+  const alto = tamano?.alto ?? segActual?.alto ?? null;
 
   const avisosDe = (z: Zone): Aviso[] => {
     if (z.kind !== 'calzada') return [];

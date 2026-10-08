@@ -106,8 +106,8 @@ export interface Aviso {
 export function revisarCalzada(
   zona: Point[] | null,
   linea: [Point, Point] | null,
-  ancho: number,
-  alto: number,
+  ancho: number | null,
+  alto: number | null,
 ): Aviso[] {
   const avisos: Aviso[] = [];
   if (!linea) {
@@ -155,6 +155,7 @@ export function revisarCalzada(
   }
   // Pegada a la orilla de la imagen: el vehículo entra o sale del cuadro
   // ahí y no se alcanza a ver antes de la línea.
+  if (!ancho || !alto) return avisos;
   const margen = Math.min(ancho, alto) * 0.04;
   const mx = (p1[0] + p2[0]) / 2;
   const my = (p1[1] + p2[1]) / 2;
