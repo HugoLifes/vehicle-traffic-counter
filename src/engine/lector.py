@@ -18,6 +18,8 @@ import queue
 import threading
 from typing import Callable, Optional
 
+import cv2
+
 _FIN = object()
 
 
@@ -28,6 +30,10 @@ class LectorAdelantado:
         self._preparar = preparar
         self._cola: "queue.Queue" = queue.Queue(maxsize=adelanto)
         self._parar = threading.Event()
+        # Instante del último cuadro entregado, según el archivo (ver
+        # src/engine/reloj_video.py). Se lee en el hilo, junto a su cuadro:
+        # desde fuera, cap ya va unos cuadros adelante.
+        self.ms: Optional[float] = None
         self._hilo = threading.Thread(target=self._leer, name="lector-video", daemon=True)
         self._hilo.start()
 
@@ -46,6 +52,7 @@ class LectorAdelantado:
                 ok, cuadro = self._cap.read()
                 if not ok:
                     break
+                ms = self._cap.get(cv2.CAP_PROP_POS_MSEC)
                 preparado = None
                 if self._preparar is not None:
                     try:
@@ -54,7 +61,7 @@ class LectorAdelantado:
                         # Sin preparar, el detector lo hace él mismo: más
                         # lento, igual de correcto.
                         logging.exception("No se pudo preparar el cuadro en el lector")
-                if not self._poner((cuadro, preparado)):
+                if not self._poner((cuadro, preparado, ms)):
                     return
         except Exception:
             logging.exception("El lector de video falló")
@@ -67,6 +74,7 @@ class LectorAdelantado:
         if item is _FIN:
             self._cola.put(_FIN)  # que otra lectura también vea el final
             return False, None, None
+        self.ms = item[2]
         return True, item[0], item[1]
 
     def cerrar(self):

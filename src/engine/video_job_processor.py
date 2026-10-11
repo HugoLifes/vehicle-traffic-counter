@@ -28,7 +28,7 @@ import imageio_ffmpeg
 from src.detector import VehicleDetector
 from src.tracker import VehicleTracker
 from src.storage import traffic_db
-from src.engine import arranque, conteo_trayectoria, perfil_deteccion, presentacion
+from src.engine import arranque, conteo_trayectoria, perfil_deteccion, presentacion, reloj_video
 from src.engine.lanes import build_lane_counters
 from src.engine.lector import LectorAdelantado
 from src.engine.velocidad import MedidorVelocidad
@@ -493,7 +493,13 @@ class VideoJobProcessor:
             frame_width = int(cap.get(3)) or 640
             frame_height = int(cap.get(4)) or 480
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
-            fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            fps_declarado = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            # Lo que declara el archivo puede no ser lo que grabó la cámara
+            # (15 declarados y 10 grabados en Gómez Morín): ver reloj_video.
+            fps = reloj_video.medir_fps(path, fps_declarado)
+            if fps != fps_declarado:
+                logging.warning(f"{job['original_name']}: el archivo declara {fps_declarado:g} "
+                                f"cuadros/s y trae {fps:.1f}; se usa lo medido")
 
             source_label = job.get('source_label') or 'sin-nombre'
             # Sin auto_create_default: los carriles ya los definió el usuario
@@ -689,10 +695,12 @@ class VideoJobProcessor:
             # Lee y prepara el cuadro siguiente mientras la GPU detecta este
             # (ver src/engine/lector.py). Desde aquí solo el lector toca cap.
             lector = LectorAdelantado(cap, detector.preparar)
+            reloj = reloj_video.RelojVideo(fps)
             while not self._stop_event.is_set():
                 ret, frame, preparado = lector.read()
                 if not ret:
                     break
+                reloj.anotar(lector.ms)
 
                 detections, _ = detector.detect(frame, preparado=preparado)
                 # Se filtra ANTES del tracker, no después: un vehículo
@@ -744,7 +752,7 @@ class VideoJobProcessor:
                 crossing_timestamp = None
                 if video_start_time is not None:
                     crossing_timestamp = (
-                        video_start_time + timedelta(seconds=frame_count / fps)
+                        video_start_time + timedelta(seconds=reloj.segundos(frame_count))
                     ).strftime("%Y-%m-%d %H:%M:%S")
 
                 # Las zonas van debajo de las cajas para que no las tapen.
@@ -924,8 +932,11 @@ class VideoJobProcessor:
                     # la ruta; es un archivo que la plataforma escribio ella
                     # misma dentro de data/uploads.
                     final_path.unlink(missing_ok=True)
+                # La cobertura de cada intervalo es total_frames / fps: con el
+                # ritmo real del archivo, no el declarado (ver reloj_video).
                 traffic_db.update_video_job(
                     job_id, total_frames=frame_count,
+                    fps=(frame_count / reloj.duracion if reloj.duracion else fps),
                     output_video_path=(str(final_path) if guardar_anotado else None)
                 )
                 if por_trayectoria:
@@ -948,7 +959,7 @@ class VideoJobProcessor:
                             hora = None
                             if video_start_time is not None:
                                 hora = (video_start_time + timedelta(
-                                    seconds=c['cuadro'] / fps)).strftime("%Y-%m-%d %H:%M:%S")
+                                    seconds=reloj.segundos(c['cuadro']))).strftime("%Y-%m-%d %H:%M:%S")
                             traffic_db.record_crossing(
                                 lane_id=lane_id,
                                 track_id=c['track_id'],
@@ -993,7 +1004,7 @@ class VideoJobProcessor:
                     movimientos = direccional.cerrar()
                     for m in movimientos:
                         m['timestamp'] = (
-                            inicio + timedelta(seconds=m['cuadro_inicio'] / fps)
+                            inicio + timedelta(seconds=reloj.segundos(m['cuadro_inicio']))
                         ).strftime("%Y-%m-%d %H:%M:%S")
                     traffic_db.record_movimientos(job.get('project_id'), job_id, movimientos)
                     completos = sum(1 for m in movimientos if m['completo'])
@@ -1031,12 +1042,17 @@ class VideoJobProcessor:
                     avisos.append(
                         "Hubo vehículos en la vía pero ninguno cruzó una línea de conteo. "
                         "Revisa que cada línea corte su calzada de lado a lado.")
-                # Un archivo cortado lee menos cuadros de los que declara y no
-                # da error: sus últimos minutos simplemente no se cuentan.
-                if total_frames and frame_count < 0.95 * total_frames:
+                # Un archivo cortado lee menos de lo que declara y no da
+                # error: sus últimos minutos simplemente no se cuentan. Se
+                # compara en SEGUNDOS: una cámara que graba a menos cuadros de
+                # los que declara (10 contra 15) trae menos cuadros y está
+                # completa.
+                declarado_s = total_frames / fps_declarado if total_frames else None
+                if declarado_s and reloj.duracion < 0.95 * declarado_s:
                     avisos.append(
-                        f"Se leyeron {frame_count} de los {total_frames} cuadros que declara el "
-                        "archivo: puede estar cortado, y lo que falte no se contó.")
+                        f"Se leyeron {reloj.duracion / 60:.1f} de los {declarado_s / 60:.1f} "
+                        "minutos que declara el archivo: puede estar cortado, y lo que falte "
+                        "no se contó.")
                 for a in avisos:
                     logging.warning(f"{job['original_name']}: {a}")
                 traffic_db.update_video_job(job_id, aviso=" ".join(avisos) or None)
