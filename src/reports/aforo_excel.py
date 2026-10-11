@@ -126,8 +126,12 @@ def _datos(project_id: int) -> Dict:
     if proyecto is None:
         raise ValueError(f"No existe el proyecto {project_id}")
 
+    # En un cordón (traffic_db.es_cordon) cada línea es un brazo y cada
+    # vehículo cruza dos: el sentido lleva si entra o sale del cruce, y los
+    # totales del cruce suman solo las entradas.
+    cordon = traffic_db.es_cordon(project_id)
     filas = conn.execute("""
-        SELECT c.timestamp AS ts,
+        SELECT c.timestamp AS ts, c.direction AS dir,
                COALESCE(z.name, l.name) AS sentido
         FROM crossings c
         JOIN lane_configs l ON l.id = c.lane_id
@@ -149,6 +153,8 @@ def _datos(project_id: int) -> Dict:
         except (TypeError, ValueError):
             continue
         s = f["sentido"] or "SIN SENTIDO"
+        if cordon:
+            s += " (entra)" if f["dir"] == "in" else " (sale)"
         por_hora[s][t.weekday()][t.hour] += 1
         por_cuarto[s][t.date()][t.hour * 60 + (t.minute // 15) * 15] += 1
         fechas.add(t.date())
@@ -184,6 +190,9 @@ def _datos(project_id: int) -> Dict:
         "cobertura": cobertura,
         "no_medibles": _horas_no_medibles(conn, project_id),
         "sentidos": sorted(por_hora.keys()),
+        "cordon": cordon,
+        # Lo que se suma para el volumen del cruce: en un cordón, las entradas.
+        "sentidos_volumen": sorted(s for s in por_hora if not cordon or s.endswith("(entra)")),
         "por_hora": por_hora,
         "por_cuarto": por_cuarto,
         "fechas": sorted(fechas),
@@ -318,12 +327,13 @@ def _hoja_totales(wb: Workbook, d: Dict):
     if len(d["sentidos"]) > 1:
         juntos = defaultdict(lambda: defaultdict(int))
         dias = set()
-        for s in d["sentidos"]:
+        for s in d["sentidos_volumen"]:
             dias |= d["dias_vistos"][s]
             for dia, horas in d["por_hora"][s].items():
                 for h, v in horas.items():
                     juntos[dia][h] += v
-        _bloque_totales(ws, col, "EN AMBOS SENTIDOS", d, juntos, dias)
+        _bloque_totales(ws, col, "TODO EL CRUCE (ENTRADAS)" if d["cordon"] else "EN AMBOS SENTIDOS",
+                        d, juntos, dias)
 
 
 def _cobertura(d: Dict, fecha, minuto: int) -> float:
@@ -580,7 +590,7 @@ def _hora_maxima_demanda(d: Dict, sentido: Optional[str], fecha) -> Optional[Dic
     Solo entran ventanas con los cuatro cuartos medidos: una hora no medible
     o sin video se lee vacía en las demás hojas, y una ventana a medias
     subestimaría el pico sin avisar. `sentido=None` suma todos."""
-    sentidos = [sentido] if sentido else d["sentidos"]
+    sentidos = [sentido] if sentido else d["sentidos_volumen"]
     mejor = None
     for m in range(0, 1440 - 45, 15):
         qs = []
@@ -629,13 +639,14 @@ def _hoja_resumen(wb: Workbook, project_id: int, d: Dict) -> None:
     for fecha in d["fechas"]:
         dia = f"{DIAS[fecha.weekday()]} {fecha.day:02d}/{MESES[fecha.month - 1][:3]}/{fecha.year}"
         for sentido in d["sentidos"] + ([None] if varios else []):
-            ss = [sentido] if sentido else d["sentidos"]
+            ss = [sentido] if sentido else d["sentidos_volumen"]
             total = sum(n for s in ss for m, n in d["por_cuarto"][s].get(fecha, {}).items()
                         if (fecha.weekday(), m // 60) not in d["no_medibles"])
             h = _hora_maxima_demanda(d, sentido, fecha)
             fuente = _CABECERA if sentido is None else _NORMAL
             relleno = _AZUL if sentido is None else None
-            valores = [dia, (sentido or "AMBOS SENTIDOS").upper(), total]
+            todo = "TODO EL CRUCE (ENTRADAS)" if d["cordon"] else "AMBOS SENTIDOS"
+            valores = [dia, (sentido or todo).upper(), total]
             if h:
                 a, b = h["inicio"], h["inicio"] + 60
                 valores += [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}",

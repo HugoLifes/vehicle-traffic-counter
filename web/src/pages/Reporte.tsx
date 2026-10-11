@@ -71,7 +71,11 @@ function Metrics({ m }: { m: ProjectMetrics }) {
       <div className="rr-hero rise">
         <div className="rr-hero-label">Volumen total</div>
         <div className="rr-hero-n">{formatNumber(m.totals.total)}</div>
-        <div className="rr-hero-sub">vehículos cruzaron las líneas de conteo</div>
+        <div className="rr-hero-sub">
+          {m.cordon
+            ? `vehículos entraron al cruce (${formatNumber(m.totals.cruces ?? 0)} cruces de línea: cada uno cruza la de su entrada y la de su salida)`
+            : 'vehículos cruzaron las líneas de conteo'}
+        </div>
         {/* Con una línea por sentido, el reparto que se lee es el de cada
             sentido ("Poniente → Oriente"); "entrada" y "salida" son el lado
             de la línea por el que se cruzó, que solo dice algo con una sola. */}

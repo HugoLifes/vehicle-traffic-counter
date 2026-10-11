@@ -82,6 +82,10 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
     """
     report = traffic_db.get_interval_counts(project_id, interval_minutes)
     lanes = report.get("lanes", [])
+    # En un cordón cada vehículo cruza dos líneas: el volumen del cruce y su
+    # hora pico salen de las entradas (ver traffic_db.es_cordon). Cada línea
+    # conserva sus dos sentidos: es el volumen de su brazo.
+    cordon = traffic_db.es_cordon(project_id)
 
     lane_metrics = []
     totals = {"in": 0, "out": 0, "total": 0}
@@ -161,11 +165,15 @@ def get_project_metrics(project_id: int, interval_minutes: int = 15) -> Dict:
                 "end": slot["end"],
                 "in": sum(l["intervals"][idx]["in"] for l in lanes),
                 "out": sum(l["intervals"][idx]["out"] for l in lanes),
-                "total": sum(l["intervals"][idx]["total"] for l in lanes),
+                "total": sum(l["intervals"][idx]["in" if cordon else "total"] for l in lanes),
             })
+    if cordon:
+        totals["cruces"] = totals["total"]
+        totals["total"] = totals["in"]
 
     return {
         "interval_minutes": report["interval_minutes"],
+        "cordon": cordon,
         "totals": totals,
         "composition": composition,
         "subtipos_A": subtipos,

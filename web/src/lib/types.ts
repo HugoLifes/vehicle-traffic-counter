@@ -365,7 +365,10 @@ export interface LaneMetrics {
 
 export interface ProjectMetrics {
   interval_minutes: number;
-  totals: { in: number; out: number; total: number };
+  /* Líneas en cordón alrededor de un cruce (traffic_db.es_cordon): cada
+     vehículo cruza dos, así que `total` son las entradas y `cruces` todo. */
+  cordon?: boolean;
+  totals: { in: number; out: number; total: number; cruces?: number };
   composition: Record<string, number>;
   /* Porcentajes sobre los vehículos que SÍ se clasificaron, no sobre el
      total: los no clasificados van aparte para que no salgan compitiendo

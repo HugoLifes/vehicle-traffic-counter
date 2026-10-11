@@ -686,6 +686,26 @@ def create_zone(project_id: int, name: str, points: List[List[float]],
     return cur.lastrowid
 
 
+def es_cordon(project_id: int) -> bool:
+    """¿Las líneas de este proyecto forman un cordón alrededor de un cruce?
+
+    Con accesos (aforo direccional) y líneas que no están atadas a ninguna
+    calzada, cada línea va en un brazo y cada vehículo cruza DOS: la de su
+    entrada y la de su salida. Sumar todos los cruces daba el doble del
+    tránsito; el volumen del cruce son las ENTRADAS. Medido en Fraccionamiento
+    (11-oct-2026): en una calle transversal partida por un poste, una
+    jardinera y un arbusto, la matriz dejaba sin decidir la mayoría y las
+    líneas del cordón cuentan cada pedazo que las cruza."""
+    conn = get_connection()
+    if not conn.execute("SELECT 1 FROM zones WHERE project_id = ? AND kind = 'acceso' AND active = 1",
+                        (project_id,)).fetchone():
+        return False
+    lineas = conn.execute(
+        """SELECT l.zone_id, z.kind FROM lane_configs l LEFT JOIN zones z ON z.id = l.zone_id
+           WHERE l.project_id = ? AND l.active = 1""", (project_id,)).fetchall()
+    return len(lineas) >= 2 and all(r[1] != 'calzada' for r in lineas)
+
+
 def list_zones(project_id: int, active_only: bool = True) -> List[Dict]:
     conn = get_connection()
     query = "SELECT * FROM zones WHERE project_id = ?"

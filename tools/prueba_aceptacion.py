@@ -44,6 +44,7 @@ REGRESIONES = [
     ("Diagnóstico de encuadre", "probar_diagnostico_encuadre.py"),
     ("Perfil de detección por proyecto", "probar_perfil_deteccion.py"),
     ("Velocidad por tramo", "probar_velocidad.py"),
+    ("Cordón de líneas (direccional)", "probar_cordon.py"),
     ("Usuario y contraseña", "probar_acceso.py"),
 ]
 
