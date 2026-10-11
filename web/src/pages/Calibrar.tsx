@@ -847,8 +847,15 @@ export default function Calibrar() {
 
           {sueltas.length > 0 && (
             <section className="est-grupo">
-              <h3>Líneas sin calzada</h3>
-              <p className="est-nota">Cuentan los vehículos de todas las calles. Átalas a su calzada:</p>
+              {/* Con accesos, una línea suelta por brazo es un cordón a
+                  propósito: cuenta los pedazos de rastro que la matriz deja
+                  sin decidir (Fraccionamiento, 11-oct-2026). */}
+              <h3>{accesos.length > 0 ? 'Líneas del cordón' : 'Líneas sin calzada'}</h3>
+              <p className="est-nota">
+                {accesos.length > 0
+                  ? 'Cada línea cuenta todo lo que la cruza, aunque el vehículo se haya partido en pedazos: una por brazo da el volumen de cada calle y la hora de máxima demanda. Si una calle tiene su calzada dibujada, átala:'
+                  : 'Cuentan los vehículos de todas las calles. Átalas a su calzada:'}
+              </p>
               {sueltas.map((l) => (
                 <div key={l.id} className="est-suelta">
                   <span className="est-nombre-fijo">{l.name}</span>
