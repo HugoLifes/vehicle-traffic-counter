@@ -46,6 +46,21 @@ from src.visualizer import Visualizer
 # 1280 de ancho se revisa igual. La detección sigue usando el cuadro
 # completo, así que el conteo no cambia.
 # Orden en la cola de la GPU: menor sale primero.
+# Mapa de recorridos de cada video revisado (lo pinta el calibrador para
+# dibujar los accesos). Archivo aparte y no en la tabla de diagnósticos: la
+# lista de diagnósticos de un proyecto se lee entera y no debe cargar con él.
+RECORRIDOS_DIR = Path("data/recorridos")
+
+
+def guardar_recorridos(job_id: int, mapa: dict) -> None:
+    import json
+    RECORRIDOS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = RECORRIDOS_DIR / f"{job_id}.json.tmp"
+    tmp.write_text(json.dumps({**mapa, 'fecha': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+                              separators=(',', ':')), encoding='utf-8')
+    tmp.replace(RECORRIDOS_DIR / f"{job_id}.json")
+
+
 PRIORIDAD_DIAGNOSTICO = 0
 PRIORIDAD_ANOTAR = 1
 PRIORIDAD_CONTEO = 2
@@ -259,6 +274,9 @@ class VideoJobProcessor:
         except VideoIlegible as e:
             traffic_db.update_video_job(job_id, diag_estado='error', diag_error=str(e))
             return
+        mapa = (d.get('rastreo') or {}).pop('_mapa', None)
+        if mapa is not None:
+            guardar_recorridos(job_id, mapa)
         traffic_db.guardar_diagnostico(job_id, job.get('project_id'), d)
         traffic_db.update_video_job(job_id, diag_estado=None, diag_error=None)
 

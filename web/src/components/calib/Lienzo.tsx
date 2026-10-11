@@ -36,6 +36,14 @@ export interface LineaFig {
   alerta?: boolean;
 }
 
+/** Recorrido de un vehículo (mapa de recorridos): `fueraIni`/`fueraFin`
+ *  marcan que nace o muere fuera de todo acceso dibujado. */
+export interface RecorridoFig {
+  puntos: Point[];
+  fueraIni: boolean;
+  fueraFin: boolean;
+}
+
 export type Seleccion = { tipo: 'zona' | 'linea' | 'tramo'; id: number } | null;
 
 export interface Dibujo {
@@ -63,6 +71,7 @@ interface Props {
   detecciones?: FrameDetection[];
   heatmap?: HTMLImageElement | null;
   verHeatmap?: boolean;
+  recorridos?: RecorridoFig[];
   /** Arrastre sobre el fondo: lo usa la mesa para desplazar la imagen. */
   onFondoPointerDown?: (e: React.PointerEvent) => void;
 }
@@ -116,6 +125,7 @@ export function Lienzo({
   detecciones = [],
   heatmap,
   verHeatmap,
+  recorridos = [],
   onFondoPointerDown,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -291,6 +301,37 @@ export function Lienzo({
           preserveAspectRatio="none"
           pointerEvents="none"
         />
+      )}
+
+      {/* Recorridos: verde donde nace el vehículo, rojo donde muere. Hueco y
+          más grande si cae fuera de todo acceso: ahí falta uno o hay que
+          estirarlo. */}
+      {recorridos.length > 0 && (
+        <g pointerEvents="none">
+          {recorridos.map((r, i) => (
+            <polyline
+              key={`r${i}`}
+              points={pts(r.puntos)}
+              fill="none"
+              stroke="#7dd3fc"
+              strokeOpacity={0.45}
+              strokeWidth={1.4 * u}
+              strokeLinejoin="round"
+            />
+          ))}
+          {recorridos.map((r, i) => {
+            const a = r.puntos[0];
+            const b = r.puntos[r.puntos.length - 1];
+            return (
+              <g key={`e${i}`}>
+                <circle cx={a[0]} cy={a[1]} r={(r.fueraIni ? 5 : 3) * u}
+                  fill={r.fueraIni ? 'none' : '#22c55e'} stroke="#22c55e" strokeWidth={(r.fueraIni ? 2 : 0) * u} />
+                <circle cx={b[0]} cy={b[1]} r={(r.fueraFin ? 5 : 3) * u}
+                  fill={r.fueraFin ? 'none' : '#ef4444'} stroke="#ef4444" strokeWidth={(r.fueraFin ? 2 : 0) * u} />
+              </g>
+            );
+          })}
+        </g>
       )}
 
       {/* Zonas: debajo de todo lo demás. */}

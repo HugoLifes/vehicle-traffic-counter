@@ -513,6 +513,30 @@ export const diagnosticarVideo = (jobId: number, direccional = false) =>
     { method: 'POST' },
   );
 
+/* Mapa de recorridos: por dónde nacen y mueren los vehículos de un video,
+   para dibujar los accesos del direccional sobre datos y no a ojo. Se pide
+   con la revisión del encuadre (rastrea unos minutos en la cola de la GPU)
+   y se lee con su estado, para esperar sin pedir la lista de videos. */
+export interface MapaRecorridos {
+  ancho: number;
+  alto: number;
+  segundos: number;
+  fecha: string;
+  recorridos: { p: Point[]; h: number }[];
+}
+export interface EstadoRecorridos {
+  estado: 'listo' | 'sin_mapa' | 'en_cola' | 'revisando' | 'error';
+  error: string | null;
+  mapa: MapaRecorridos | null;
+}
+export const getRecorridos = (jobId: number) =>
+  request<EstadoRecorridos>(`/api/videos/${jobId}/recorridos`);
+export const pedirRecorridos = (jobId: number, minutos = 3) =>
+  request<{ job_id: number; diag_estado: string }>(
+    `/api/videos/${jobId}/diagnostico?rastreo=true&direccional=true&minutos=${minutos}`,
+    { method: 'POST' },
+  );
+
 /* --- Exportación --------------------------------------------------------
    Enlaces directos, no fetch: así el navegador maneja la descarga con su
    propia barra de progreso y el nombre de archivo que manda el servidor,

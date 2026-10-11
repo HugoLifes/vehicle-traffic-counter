@@ -454,6 +454,27 @@ def leer_diagnostico(job_id: int):
     return d
 
 
+@router.get("/{job_id}/recorridos")
+def leer_recorridos(job_id: int):
+    """Por dónde pasaron los vehículos en los minutos que rastreó la revisión
+    del encuadre: cada recorrido con sus puntos de apoyo, de donde nace a
+    donde muere. Lo pinta el calibrador para dibujar los accesos donde de
+    verdad entran y salen los vehículos, y no a ojo (en Blvd Independencia y
+    Altozano fue lo que más movió los movimientos completos: 40 → 57 %)."""
+    from src.engine.video_job_processor import RECORRIDOS_DIR
+    job = traffic_db.get_video_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Video no encontrado")
+    ruta = RECORRIDOS_DIR / f"{job_id}.json"
+    # El estado va con el mapa para que la pantalla espere sin pedir la lista
+    # entera de videos (731 en el proyecto 7) cada pocos segundos.
+    estado = job.get("diag_estado") or ("listo" if ruta.exists() else "sin_mapa")
+    mapa = ruta.read_text(encoding="utf-8") if estado == "listo" else "null"
+    error = json.dumps(job.get("diag_error") if estado == "error" else None, ensure_ascii=False)
+    return Response(f'{{"estado":"{estado}","error":{error},"mapa":{mapa}}}',
+                    media_type="application/json")
+
+
 @router.post("/{job_id}/diagnostico", status_code=202)
 def diagnosticar(job_id: int, rastreo: bool = True, direccional: bool = False,
                  minutos: float = 1.0):

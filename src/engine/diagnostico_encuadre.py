@@ -159,6 +159,23 @@ def medir_imagen(video: str, det, muestras: int = 10, zonas=None) -> Dict:
 
 CELDA_EXTREMOS = 80
 
+# Para el mapa de recorridos del calibrador. 3 minutos de un cruce cargado
+# son unos 300; con 24 puntos cada uno el archivo queda en decenas de KB.
+MAX_RECORRIDOS = 600
+PUNTOS_RECORRIDO = 24
+
+
+def _simplificar(puntos) -> Dict:
+    """Un recorrido para pintarlo: hasta 24 puntos de apoyo (centro del borde
+    inferior de la caja), siempre con el primero y el último, y el alto
+    mediano de la caja para saber a qué distancia de la cámara iba."""
+    paso = max(1, (len(puntos) - 1) / (PUNTOS_RECORRIDO - 1))
+    idx = sorted({min(len(puntos) - 1, round(i * paso)) for i in range(PUNTOS_RECORRIDO)}
+                 | {len(puntos) - 1})
+    altos = sorted(p[3] for p in puntos)
+    return {'p': [[round(puntos[i][1]), round(puntos[i][2])] for i in idx],
+            'h': round(altos[len(altos) // 2])}
+
 
 def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None, zonas=None) -> Dict:
     """
@@ -173,8 +190,12 @@ def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None, zonas=None)
     from src.engine.origen_destino import Rastro, se_movio, unir_pedazos
     from src.engine.rastreo_bytetrack import RastreadorBytetrack
 
+    from src.engine.reloj_video import medir_fps
+
     cap = cv2.VideoCapture(video)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 15
+    # Lo que grabó la cámara, no lo que declara el archivo (ver reloj_video):
+    # con 10 de 15 declarados, "un minuto" eran minuto y medio.
+    fps = medir_fps(video, cap.get(cv2.CAP_PROP_FPS) or 15)
     ancho = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     alto = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     det.set_detection_band(banda)
@@ -194,6 +215,14 @@ def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None, zonas=None)
         n += 1
     cap.release()
 
+    # Todos los recorridos, sin filtrar por zonas: el calibrador los pinta
+    # para dibujar los accesos donde de verdad nacen y mueren los vehículos.
+    # Filtrados por los accesos ya dibujados escondían justo a los que no
+    # pasan por ninguno, que son los que hay que ver.
+    movidos = [r for r in rastros.values() if r.puntos and se_movio(r.puntos)]
+    recorridos = [_simplificar([p for r in c for p in r.puntos])
+                  for c in unir_pedazos(movidos, fps)][:MAX_RECORRIDOS]
+
     # Con zonas, solo los vehículos que pasan por ellas: el tránsito de una
     # calle que no se cuenta no dice nada de si se ve por dónde entra y sale
     # el que sí.
@@ -205,9 +234,11 @@ def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None, zonas=None)
         pts = [p for r in c for p in r.puntos]
         extremos.append(pts[0][1:3])
         extremos.append(pts[-1][1:3])
+    mapa = {'ancho': ancho, 'alto': alto, 'segundos': round(n / fps, 1),
+            'recorridos': recorridos}
     if not extremos:
         return {'rastros': 0, 'concentracion': 0, 'borde': 0, 'celdas': 0,
-                'partidos_pct': 0, 'cuadros': n}
+                'partidos_pct': 0, 'cuadros': n, '_mapa': mapa}
     rejilla = Counter((int(x) // CELDA_EXTREMOS, int(y) // CELDA_EXTREMOS) for x, y in extremos)
     return {
         'rastros': len(cadenas),
@@ -217,6 +248,9 @@ def medir_rastreo(video: str, det, minutos: float = 1.0, banda=None, zonas=None)
         'celdas': len(rejilla),
         'partidos_pct': 100 * sum(1 for c in cadenas if len(c) > 1) / max(1, len(cadenas)),
         'cuadros': n,
+        # No va a la tabla de diagnósticos (pesa): lo guarda el procesador
+        # aparte, ver VideoJobProcessor._diagnosticar_job.
+        '_mapa': mapa,
     }
 
 

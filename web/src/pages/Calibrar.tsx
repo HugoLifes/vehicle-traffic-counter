@@ -26,8 +26,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ConfirmDialog, EmptyState } from '../components/ui';
 import { VideoWorkspace, calzadaColor, ACCESO_COLORS } from '../components/VideoWorkspace';
-import { Lienzo, type LineaFig, type Seleccion, type ZonaFig } from '../components/calib/Lienzo';
-import { revisarCalzada, type Aviso } from '../components/calib/geometria';
+import { Lienzo, type LineaFig, type RecorridoFig, type Seleccion, type ZonaFig } from '../components/calib/Lienzo';
+import { dentroDe, revisarCalzada, type Aviso } from '../components/calib/geometria';
 import {
   keys,
   useCalibrationStatus,
@@ -62,6 +62,10 @@ type Pendiente =
   | { tipo: 'tramo'; laneId: number; linea: [Point, Point] };
 
 const NEUTRO = '#d0d6de';
+/* Minutos que se siguen para el mapa de recorridos: 3 de un cruce cargado
+   dan unos 300 vehículos, suficientes para ver cada calle, y en el Orin son
+   unos minutos de GPU. */
+const MINUTOS_MAPA = 3;
 
 export default function Calibrar() {
   const { projectId, projects } = useProjectParam();
@@ -85,6 +89,11 @@ export default function Calibrar() {
   const [heatmap, setHeatmap] = useState<HTMLImageElement | null>(null);
   const [verHeatmap, setVerHeatmap] = useState(false);
   const [verDetecciones, setVerDetecciones] = useState(false);
+  /* Mapa de recorridos del video en pantalla (ver api.getRecorridos). */
+  const [verRecorridos, setVerRecorridos] = useState(false);
+  const [mapaEstado, setMapaEstado] = useState<api.EstadoRecorridos | null>(null);
+  const [pedidoMapa, setPedidoMapa] = useState(0);
+  const [pidiendoMapa, setPidiendoMapa] = useState(false);
   const [tamano, setTamano] = useState<{ ancho: number; alto: number } | null>(null);
 
   const [herr, setHerr] = useState<Herramienta>('seleccionar');
@@ -154,6 +163,42 @@ export default function Calibrar() {
     };
   }, [projectId]);
 
+  /* Mientras la revisión está en la cola o rastreando, se vuelve a leer cada
+     pocos segundos; el estado viene con el mapa. */
+  useEffect(() => {
+    setMapaEstado(null);
+    if (!verRecorridos || jobId === null) return;
+    let vivo = true;
+    let espera: number | undefined;
+    const leer = () =>
+      api
+        .getRecorridos(jobId)
+        .then((r) => {
+          if (!vivo) return;
+          setMapaEstado(r);
+          if (r.estado === 'en_cola' || r.estado === 'revisando') espera = window.setTimeout(leer, 4000);
+        })
+        .catch((e) => vivo && setMapaEstado({ estado: 'error', error: errorMessage(e), mapa: null }));
+    void leer();
+    return () => {
+      vivo = false;
+      window.clearTimeout(espera);
+    };
+  }, [verRecorridos, jobId, pedidoMapa]);
+
+  const pedirMapa = async () => {
+    if (jobId === null) return;
+    setPidiendoMapa(true);
+    try {
+      await api.pedirRecorridos(jobId, MINUTOS_MAPA);
+      setPedidoMapa((n) => n + 1);
+    } catch (e) {
+      setMapaEstado({ estado: 'error', error: errorMessage(e), mapa: null });
+    } finally {
+      setPidiendoMapa(false);
+    }
+  };
+
   /* --- Modelo: calzadas, accesos y líneas sueltas, con el borrador ---- */
   const calzadas = useMemo(
     () => (zones ?? []).filter((z) => z.kind === 'calzada' || z.kind === 'excluir'),
@@ -208,6 +253,29 @@ export default function Calibrar() {
       alerta: z ? avisosDe(z).some((a) => a.nivel === 'error') : true,
     };
   });
+
+  /* Cada recorrido contra los accesos tal como están dibujados AHORA (con el
+     borrador): al estirar un acceso, sus círculos huecos se rellenan en el
+     momento, sin volver a rastrear. */
+  const mapa = verRecorridos && mapaEstado?.estado === 'listo' ? mapaEstado.mapa : null;
+  const accesosGeo = accesos.map((z) => ({ id: z.id, poly: geoZona(z) }));
+  const accesoDe = (p: Point) => accesosGeo.find((a) => dentroDe(p, a.poly))?.id ?? null;
+  const sx = mapa && ancho ? ancho / mapa.ancho : 1;
+  const sy = mapa && alto ? alto / mapa.alto : 1;
+  const nacen: Record<number, number> = {};
+  const mueren: Record<number, number> = {};
+  let completosMapa = 0;
+  const recorridosFig: RecorridoFig[] = (mapa?.recorridos ?? []).map((r) => {
+    const puntos = r.p.map(([x, y]) => [x * sx, y * sy] as Point);
+    const ini = accesoDe(puntos[0]);
+    const fin = accesoDe(puntos[puntos.length - 1]);
+    if (ini !== null) nacen[ini] = (nacen[ini] ?? 0) + 1;
+    if (fin !== null) mueren[fin] = (mueren[fin] ?? 0) + 1;
+    if (ini !== null && fin !== null) completosMapa += 1;
+    return { puntos, fueraIni: ini === null, fueraFin: fin === null };
+  });
+  const fueraIni = recorridosFig.filter((r) => r.fueraIni).length;
+  const fueraFin = recorridosFig.filter((r) => r.fueraFin).length;
 
   /* --- Edición ------------------------------------------------------- */
   /* Un arrastre entero es un solo paso de "deshacer": se guarda el estado de
@@ -557,6 +625,7 @@ export default function Calibrar() {
               detecciones={c.detecciones}
               heatmap={heatmap}
               verHeatmap={verHeatmap}
+              recorridos={recorridosFig}
               onFondoPointerDown={c.onFondoPointerDown}
             />
           )
@@ -582,6 +651,10 @@ export default function Calibrar() {
         <label className="est-capa" title="Lo que detecta la IA en el cuadro en pausa. Gris punteado: fuera de las zonas.">
           <input type="checkbox" checked={verDetecciones} disabled={fuente === 'procesado'} onChange={(e) => setVerDetecciones(e.target.checked)} />
           Detecciones
+        </label>
+        <label className="est-capa" title="Por dónde aparecen (verde) y desaparecen (rojo) los vehículos de este video: para dibujar los accesos">
+          <input type="checkbox" checked={verRecorridos} disabled={fuente === 'procesado'} onChange={(e) => setVerRecorridos(e.target.checked)} />
+          Recorridos
         </label>
       </div>
 
@@ -799,6 +872,65 @@ export default function Calibrar() {
             </section>
           )}
 
+          {verRecorridos && (
+            <section className="est-grupo">
+              <h3>Recorridos de este video</h3>
+              {!mapaEstado && <p className="est-nota">Leyendo…</p>}
+              {mapaEstado?.estado === 'sin_mapa' && (
+                <>
+                  <p className="est-nota">
+                    Este video todavía no tiene mapa. Se siguen los vehículos de {MINUTOS_MAPA} minutos en la cola de la
+                    GPU: unos minutos, y si hay un conteo en marcha entra entre un video y el siguiente.
+                  </p>
+                  <button type="button" className="est-accion" disabled={pidiendoMapa} onClick={() => void pedirMapa()}>
+                    Sacar el mapa de recorridos
+                  </button>
+                </>
+              )}
+              {(mapaEstado?.estado === 'en_cola' || mapaEstado?.estado === 'revisando') && (
+                <p className="est-nota">
+                  {mapaEstado.estado === 'en_cola'
+                    ? 'En la cola de la GPU, esperando turno…'
+                    : `Siguiendo los vehículos de ${MINUTOS_MAPA} minutos del video…`}
+                </p>
+              )}
+              {mapaEstado?.estado === 'error' && (
+                <>
+                  <p className="est-error">No se pudo sacar el mapa: {mapaEstado.error ?? 'error desconocido'}</p>
+                  <button type="button" className="est-accion" disabled={pidiendoMapa} onClick={() => void pedirMapa()}>
+                    Intentar otra vez
+                  </button>
+                </>
+              )}
+              {mapa && (
+                <>
+                  <p className="est-nota">
+                    {plural(recorridosFig.length, 'vehículo', 'vehículos')} en {Math.round(mapa.segundos / 60)} min.
+                    {accesos.length > 0 ? (
+                      <>
+                        {' '}
+                        <strong>{completosMapa}</strong> entran y salen por un acceso dibujado;{' '}
+                        <strong>{fueraIni}</strong> aparecen y <strong>{fueraFin}</strong> desaparecen fuera de todo
+                        acceso (círculos huecos).
+                      </>
+                    ) : (
+                      ' Todavía no hay accesos: todos los puntos salen huecos.'
+                    )}
+                  </p>
+                  <p className="est-nota">
+                    Verde: donde aparece el vehículo. Rojo: donde desaparece. Un acceso por calle, que abarque los
+                    puntos de esa calle hasta la orilla de la imagen. Un círculo hueco pegado a un acceso pide
+                    estirarlo; muchos huecos a media imagen son algo que tapa la vista (árbol, letrero, vehículo
+                    estacionado) y eso no se arregla dibujando.
+                  </p>
+                  <button type="button" className="est-enlace est-sec" disabled={pidiendoMapa} onClick={() => void pedirMapa()}>
+                    Volver a sacarlo
+                  </button>
+                </>
+              )}
+            </section>
+          )}
+
           {accesos.length > 0 && (
             <section className="est-grupo">
               <h3>Accesos (direccional)</h3>
@@ -811,6 +943,11 @@ export default function Calibrar() {
                     key={z.name}
                     onBlur={(e) => e.target.value.trim() !== z.name && void renombrar('zona', z.id, e.target.value)}
                   />
+                  {mapa && (
+                    <span className="est-conteo" title="Recorridos del mapa que aparecen / desaparecen dentro de este acceso">
+                      {nacen[z.id] ?? 0} entran · {mueren[z.id] ?? 0} salen
+                    </span>
+                  )}
                   <button type="button" className="est-icono" title="Borrar el acceso" onClick={() => setBorrar({ tipo: 'acceso', id: z.id, nombre: z.name })}>
                     ×
                   </button>
