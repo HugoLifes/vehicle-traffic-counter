@@ -1514,12 +1514,20 @@ def _hoja_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> None:
             _celda(ws, fila, 2 + 3 * j, sum(suma[(mov, c)] for c in clases), _CABECERA, _GRIS)
             ws.merge_cells(start_row=fila, start_column=2 + 3 * j, end_row=fila,
                            end_column=4 + 3 * j)
-    for texto in (
+    notas = [
         "En azul: la hora de máxima demanda del día (hoja RESUMEN).",
         "Solo vehículos con movimiento decidido (origen y destino). A incluye motos y los "
         "vehículos que no se pudieron clasificar; C incluye los pesados que a ese tamaño en la "
         "imagen no se separan de un autobús.",
-    ):
+    ]
+    if d.get("cordon"):
+        # Fraccionamiento (12-oct-2026): el paso por la avenida (3_1, 529 en
+        # campo) salía en 0 aquí y la línea de esa calle lo midió en 544
+        # contra 549. Sin la nota la hoja se lee como "no pasó nadie".
+        notas.insert(0, "OJO: en esta intersección la cámara no sigue de punta a punta el "
+                        "tránsito de paso, y aquí sale corto o en cero. Su volumen lo miden las "
+                        "líneas de cada calle: hoja RESUMEN, filas '(ENTRA)' y '(SALE)'.")
+    for texto in notas:
         fila += 2
         ws.cell(fila, 1, texto).font = Font(size=9, italic=True)
     ws.column_dimensions["A"].width = 22
