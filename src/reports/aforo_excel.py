@@ -1419,11 +1419,7 @@ _CLASE_EMPRESA = {"A": "A", "MOTO": "A", "SIN_RESOLVER": "A", "B": "B", "C": "C"
                   "T-S": "C", "T-S-R": "C", "TRACTOR": "C", "PESADO": "C"}
 
 
-def _numero_de_acceso(nombre: str) -> Optional[int]:
-    """El número de acceso de la empresa, si el nombre empieza con él
-    ("1", "1 · Calle de la cámara", "3 - Glorieta")."""
-    m = re.match(r"\s*(\d+)", nombre or "")
-    return int(m.group(1)) if m else None
+_numero_de_acceso = traffic_db.numero_de_acceso
 
 
 def _hora_12(minuto: int) -> str:

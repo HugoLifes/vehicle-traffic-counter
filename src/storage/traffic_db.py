@@ -10,13 +10,14 @@ tocar este archivo.
 """
 
 import json
+import re
 import logging
 import sqlite3
 import threading
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 DB_PATH = Path("data/traffic.db")
 
@@ -276,6 +277,10 @@ def init_schema():
     # input_size, umbral por clase y quitar cajas anidadas. Vacio cuenta
     # como platform.yaml. Ver src/engine/perfil_deteccion.py.
     _ensure_column(conn, "projects", "perfil_deteccion", "TEXT")
+    # Lo que se dibuja sobre el mapa de la intersección: dónde está cada
+    # acceso (por su número de la empresa) y hacia dónde mira la cámara.
+    # Ver tipo_de_aforo y routes_projects.Mapa.
+    _ensure_column(conn, "projects", "mapa_json", "TEXT")
     # Segundos que tardó el vehículo en recorrer el tramo de su línea. Se
     # guarda el TIEMPO y no la velocidad: la velocidad sale de la distancia
     # vigente al reportar, así que corregir una distancia mal capturada
@@ -470,6 +475,79 @@ def list_projects() -> List[Dict]:
     return [dict(row) for row in rows]
 
 
+def numero_de_acceso(nombre: str) -> Optional[int]:
+    """El número de acceso de la empresa, si el nombre empieza con él
+    ("1", "1 · Calle de la cámara", "3 - Glorieta"). Es el que pone la
+    empresa en su croquis y el que nombra los movimientos (1_2, 2_3...)."""
+    m = re.match(r"\s*(\d+)", nombre or "")
+    return int(m.group(1)) if m else None
+
+
+def movimientos_por_acceso(project_id: int, interval_minutes: int = 15) -> Dict:
+    """Los movimientos del direccional agrupados por NÚMERO de acceso y por
+    intervalo, con la cobertura de video de cada uno: lo que dibuja el mapa
+    de la intersección. Dos zonas con el mismo número son un solo brazo; un
+    acceso sin número se identifica por su nombre.
+
+    Sale de get_matriz_od, el mismo camino que el Excel y el reporte, así
+    que las flechas del mapa y la hoja de movimientos no pueden diferir."""
+    od = get_matriz_od(project_id, interval_minutes)
+    nombres = {int(k): v for k, v in od["accesos"].items()}
+    clave = {a: str(numero_de_acceso(n)) if numero_de_acceso(n) is not None else n
+             for a, n in nombres.items()}
+    accesos: Dict[str, List[str]] = {}
+    for a, n in sorted(nombres.items(), key=lambda kv: (clave[kv[0]], kv[1])):
+        accesos.setdefault(clave[a], []).append(n)
+    cuartos: Dict[str, Dict] = {}
+
+    def cuarto(t):
+        return cuartos.setdefault(t, {"intervalo": t, "entradas": 0, "movs": {}})
+
+    for m in od["movimientos"]:
+        q = cuarto(m["intervalo"])
+        k = f"{clave[int(m['origen_id'])]}_{clave[int(m['destino_id'])]}"
+        q["movs"][k] = q["movs"].get(k, 0) + m["total"]
+    for v in od.get("por_acceso", []):
+        cuarto(v["intervalo"])["entradas"] += v["entradas"]
+    tramos = _tramos_de_video(project_id)
+    delta = timedelta(minutes=interval_minutes)
+    for t, q in cuartos.items():
+        a = datetime.strptime(t, "%Y-%m-%d %H:%M")
+        q["cobertura"] = (round(cobertura_de_video(project_id, a, a + delta, tramos), 3)
+                          if tramos else None)
+    return {
+        "intervalo_minutos": interval_minutes,
+        "accesos": [{"clave": k, "nombres": v} for k, v in accesos.items()],
+        "cuartos": sorted(cuartos.values(), key=lambda q: q["intervalo"]),
+        "metodo": od.get("metodo"),
+        "sin_decidir": sum(i["total"] for i in od.get("incompletos", [])),
+    }
+
+
+def tipo_de_aforo(lineas: int, accesos: int) -> str:
+    """Lo dice lo que se calibró, no un campo que alguien tenga que llenar:
+    accesos = direccional (movimientos), líneas = lineal (cruces), las dos
+    = mixto (Fraccionamiento, oct-2026: accesos para los giros y una línea
+    por calle para el tránsito de paso)."""
+    if lineas and accesos:
+        return "mixto"
+    if accesos:
+        return "direccional"
+    if lineas:
+        return "lineal"
+    return "sin_calibrar"
+
+
+def conteos_de_calibracion(project_id: int) -> Tuple[int, int]:
+    """(líneas activas, accesos activos) de un proyecto."""
+    conn = get_connection()
+    lineas = conn.execute("SELECT COUNT(*) FROM lane_configs WHERE project_id = ? AND active = 1",
+                          (project_id,)).fetchone()[0]
+    accesos = conn.execute("""SELECT COUNT(*) FROM zones WHERE project_id = ? AND active = 1
+                              AND kind = 'acceso'""", (project_id,)).fetchone()[0]
+    return lineas, accesos
+
+
 def get_project(project_id: int) -> Optional[Dict]:
     conn = get_connection()
     row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -483,10 +561,12 @@ def update_project(project_id: int, **fields):
     # pero no se leen, del otro lado.
     allowed = {"name", "description", "latitude", "longitude", "address",
                "interval_minutes", "nms_agnostico", "conteo_trayectoria",
-               "video_anotado", "perfil_deteccion"}
+               "video_anotado", "perfil_deteccion", "mapa_json"}
     fields = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if isinstance(fields.get("perfil_deteccion"), dict):
         fields["perfil_deteccion"] = json.dumps(fields["perfil_deteccion"])
+    if isinstance(fields.get("mapa_json"), dict):
+        fields["mapa_json"] = json.dumps(fields["mapa_json"], separators=(",", ":"))
     if not fields:
         return
     conn = get_connection()

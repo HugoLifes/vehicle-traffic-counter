@@ -8,12 +8,13 @@ el proyecto como entidad real la empresa acumula el histórico de aforos
 de cada intersección a lo largo del tiempo.
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.routes_video_frames import cerrar_captura
 from src.api.routes_videos import UPLOAD_DIR
@@ -68,6 +69,29 @@ class ProjectUpdate(BaseModel):
     video_anotado: Optional[bool] = None
     perfil_deteccion: Optional[Dict[str, Any]] = None
     tipo_camara: Optional[Literal["grandes", "chicos"]] = None
+    mapa: Optional["Mapa"] = None
+
+
+class PuntoMapa(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+
+
+class CamaraMapa(PuntoMapa):
+    # Rumbo en grados desde el norte, hacia donde mira; apertura del cono.
+    rumbo: float = Field(default=0, ge=0, lt=360)
+    apertura: float = Field(default=70, ge=10, le=180)
+
+
+class Mapa(BaseModel):
+    """Lo que se dibuja de la intersección sobre el mapa. `accesos` va por
+    el NÚMERO de acceso de la empresa ("1", "2"...), no por zona: dos zonas
+    con el mismo número (los dos lados de una glorieta) son un solo brazo."""
+    camara: Optional[CamaraMapa] = None
+    accesos: Dict[str, PuntoMapa] = Field(default_factory=dict)
+
+
+ProjectUpdate.model_rebuild()
 
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -77,6 +101,16 @@ def _con_tipo(p: Optional[Dict]) -> Optional[Dict]:
     if p is not None:
         from src.engine.perfil_deteccion import tipo_camara
         p["tipo_camara"] = tipo_camara(p)
+        if "lane_count" in p and "access_count" in p:
+            lineas, accesos = p["lane_count"], p["access_count"]
+        else:
+            lineas, accesos = traffic_db.conteos_de_calibracion(p["id"])
+        p["tipo_aforo"] = traffic_db.tipo_de_aforo(lineas, accesos)
+        crudo = p.pop("mapa_json", None)
+        try:
+            p["mapa"] = json.loads(crudo) if crudo else None
+        except ValueError:
+            p["mapa"] = None
     return p
 
 
@@ -134,6 +168,8 @@ def update_project(project_id: int, project: ProjectUpdate):
         raise HTTPException(404, "Proyecto no encontrado")
 
     cambios = project.model_dump(exclude_none=True)
+    if "mapa" in cambios:
+        cambios["mapa_json"] = cambios.pop("mapa")
     tipo = cambios.pop("tipo_camara", None)
     if tipo:
         from src.engine.perfil_deteccion import aplicar_tipo_camara
@@ -145,10 +181,14 @@ def update_project(project_id: int, project: ProjectUpdate):
 
     # Se anota QUÉ cambió, no solo que hubo un cambio: "se editó el
     # proyecto" no ayuda a explicar por qué dos reportes difieren.
+    # El mapa se guarda en cada arrastre de un pin: en el registro basta
+    # con decir que cambió, no copiar el JSON entero cada vez.
     detalle = ", ".join(
-        f"{campo}: '{antes.get(campo)}' → '{valor}'"
+        ("se movieron puntos del mapa" if campo == "mapa_json"
+         else f"{campo}: '{antes.get(campo)}' → '{valor}'")
         for campo, valor in cambios.items()
-        if antes.get(campo) != valor
+        if antes.get(campo) != valor and campo != "mapa_json" or (
+            campo == "mapa_json" and antes.get(campo) != json.dumps(valor, separators=(",", ":")))
     )
     if detalle:
         traffic_db.log_event(project_id, "proyecto", "Se editaron los datos", detalle)
@@ -563,6 +603,18 @@ def start_counting(project_id: int):
         f"{len(pending)} videos, con {len(lanes)} carriles calibrados",
     )
     return {"started": len(pending), "lanes": len(lanes)}
+
+
+@router.get("/{project_id}/movimientos-mapa")
+def movimientos_mapa(project_id: int, interval_minutes: Optional[int] = None):
+    """Movimientos por número de acceso y por intervalo, para las flechas
+    del mapa de la intersección. La primera vez en un aforo grande tarda
+    (se decide cada recorrido); después sale de la memoria."""
+    project = traffic_db.get_project(project_id)
+    if project is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    return traffic_db.movimientos_por_acceso(
+        project_id, interval_minutes or project["interval_minutes"] or 15)
 
 
 @router.get("/{project_id}/direccional")
