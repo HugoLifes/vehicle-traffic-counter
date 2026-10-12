@@ -22,7 +22,6 @@ Todas las medidas están pensadas sobre 1920 de ancho y se escalan al tamaño
 de salida, para que el anotado a 1280 y el clip a 1920 sean el mismo dibujo.
 """
 import os
-import statistics
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -31,7 +30,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from src.engine.clasificacion import (CONFIANZA_MINIMA, clasificar, nivel_de_calzada,
+from src.engine.clasificacion import (clasificar, horas_medibles, nivel_de_calzada,
                                       perfil_de_calzada)
 from src.engine.clasificador_pesados import clase_final, subtipo_final
 
@@ -88,7 +87,7 @@ def fuente(tam: int, negrita: bool = False):
 def escala_por_carril(project_id: int) -> Tuple[Dict, Dict]:
     """(umbral de pesado, perfil fino) de cada línea del proyecto, con sus
     cruces guardados en las horas que se pueden medir (confianza media del
-    proyecto ≥ CONFIANZA_MINIMA, como en get_interval_counts)."""
+    proyecto sobre el umbral de la cámara, como en get_interval_counts)."""
     from src.storage import traffic_db
     filas = traffic_db.get_connection().execute(
         """SELECT cr.lane_id, cr.vehicle_type, cr.bbox_height, cr.bbox_width,
@@ -99,7 +98,7 @@ def escala_por_carril(project_id: int) -> Tuple[Dict, Dict]:
     for f in filas:
         if f[4] is not None:
             confianzas.setdefault(f[5], []).append(f[4])
-    medibles = {h for h, cs in confianzas.items() if statistics.fmean(cs) >= CONFIANZA_MINIMA}
+    medibles = horas_medibles(confianzas)
     umbral, perfil = {}, {}
     for lane in {f[0] for f in filas}:
         propios = [f for f in filas if f[0] == lane and f[5] in medibles]

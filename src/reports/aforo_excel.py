@@ -86,7 +86,9 @@ def _celda(ws, fila, col, valor, fuente=_NORMAL, relleno=None,
 # Se usa la confianza y NO el conteo: una hora de madrugada con poco
 # transito real tendria pocos cruces pero ALTA confianza. Filtrar por
 # conteo escondería las horas genuinamente tranquilas.
-CONFIANZA_MINIMA = 0.65
+#
+# Esos 0.65 eran de ESA cámara. El umbral se fija ahora contra el día de la
+# cámara de cada proyecto: clasificacion.umbral_de_medicion.
 
 
 def _horas_no_medibles(conn, project_id: int) -> set:
@@ -97,20 +99,22 @@ def _horas_no_medibles(conn, project_id: int) -> set:
     donde el aforo manual conto 2 038, y en la hoja se leia como una
     medicion.
     """
-    fuera = set()
+    from src.engine.clasificacion import umbral_de_medicion
+    horas = {}
     for f in conn.execute("""
         SELECT c.timestamp AS ts, AVG(c.confidence) AS cf, COUNT(*) AS n
         FROM crossings c JOIN lane_configs l ON l.id = c.lane_id
-        WHERE l.project_id = ?
+        WHERE l.project_id = ? AND c.confidence IS NOT NULL
         GROUP BY substr(c.timestamp, 1, 13)
     """, (project_id,)):
         try:
             t = datetime.strptime(f["ts"], "%Y-%m-%d %H:%M:%S")
         except (TypeError, ValueError):
             continue
-        if f["cf"] is not None and f["cf"] < CONFIANZA_MINIMA:
-            fuera.add((t.weekday(), t.hour))
-    return fuera
+        horas[t] = (f["cf"], f["n"])
+    # El umbral es de ESTA cámara (ver clasificacion.umbral_de_medicion).
+    umbral = umbral_de_medicion(horas)
+    return {(t.weekday(), t.hour) for t, (cf, _) in horas.items() if cf < umbral}
 
 
 def _datos(project_id: int) -> Dict:
@@ -887,7 +891,7 @@ def _hoja_metodo(wb: Workbook, d: Dict):
         return
     aviso = ws.cell(len(filas) + 5, 1,
                     "Las horas en blanco no son medición fiable: la confianza "
-                    "media del detector quedó por debajo de 0.65. Suele ser de "
+                    "media del detector quedó muy por debajo de la de esta cámara de día. Suele ser de "
                     "noche, y no por falta de luz sino por lo contrario — la "
                     "cámara sobreexpone y el obturador lento convierte cada "
                     "vehículo en una estela. Medido en Cd. Juárez con la "

@@ -1297,7 +1297,7 @@ def _tramos_de_video(project_id: int):
     tramos = []
     for r in conn.execute(
             """SELECT video_start_time, total_frames, fps FROM video_jobs
-               WHERE project_id = ? AND video_start_time IS NOT NULL
+               WHERE project_id = ? AND video_start_time IS NOT NULL AND status = 'done'
                  AND total_frames IS NOT NULL AND fps IS NOT NULL AND fps > 0""",
             (project_id,)):
         a = _dt.datetime.fromisoformat(r["video_start_time"])
@@ -1409,8 +1409,9 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     # Automovil/camioneta/pickup solo con luz: de noche, con los faros de
     # frente, la forma no se ve y el subtipo seria inventado.
     horas_sub = _perfil.leer(get_project(project_id)).get("horas_subtipo", (7, 19))
-    from src.engine.clasificacion import (CONFIANZA_MINIMA, MEDIDO, ESTIMADO,
+    from src.engine.clasificacion import (MEDIDO, ESTIMADO,
                                           NO_RESOLUBLE, SIN_RESOLVER, clasificar,
+                                          horas_medibles as _horas_medibles,
                                           nivel_de_calzada, perfil_de_calzada)
 
     # Dos preguntas distintas, y mezclarlas fue un error que costo una
@@ -1432,12 +1433,9 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     por_hora_todos = {}
     for fila in rows:
         por_hora_todos.setdefault(_hora(fila), []).append(fila)
-    horas_medibles = {
-        h for h, fs in por_hora_todos.items()
-        if [f["confidence"] for f in fs if f["confidence"] is not None]
-        and sum(f["confidence"] for f in fs if f["confidence"] is not None)
-        / max(1, len([f for f in fs if f["confidence"] is not None])) >= CONFIANZA_MINIMA
-    }
+    horas_medibles = _horas_medibles({
+        h: [f["confidence"] for f in fs if f["confidence"] is not None]
+        for h, fs in por_hora_todos.items()})
 
     # El nivel de cada calzada sale del alto, sin confianza: esa ya decidio
     # que horas cuentan.

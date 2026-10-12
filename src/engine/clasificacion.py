@@ -42,7 +42,7 @@ veo bien y paso"; mide lo que tiene y declara hasta donde llega.
 from __future__ import annotations
 
 import statistics
-from typing import Iterable, Optional, Tuple
+from typing import Dict, Hashable, Iterable, List, Optional, Set, Tuple
 
 # Clases de COCO que nunca son vehiculo pesado, midan lo que midan.
 LIVIANAS_COCO = ("car", "motorcycle", "bicycle")
@@ -103,6 +103,35 @@ MOTO_RAZON = 0.7
 # sobreexpone y el vehiculo sale como una estela: ahi la etiqueta de COCO no
 # significa nada. Medido: de dia 0.67-0.76, de noche 0.44-0.57.
 CONFIANZA_MINIMA = 0.65
+
+# La hora no medible se decide CONTRA EL DÍA DE LA MISMA CÁMARA, no contra un
+# número fijo. El 0.65 se midió con la cámara lateral de Cd. Juárez (de día
+# 0.66-0.75, de noche 0.39-0.56); en Fraccionamiento (oct-2026) los vehículos
+# del fondo miden 16-20 px y se detectan DE DÍA con 0.49-0.63, así que el
+# umbral fijo declaraba no medible el aforo entero y el Excel salía en cero.
+# Referencia: la mediana de las confianzas medias de la mitad de horas con más
+# cruces (de día, donde está el tránsito). Umbral: 0.87 de esa referencia
+# (0.65 / 0.75, la proporción que ya separaba día y noche) y nunca más de 0.65,
+# así que las cámaras validadas quedan igual: lateral 0.61 (mismas horas
+# fuera), frontal 0.65; Fraccionamiento 0.47 (fuera 17-18 h, sol de frente).
+RAZON_MEDIBLE = 0.87
+
+
+def umbral_de_medicion(por_hora: Dict[Hashable, Tuple[float, int]]) -> float:
+    """Confianza media mínima de una hora medible, para este proyecto.
+    `por_hora`: {hora: (confianza media, cruces)}."""
+    horas = sorted(por_hora.values(), key=lambda v: -v[1])
+    activas = [m for m, _ in horas[:max(1, len(horas) // 2)]]
+    if not activas:
+        return CONFIANZA_MINIMA
+    return min(CONFIANZA_MINIMA, RAZON_MEDIBLE * statistics.median(activas))
+
+
+def horas_medibles(confianzas: Dict[Hashable, List[float]]) -> Set[Hashable]:
+    """Las horas cuya confianza media pasa el umbral del proyecto."""
+    medias = {h: (statistics.fmean(cs), len(cs)) for h, cs in confianzas.items() if cs}
+    umbral = umbral_de_medicion(medias)
+    return {h for h, (m, _) in medias.items() if m >= umbral}
 
 
 def nivel_de_calzada(alturas_de_autos: Iterable[float],
