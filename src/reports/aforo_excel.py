@@ -1267,6 +1267,143 @@ def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
     return sum(total_od.values())
 
 
+def _hoja_resumen_direccional(wb: Workbook, project_id: int, d: Dict) -> int:
+    """
+    Hora de máxima demanda de un aforo direccional: lo primero que pide la
+    empresa (Cd. Juárez, 9-oct-2026: "la HMD de los 3") y que el Excel
+    direccional no traía; había que sacarla a mano de los movimientos.
+
+    El volumen de cada cuarto son las ENTRADAS al cruce (volumen por acceso):
+    cada vehículo visto entrar por algún brazo, también aquel cuyo destino no
+    se vio. Con la matriz sola se quedaban fuera los que el rastro perdió a
+    medio cruce —en Gómez Morín, 13 683 de 29 396—, y esos sí pasaron. Medido
+    contra el conteo manual de Entrada y salida Altozano, el volumen por acceso
+    dio 5 de 6 cifras con GEH < 5.
+
+    Mismo criterio que la hoja RESUMEN del aforo por línea: cuatro cuartos
+    CONSECUTIVOS, todos con video completo. Devuelve los vehículos que
+    entraron en todo el estudio.
+    """
+    od = traffic_db.get_matriz_od(project_id, 15)
+    if not od.get("por_acceso"):
+        return 0
+    nombre = {int(k): v for k, v in od["accesos"].items()}
+    accesos = sorted(nombre, key=lambda i: nombre[i])
+
+    def clave(intervalo):
+        t = datetime.strptime(intervalo, "%Y-%m-%d %H:%M")
+        return t.date(), t.hour * 60 + t.minute
+
+    entradas = defaultdict(lambda: defaultdict(int))
+    decididos = defaultdict(int)
+    for v in od["por_acceso"]:
+        entradas[clave(v["intervalo"])][int(v["acceso_id"])] += v["entradas"]
+    for m in od["movimientos"]:
+        decididos[clave(m["intervalo"])] += m["total"]
+    fechas = sorted({f for f, _ in entradas})
+
+    # Cobertura de video de cada cuarto, como en _datos (que solo la calcula
+    # para los días con cruces de línea).
+    tramos = traffic_db._tramos_de_video(project_id)
+    cobertura = {} if tramos else None
+    for f in (fechas if tramos else ()):
+        base = datetime(f.year, f.month, f.day)
+        for m in range(0, 1440, 15):
+            a = base + timedelta(minutes=m)
+            cv = traffic_db.cobertura_de_video(project_id, a, a + timedelta(minutes=15), tramos)
+            if cv > 0:
+                cobertura[(f, m)] = cv
+    total_cuarto = {k: sum(v.values()) for k, v in entradas.items()}
+    vista = {"por_cuarto": {"ENTRADAS": defaultdict(dict)}, "sentidos_volumen": ["ENTRADAS"],
+             "no_medibles": d["no_medibles"], "cobertura": cobertura}
+    for (f, m), n in total_cuarto.items():
+        vista["por_cuarto"]["ENTRADAS"][f][m] = n
+
+    ws = wb.create_sheet("RESUMEN", 0)
+    ws.sheet_view.showGridLines = False
+    p = d["proyecto"]
+    _celda(ws, 1, 1, "RESUMEN DEL AFORO DIRECCIONAL", _TITULO, borde=False)
+    _celda(ws, 2, 1, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 2, 2, p["name"], _NORMAL, alineacion=_IZQ, borde=False)
+    ini = min(entradas)
+    fin = max(entradas)
+    _celda(ws, 3, 1, "PERIODO:", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 3, 2, f"{ini[0]:%d/%m/%Y} {ini[1] // 60:02d}:{ini[1] % 60:02d} a "
+                     f"{fin[0]:%d/%m/%Y} {(fin[1] + 15) // 60:02d}:{(fin[1] + 15) % 60:02d}",
+           _NORMAL, alineacion=_IZQ, borde=False)
+
+    fila = 5
+    cab = ["DIA", "VEHICULOS QUE ENTRARON", "HORA DE MAXIMA DEMANDA", "VOLUMEN HMD",
+           "FACTOR DE HORA PICO", "CON MOVIMIENTO DECIDIDO EN LA HMD"]
+    for i, t in enumerate(cab):
+        _celda(ws, fila, 1 + i, t, _CABECERA, _GRIS)
+    for f in fechas:
+        fila += 1
+        dia = f"{DIAS[f.weekday()]} {f.day:02d}/{MESES[f.month - 1][:3]}/{f.year}"
+        total = sum(n for (ff, m), n in total_cuarto.items()
+                    if ff == f and (f.weekday(), m // 60) not in d["no_medibles"])
+        h = _hora_maxima_demanda(vista, None, f)
+        valores = [dia, total]
+        if h:
+            a, b = h["inicio"], h["inicio"] + 60
+            valores += [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}", h["volumen"],
+                        round(h["fhp"], 2) if h.get("fhp") else "",
+                        sum(decididos.get((f, a + 15 * k), 0) for k in range(4))]
+        else:
+            valores += ["sin una hora completa de video", "", "", ""]
+        for i, v in enumerate(valores):
+            _celda(ws, fila, 1 + i, v, _NORMAL, alineacion=_IZQ if i == 0 else _CENTRO)
+    for texto in (
+        "Vehículos que entraron: los vistos entrar por algún acceso, también aquellos cuyo "
+        "destino no se alcanzó a ver. La hora de máxima demanda se busca entre cuatro cuartos "
+        "de hora seguidos, todos con video completo.",
+        "Con movimiento decidido: de esos, los que tienen origen y destino (hoja DIRECCIONAL). "
+        "La diferencia son vehículos que el rastro perdió a medio cruce; sí pasaron.",
+    ):
+        fila += 1
+        ws.cell(fila, 1, texto).font = Font(size=9, italic=True)
+
+    # Entradas por acceso, cuarto por cuarto: de aquí sale la hora pico.
+    fila += 2
+    _celda(ws, fila, 1, "ENTRADAS POR ACCESO (15 MIN)", _SUBTITULO, _AZUL)
+    ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=len(accesos) + 3)
+    fila += 1
+    for i, t in enumerate(["INTERVALO"] + [nombre[a] for a in accesos] + ["TOTAL", "DECIDIDOS"]):
+        _celda(ws, fila, 1 + i, t, _CABECERA, _GRIS)
+    parciales = 0
+    for k in sorted(entradas):
+        f, m = k
+        fila += 1
+        cv = cobertura.get(k, 0.0) if cobertura is not None else None
+        parcial = cv is not None and cv < 0.995
+        parciales += parcial
+        relleno = _INCOMPLETO if parcial else None
+        _celda(ws, fila, 1, f"{f:%Y-%m-%d} {m // 60:02d}:{m % 60:02d}", _NORMAL, relleno)
+        for j, a in enumerate(accesos):
+            _celda(ws, fila, 2 + j, entradas[k].get(a, 0), relleno=relleno)
+        tot = _celda(ws, fila, 2 + len(accesos), total_cuarto[k], _CABECERA,
+                     _INCOMPLETO if parcial else _GRIS)
+        _celda(ws, fila, 3 + len(accesos), decididos.get(k, 0), relleno=relleno)
+        if parcial:
+            tot.comment = Comment(f"Video incompleto: cubre el {100 * cv:.0f} % de este intervalo.",
+                                  "Aforo vehicular")
+    if parciales:
+        fila += 1
+        ws.cell(fila, 1, "En naranja: intervalo con video incompleto; no entra a la hora de "
+                         "máxima demanda.").font = Font(size=9, italic=True)
+    ws.column_dimensions["A"].width = 26
+    for i in range(2, len(accesos) + 4):
+        ws.column_dimensions[get_column_letter(i)].width = 18
+
+    # La hoja METODO lee estos campos; sin cruces de línea quedaban en blanco
+    # y decía "0 vehículos contados" de un aforo direccional terminado.
+    d["inicio"] = datetime(ini[0].year, ini[0].month, ini[0].day) + timedelta(minutes=ini[1])
+    d["fin"] = datetime(fin[0].year, fin[0].month, fin[0].day) + timedelta(minutes=fin[1] + 15)
+    d["fechas"] = fechas
+    d["total"] = sum(total_cuarto.values())
+    return d["total"]
+
+
 def generar(project_id: int, ruta: str) -> Dict:
     """Escribe el Excel y devuelve un resumen de lo que contiene."""
     d = _datos(project_id)
@@ -1284,6 +1421,8 @@ def generar(project_id: int, ruta: str) -> Dict:
         _hoja_resumen(wb, project_id, d)
     _hoja_velocidad(wb, project_id, d)
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
+    if direccionales and not d["sentidos"]:
+        _hoja_resumen_direccional(wb, project_id, d)
     if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:
         raise ValueError(
             "Este proyecto todavía no tiene conteos. Procesa los videos antes "
