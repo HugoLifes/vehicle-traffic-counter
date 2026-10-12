@@ -737,7 +737,12 @@ def update_zone(zone_id: int, name: Optional[str] = None,
         params.append(json.dumps(points))
     if not fields:
         return
-    fields.append("updated_at = datetime('now')")
+    # Como en update_lane: solo la forma o el tipo cambian lo que se cuenta.
+    # Renombrar un acceso con el número de la empresa ("1 · Calle de la
+    # cámara", 12-oct-2026) marcaba todos los videos como de una calibración
+    # anterior y la pantalla ofrecía recontarlos.
+    if points is not None or kind is not None:
+        fields.append("updated_at = datetime('now')")
     params.append(zone_id)
     conn.execute(f"UPDATE zones SET {', '.join(fields)} WHERE id = ?", params)
     conn.commit()

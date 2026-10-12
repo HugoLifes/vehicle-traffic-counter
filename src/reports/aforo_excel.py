@@ -23,6 +23,7 @@ midió", y confundirlos en un informe de tránsito es grave.
 """
 
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -1349,6 +1350,7 @@ def _hoja_resumen_direccional(wb: Workbook, project_id: int, d: Dict) -> int:
         h = _hora_maxima_demanda(vista, None, f)
         valores = [dia, total]
         if h:
+            d.setdefault("hmd_direccional", {})[f] = h["inicio"]
             a, b = h["inicio"], h["inicio"] + 60
             valores += [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}", h["volumen"],
                         round(h["fhp"], 2) if h.get("fhp") else "",
@@ -1408,6 +1410,123 @@ def _hoja_resumen_direccional(wb: Workbook, project_id: int, d: Dict) -> int:
     return d["total"]
 
 
+# Clases del formato de la empresa (A, B, C) a partir de las nuestras. La moto
+# va en A (así lo cuenta la empresa, ver "Contra el conteo manual del
+# frontal"); PESADO es autobús o camión donde el vehículo es muy chico para
+# separarlos, y va en C; lo que no se pudo clasificar va en A, que es la
+# clase de 9 de cada 10 vehículos, y se declara en la nota.
+_CLASE_EMPRESA = {"A": "A", "MOTO": "A", "SIN_RESOLVER": "A", "B": "B", "C": "C",
+                  "T-S": "C", "T-S-R": "C", "TRACTOR": "C", "PESADO": "C"}
+
+
+def _numero_de_acceso(nombre: str) -> Optional[int]:
+    """El número de acceso de la empresa, si el nombre empieza con él
+    ("1", "1 · Calle de la cámara", "3 - Glorieta")."""
+    m = re.match(r"\s*(\d+)", nombre or "")
+    return int(m.group(1)) if m else None
+
+
+def _hora_12(minuto: int) -> str:
+    h, m = divmod(minuto % 1440, 60)
+    return f"{(h % 12) or 12}:{m:02d} {'AM' if h < 12 else 'PM'}"
+
+
+def _hoja_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> None:
+    """
+    Los movimientos como los entrega la empresa: "1_2", "2_3", "3_3"...
+    con A, B y C por cuarto de hora ("Hr/Mov"), el mismo acomodo de sus
+    hojas de campo (Aforos campos.xlsx, 12-oct-2026). El número de cada
+    acceso es el que la empresa pone en su croquis, y en la plataforma va al
+    principio del nombre del acceso ("1 · Calle de la cámara"). Dos accesos
+    con el mismo número (dos lados de una glorieta) son el mismo brazo.
+
+    Solo sale si TODOS los accesos tienen número: sin él no hay a qué
+    traducir el movimiento.
+    """
+    od = traffic_db.get_matriz_od(project_id, 15)
+    nombres = {int(k): v for k, v in od["accesos"].items()}
+    numero = {a: _numero_de_acceso(n) for a, n in nombres.items()}
+    if not numero or any(v is None for v in numero.values()):
+        return
+    numeros = sorted(set(numero.values()))
+    cuenta = defaultdict(lambda: defaultdict(int))   # (fecha, minuto) -> (mov, clase) -> n
+    for m in od["movimientos"]:
+        t = datetime.strptime(m["intervalo"], "%Y-%m-%d %H:%M")
+        mov = f"{numero[int(m['origen_id'])]}_{numero[int(m['destino_id'])]}"
+        clase = _CLASE_EMPRESA.get(m.get("clase") or "", "A")
+        cuenta[(t.date(), t.hour * 60 + t.minute)][(mov, clase)] += m["total"]
+    if not cuenta:
+        return
+    vistos = {mov for q in cuenta.values() for mov, _ in q}
+    movs = [f"{o}_{de}" for o in numeros for de in numeros
+            if o != de or f"{o}_{de}" in vistos]
+    clases = ["A", "B", "C"]
+
+    ws = wb.create_sheet("MOVIMIENTOS (FORMATO)", 1 if "RESUMEN" in wb.sheetnames else 0)
+    ws.sheet_view.showGridLines = False
+    _celda(ws, 1, 1, "AFORO DIRECCIONAL POR MOVIMIENTO", _TITULO, borde=False)
+    _celda(ws, 2, 1, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
+    _celda(ws, 2, 2, d["proyecto"]["name"], _NORMAL, alineacion=_IZQ, borde=False)
+    fila = 3
+    for a in sorted(nombres, key=lambda i: (numero[i], nombres[i])):
+        _celda(ws, fila, 1, f"Acceso {numero[a]}:", _ETIQUETA, alineacion=_IZQ, borde=False)
+        _celda(ws, fila, 2, nombres[a], _NORMAL, alineacion=_IZQ, borde=False)
+        fila += 1
+
+    hmd = d.get("hmd_direccional", {})
+    for fecha in sorted({f for f, _ in cuenta}):
+        fila += 1
+        dia = f"{DIAS[fecha.weekday()]} {fecha.day:02d}/{MESES[fecha.month - 1][:3]}/{fecha.year}"
+        _celda(ws, fila, 1, dia, _SUBTITULO, _AZUL)
+        ws.merge_cells(start_row=fila, start_column=1, end_row=fila,
+                       end_column=1 + 3 * len(movs))
+        fila += 1
+        _celda(ws, fila, 1, "Hr/Mov", _CABECERA, _GRIS)
+        for j, mov in enumerate(movs):
+            _celda(ws, fila, 2 + 3 * j, mov, _CABECERA, _GRIS)
+            ws.merge_cells(start_row=fila, start_column=2 + 3 * j, end_row=fila,
+                           end_column=4 + 3 * j)
+        fila += 1
+        for j in range(len(movs)):
+            for k, c in enumerate(clases):
+                _celda(ws, fila, 2 + 3 * j + k, c, _CABECERA, _GRIS)
+        suma = defaultdict(int)
+        ini_hmd = hmd.get(fecha)
+        for minuto in sorted(m for f, m in cuenta if f == fecha):
+            fila += 1
+            en_hmd = ini_hmd is not None and ini_hmd <= minuto < ini_hmd + 60
+            relleno = _AZUL if en_hmd else None
+            _celda(ws, fila, 1, f"{_hora_12(minuto)} - {_hora_12(minuto + 15)}", _NORMAL, relleno,
+                   alineacion=_IZQ)
+            for j, mov in enumerate(movs):
+                for k, c in enumerate(clases):
+                    n = cuenta[(fecha, minuto)].get((mov, c), 0)
+                    suma[(mov, c)] += n
+                    _celda(ws, fila, 2 + 3 * j + k, n, relleno=relleno)
+        fila += 1
+        _celda(ws, fila, 1, "TOTAL", _CABECERA, _GRIS)
+        for j, mov in enumerate(movs):
+            for k, c in enumerate(clases):
+                _celda(ws, fila, 2 + 3 * j + k, suma[(mov, c)], _CABECERA, _GRIS)
+        fila += 1
+        _celda(ws, fila, 1, "TOTALES", _CABECERA, _GRIS)
+        for j, mov in enumerate(movs):
+            _celda(ws, fila, 2 + 3 * j, sum(suma[(mov, c)] for c in clases), _CABECERA, _GRIS)
+            ws.merge_cells(start_row=fila, start_column=2 + 3 * j, end_row=fila,
+                           end_column=4 + 3 * j)
+    for texto in (
+        "En azul: la hora de máxima demanda del día (hoja RESUMEN).",
+        "Solo vehículos con movimiento decidido (origen y destino). A incluye motos y los "
+        "vehículos que no se pudieron clasificar; C incluye los pesados que a ese tamaño en la "
+        "imagen no se separan de un autobús.",
+    ):
+        fila += 2
+        ws.cell(fila, 1, texto).font = Font(size=9, italic=True)
+    ws.column_dimensions["A"].width = 22
+    for i in range(2, 2 + 3 * len(movs)):
+        ws.column_dimensions[get_column_letter(i)].width = 5
+
+
 def generar(project_id: int, ruta: str) -> Dict:
     """Escribe el Excel y devuelve un resumen de lo que contiene."""
     d = _datos(project_id)
@@ -1427,6 +1546,8 @@ def generar(project_id: int, ruta: str) -> Dict:
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
     if direccionales and not d["sentidos"]:
         _hoja_resumen_direccional(wb, project_id, d)
+    if direccionales:
+        _hoja_formato_empresa(wb, project_id, d)
     if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:
         raise ValueError(
             "Este proyecto todavía no tiene conteos. Procesa los videos antes "
