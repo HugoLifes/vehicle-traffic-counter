@@ -42,9 +42,26 @@ export interface Project {
      (lejana o de lado). Lo decide el servidor a partir de lo guardado. */
   tipo_camara?: TipoCamara;
   video_anotado?: number | boolean;
+  /* Lo dice lo calibrado: accesos = direccional, líneas = lineal, las dos
+     = mixto (traffic_db.tipo_de_aforo). */
+  tipo_aforo?: TipoAforo;
+  /* Lo dibujado sobre el mapa de la intersección. */
+  mapa?: MapaProyecto | null;
 }
 
 export type TipoCamara = 'grandes' | 'chicos';
+export type TipoAforo = 'lineal' | 'direccional' | 'mixto' | 'sin_calibrar';
+
+export interface PuntoMapa {
+  lat: number;
+  lon: number;
+}
+
+/** Dónde va cada acceso (por su número de la empresa) y la cámara. */
+export interface MapaProyecto {
+  camara?: (PuntoMapa & { rumbo: number; apertura: number }) | null;
+  accesos?: Record<string, PuntoMapa>;
+}
 
 /** Un aforo solo direccional cuenta movimientos, no cruces de línea. */
 export function esDireccional(p: Pick<Project, 'crossing_count' | 'movement_count'>): boolean {
@@ -65,6 +82,7 @@ export interface ProjectCreate {
   interval_minutes?: number;
   tipo_camara?: TipoCamara;
   video_anotado?: boolean;
+  mapa?: MapaProyecto;
 }
 
 export interface Lane {
@@ -451,4 +469,28 @@ export interface EventoProyecto {
   summary: string;
   detail: string | null;
   created_at: string;
+}
+
+/* --- Movimientos para el mapa de la intersección ------------------------ */
+
+/** Un brazo: su número de la empresa (o el nombre si no tiene) y las zonas
+ *  dibujadas que lo forman (los dos lados de una glorieta son uno). */
+export interface AccesoMapa {
+  clave: string;
+  nombres: string[];
+}
+
+export interface CuartoMovimientos {
+  intervalo: string; // 'YYYY-MM-DD HH:MM'
+  entradas: number;
+  movs: Record<string, number>; // '1_2' -> vehículos
+  cobertura: number | null;
+}
+
+export interface MovimientosMapa {
+  intervalo_minutos: number;
+  accesos: AccesoMapa[];
+  cuartos: CuartoMovimientos[];
+  metodo: string | null;
+  sin_decidir: number;
 }

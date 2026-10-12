@@ -10,7 +10,10 @@ import './styles/components.css';
 import './styles/layout.css';
 import './styles/pages.css';
 import './styles/print.css';
+import './styles/mapa.css';
 
+import Mapa from './pages/Mapa';
+import ProyectoMapa from './pages/ProyectoMapa';
 import Proyectos from './pages/Proyectos';
 import Proyecto from './pages/Proyecto';
 import ProyectoResumen from './pages/ProyectoResumen';
@@ -64,8 +67,11 @@ function App() {
   return (
     <>
       <Routes>
-        {/* La lista de intersecciones es la puerta de entrada. */}
-        <Route path="/" element={<Proyectos />} />
+        {/* El mapa de aforos es la puerta de entrada: cada intersección es
+            un pin (pedido del dueño, 12-oct-2026). La lista de tarjetas
+            sigue en /proyectos. */}
+        <Route path="/" element={<Mapa />} />
+        <Route path="/proyectos" element={<Proyectos />} />
 
         {/*
           El proyecto es el contenedor y las herramientas viven dentro.
@@ -77,6 +83,7 @@ function App() {
           <Route path="subir" element={<Subir />} />
           <Route path="calibrar" element={<Calibrar />} />
           <Route path="reporte" element={<Reporte />} />
+          <Route path="mapa" element={<ProyectoMapa />} />
           <Route path="camara" element={<ProyectoCamara />} />
           <Route path="registro" element={<ProyectoRegistro />} />
           <Route path="documentos" element={<ProyectoDocumentos />} />

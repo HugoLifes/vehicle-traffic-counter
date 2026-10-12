@@ -104,6 +104,15 @@
      Toma el color del camión en cada tema. */
   --veh-CAMIONETA_O_CAMION: var(--veh-truck);
 
+  /* Tipo de aforo en el mapa (pines y filtros). Van sobre la foto
+     satelital en los dos temas, así que no cambian con el tema; son
+     oscuros a propósito para que la letra blanca del pin pase 4.5:1:
+     lineal 5.9:1, direccional 7.0:1, mixto 5.5:1, sin calibrar 5.4:1. */
+  --tipo-lineal: #0b6e7d;
+  --tipo-direccional: #6a3fb5;
+  --tipo-mixto: #b04a06;
+  --tipo-sin_calibrar: #5f6b7a;
+
   /* Tipografía */
   --font-display: 'Overpass', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Overpass Mono', ui-monospace, 'Cascadia Code', monospace;

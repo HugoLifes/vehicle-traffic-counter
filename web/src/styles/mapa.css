@@ -1,0 +1,595 @@
+/* ======================================================================
+   Mapa de aforos (pages/Mapa.tsx) y mapa de una intersección
+   (pages/ProyectoMapa.tsx).
+
+   El mapa ocupa toda la pantalla bajo la barra y los controles flotan
+   encima, como en un visor de mapas: nada empuja al mapa ni lo achica.
+   Sobre la foto satelital los paneles llevan fondo sólido —el vidrio
+   esmerilado sobre una imagen con tanto detalle deja el texto sin
+   contraste estable.
+   ====================================================================== */
+
+.mp-pagina {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--surface-0);
+}
+.mp-escena {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.mp-mapa {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-2);
+}
+.mp-mapa.is-ubicando,
+.mp-mapa.is-ubicando .leaflet-interactive { cursor: crosshair; }
+
+/* Panel y tarjeta: superficies que flotan sobre el mapa. */
+.mp-panel,
+.mp-tarjeta,
+.mp-vistas,
+.mp-aviso {
+  position: absolute;
+  z-index: 500;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px var(--shadow), 0 2px 6px var(--shadow);
+}
+
+/* --- Panel de intersecciones --- */
+.mp-panel {
+  top: var(--space-4);
+  left: var(--space-4);
+  bottom: var(--space-4);
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mp-panel-cab {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.mp-panel-titulo { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.mp-panel-titulo h1 { margin: 0; font-size: var(--text-lg); font-weight: 800; letter-spacing: -0.01em; }
+.mp-panel-titulo span { font-size: var(--text-xs); color: var(--text-muted); }
+
+.mp-busca {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--text-muted);
+}
+.mp-busca:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mp-busca input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 9px 0;
+}
+
+.mp-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-05);
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+.mp-chip[aria-pressed='false'] { opacity: 0.55; border-style: dashed; }
+.mp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mp-chip-punto,
+.mp-item-punto {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--tipo-sin_calibrar);
+}
+.mp-chip-n { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+[data-tipo='lineal'] { --tipo: var(--tipo-lineal); }
+[data-tipo='direccional'] { --tipo: var(--tipo-direccional); }
+[data-tipo='mixto'] { --tipo: var(--tipo-mixto); }
+[data-tipo='sin_calibrar'] { --tipo: var(--tipo-sin_calibrar); }
+.mp-chip .mp-chip-punto,
+.mp-item-punto[data-tipo] { background: var(--tipo); }
+.mp-chip[data-tipo] .mp-chip-punto { background: var(--tipo); }
+
+.mp-lista,
+.mp-sin-ubicar ul {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2);
+  display: grid;
+  gap: 2px;
+}
+.mp-lista { overflow-y: auto; flex: 1 1 auto; }
+.mp-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.mp-item:hover { background: var(--surface-2); }
+.mp-item.is-elegido { background: var(--accent-soft); }
+.mp-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mp-item.is-plano { cursor: default; }
+.mp-item.is-plano:hover { background: transparent; }
+.mp-item-txt { display: grid; min-width: 0; flex: 1 1 auto; }
+.mp-item-nombre {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-item-meta { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.mp-sin-ubicar {
+  border-top: 1px solid var(--border);
+  max-height: 34%;
+  overflow-y: auto;
+}
+.mp-sin-ubicar h2 {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) 0;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mp-panel-pie {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.mp-enlace {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.mp-enlace:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* --- Vista satélite / calles --- */
+.mp-vistas {
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: var(--radius-md);
+}
+.mp-vistas button {
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+.mp-vistas button[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); }
+.mp-vistas button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* --- Avisos sobre el mapa --- */
+.mp-aviso {
+  top: var(--space-4);
+  left: 50%;
+  translate: -50% 0;
+  max-width: min(520px, calc(100% - 2 * var(--space-4)));
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--text-primary);
+}
+.mp-aviso.is-error { border-color: var(--critical); background: var(--critical-soft); }
+.mp-aviso.is-modo { border-color: var(--accent); background: var(--accent-soft); }
+
+/* --- Tarjeta del sitio elegido --- */
+.mp-tarjeta {
+  top: calc(var(--space-4) + 44px);
+  right: var(--space-4);
+  width: 380px;
+  max-height: calc(100% - 2 * var(--space-4) - 44px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mp-tarjeta { animation: mp-entra 180ms var(--ease-out, ease-out); }
+  @keyframes mp-entra { from { opacity: 0; translate: 0 6px; } }
+}
+.mp-tarjeta-cab {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.mp-tarjeta-cab h2 { margin: 0; font-size: var(--text-base); font-weight: 800; text-wrap: balance; }
+.mp-tarjeta-sub { margin: 2px 0 0; font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mp-icono {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.mp-icono:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mp-aforos { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.mp-aforo {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.mp-aforo:last-child { border-bottom: 0; }
+.mp-aforo-fila { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.mp-aforo-nombre {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-aforo-nombre:hover { text-decoration: underline; }
+.mp-tipo {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tipo);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.mp-aforo-cifra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mp-aforo-cifra strong { font-size: var(--text-lg); color: var(--text-primary); }
+.mp-sep { opacity: 0.6; }
+.mp-pendiente { color: var(--warning); font-weight: 700; }
+.mp-acciones { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mp-acciones .btn { padding: 6px 12px; font-size: var(--text-xs); text-decoration: none; }
+.mp-tarjeta-pie { padding: var(--space-2) var(--space-4) var(--space-3); border-top: 1px solid var(--border); }
+
+/* --- Pines --- */
+.mp-pin-caja { background: none; border: 0; }
+.mp-pin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 2px;
+  border-radius: 50% 50% 50% 4px;
+  rotate: -45deg;
+  background: var(--tipo);
+  border: 2px solid #fff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  transition: scale 150ms ease-out;
+}
+.mp-pin.is-elegido { scale: 1.18; box-shadow: 0 0 0 4px color-mix(in oklab, var(--tipo) 35%, transparent), 0 3px 10px rgba(0, 0, 0, 0.45); }
+.mp-pin-letra {
+  rotate: 45deg;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+.mp-pin-n {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  rotate: 45deg;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  color: #10161d;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.leaflet-tooltip.mp-etiqueta {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* --- Formulario de nueva intersección encima del mapa --- */
+.mp-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 800;
+  display: grid;
+  place-items: start center;
+  padding: var(--space-6) var(--space-4);
+  overflow-y: auto;
+  background: color-mix(in oklab, var(--surface-0) 55%, transparent);
+}
+.mp-modal-caja { width: min(760px, 100%); }
+
+/* --- Pantalla angosta: el panel baja a una hoja inferior --- */
+@media (max-width: 760px) {
+  .mp-panel {
+    top: auto;
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-2);
+    width: auto;
+    max-height: 46%;
+  }
+  .mp-tarjeta {
+    top: auto;
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-2);
+    width: auto;
+    max-height: 60%;
+  }
+  .mp-vistas { top: var(--space-2); right: var(--space-2); }
+  /* En el teléfono se acerca con dos dedos; los botones de zoom tapaban
+     el pie del panel. */
+  .mp-escena .leaflet-control-zoom,
+  .pm-estudio .leaflet-control-zoom { display: none; }
+  .mp-panel { max-height: 40%; }
+}
+
+/* ======================================================================
+   Mapa de una intersección (pages/ProyectoMapa.tsx)
+   ====================================================================== */
+
+.pm-estudio {
+  position: relative;
+  /* El encabezado del proyecto va compacto aquí (como en Calibrar): el
+     mapa se queda con el resto de la pantalla. */
+  height: max(560px, calc(100dvh - 190px));
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.pm-panel { width: 360px; }
+.pm-cuerpo { overflow-y: auto; flex: 1 1 auto; }
+.pm-bloque {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.pm-bloque:last-child { border-bottom: 0; }
+.pm-bloque h2 {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pm-bloque.is-aviso {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  font-size: var(--text-sm);
+}
+.pm-accesos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.pm-accesos li { display: flex; align-items: center; gap: var(--space-3); }
+
+.pm-acceso-caja,
+.pm-punta-caja,
+.pm-cifra-caja,
+.pm-camara-caja,
+.pm-giro-caja { background: none; border: 0; }
+.pm-acceso {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--c);
+  border: 3px solid #fff;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+.pm-acceso.is-chico {
+  width: 26px;
+  height: 26px;
+  border-width: 2px;
+  font-size: 12px;
+  flex: 0 0 auto;
+  box-shadow: none;
+  cursor: default;
+}
+.pm-punta {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  /* Triángulo apuntando a la derecha, centrado en la punta de la curva y
+     girado con el último tramo (rotate en línea). */
+  border-top: calc(var(--t) * 0.6) solid transparent;
+  border-bottom: calc(var(--t) * 0.6) solid transparent;
+  border-left: var(--t) solid var(--c);
+  translate: calc(var(--t) * -0.5) calc(var(--t) * -0.6);
+  transform-origin: calc(var(--t) * 0.5) calc(var(--t) * 0.6);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+.pm-cifra {
+  position: absolute;
+  translate: -50% -50%;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid var(--c);
+  color: #10161d;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.pm-camara {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #10161d;
+  color: #ffd43b;
+  border: 2px solid #ffd43b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+.pm-giro {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #ffd43b;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+
+.pm-periodo select {
+  width: 100%;
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+.pm-periodo select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pm-total { margin: 0; font-size: var(--text-xs); color: var(--text-muted); }
+.pm-total strong { font-size: var(--text-lg); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.pm-flujos { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.pm-flujos li {
+  display: grid;
+  grid-template-columns: 10px 44px minmax(0, 1fr) auto 38px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-2);
+  border-radius: 6px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.pm-flujos li.is-resaltado { background: var(--surface-2); }
+.pm-flujo-color { width: 10px; height: 10px; border-radius: 3px; }
+.pm-flujo-mov { font-weight: 800; }
+.pm-flujo-barra { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.pm-flujo-barra span { display: block; height: 100%; border-radius: 3px; opacity: 0.85; }
+.pm-flujo-n { font-weight: 700; text-align: end; }
+.pm-flujo-pct { font-size: var(--text-xs); color: var(--text-muted); text-align: end; }
+
+.pm-control {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.pm-control input { width: 100%; accent-color: var(--accent); }
+.pm-control output { text-align: end; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 760px) {
+  .pm-estudio { height: max(620px, calc(100dvh - 150px)); }
+  .pm-panel { max-height: 52%; }
+}

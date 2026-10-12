@@ -17,7 +17,8 @@ import { IconBrand, IconMoon, IconSun } from './Icons';
 import { useTheme } from '../lib/useTheme';
 
 const GLOBAL = [
-  { to: '/', label: 'Proyectos', end: true },
+  { to: '/', label: 'Mapa', end: true },
+  { to: '/proyectos', label: 'Proyectos', end: false },
   // Comparar es de varias intersecciones a la vez, así que no cabe dentro
   // de ninguna: va al nivel global.
   { to: '/comparar', label: 'Comparar', end: false },

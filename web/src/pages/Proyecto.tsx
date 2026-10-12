@@ -43,6 +43,9 @@ const HERRAMIENTAS = [
   { to: 'subir', label: 'Subir videos', end: false, paso: true },
   { to: 'calibrar', label: 'Calibrar', end: false, paso: true },
   { to: 'reporte', label: 'Reporte', end: false, paso: true },
+  // El mapa de la intersección: dónde está cada acceso, a dónde mira la
+  // cámara y, en un direccional, los movimientos dibujados como flechas.
+  { to: 'mapa', label: 'Mapa', end: false, paso: false },
   { to: 'camara', label: 'Cámara', end: false, paso: false },
   { to: 'registro', label: 'Registro', end: false, paso: false },
   // Documentos de ESTA intersección: proyecto ejecutivo, requisitos del
@@ -89,7 +92,9 @@ export default function Proyecto() {
   const { data: projects, isLoading } = useProjects();
   /* En Calibrar el encabezado se reduce a una fila: la imagen de la cámara
      necesita la pantalla, y las cifras del aforo no ayudan a dibujar. */
-  const compacta = useMatch('/proyecto/:projectId/calibrar') !== null;
+  const enCalibrar = useMatch('/proyecto/:projectId/calibrar') !== null;
+  const enMapa = useMatch('/proyecto/:projectId/mapa') !== null;
+  const compacta = enCalibrar || enMapa;
 
   const id = projectId && /^\d+$/.test(projectId) ? Number(projectId) : null;
   const project = projects?.find((p) => p.id === id) ?? null;

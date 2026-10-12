@@ -31,6 +31,7 @@ import type {
   EventoProyecto,
   FichaCamara,
   FuenteVideo,
+  MovimientosMapa,
   Tramo,
 } from './types';
 
@@ -118,6 +119,11 @@ export const detenerVelocidad = (id: number) =>
   request<{ detenidos: number }>(`/api/projects/${id}/medir-velocidad/detener`, {
     method: 'POST',
   });
+
+/* Movimientos por número de acceso y cuarto de hora, para las flechas del
+   mapa. La primera vez en un aforo grande tarda: se decide cada recorrido. */
+export const getMovimientosMapa = (id: number) =>
+  request<MovimientosMapa>(`/api/projects/${id}/movimientos-mapa`);
 
 export const updateProject = (id: number, data: Partial<ProjectCreate>) =>
   request<Project>(`/api/projects/${id}`, {
