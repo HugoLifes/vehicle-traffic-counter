@@ -19,14 +19,15 @@
   La lista de tarjetas de siempre sigue en /proyectos (botón "Lista").
 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Nav } from '../components/Nav';
 import { Button } from '../components/ui';
 import { ProjectForm } from '../components/ProjectForm';
 import { IconClose, IconSearch } from '../components/Icons';
-import { useMapa, type MapaLeaflet } from '../components/mapa/useMapa';
+import { irSuave, useMapa, type MapaLeaflet } from '../components/mapa/useMapa';
+import { Colocar } from '../components/mapa/Colocar';
 import { keys, useCreateProject, useProjects } from '../lib/queries';
 import * as api from '../lib/api';
 import { avisar } from '../lib/avisos';
@@ -116,12 +117,32 @@ function iconoPin(s: Sitio, elegido: boolean) {
 
 /* --- Tarjeta del sitio elegido ------------------------------------------ */
 
-function TarjetaSitio({ sitio, onCerrar, onMover }: { sitio: Sitio; onCerrar: () => void; onMover: () => void }) {
+function TarjetaSitio({
+  sitio,
+  enfocar,
+  onCerrar,
+  onMover,
+}: {
+  sitio: Sitio;
+  /** Se abrió con teclado: el foco tiene que llegar aquí, no quedarse en el pin. */
+  enfocar: boolean;
+  onCerrar: () => void;
+  onMover: () => void;
+}) {
+  const titulo = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (enfocar) titulo.current?.focus();
+  }, [enfocar, sitio.clave]);
+  /* Un solo botón relleno por vista: con varios aforos en el cruce,
+     "Abrir" relleno en cada uno competía entre sí. */
+  const unico = sitio.proyectos.length === 1;
   return (
     <section className="mp-tarjeta" aria-label={`Intersección ${nombreSitio(sitio)}`}>
       <header className="mp-tarjeta-cab">
         <div>
-          <h2>{nombreSitio(sitio)}</h2>
+          <h2 ref={titulo} tabIndex={-1}>
+            {nombreSitio(sitio)}
+          </h2>
           <p className="mp-tarjeta-sub">
             {sitio.proyectos.length > 1 ? plural(sitio.proyectos.length, 'aforo', 'aforos') + ' en este cruce · ' : ''}
             {sitio.lat.toFixed(5)}, {sitio.lon.toFixed(5)}
@@ -153,7 +174,7 @@ function TarjetaSitio({ sitio, onCerrar, onMover }: { sitio: Sitio; onCerrar: ()
                 {p.awaiting_count > 0 && <span className="mp-pendiente">{formatNumber(p.awaiting_count)} sin contar</span>}
               </div>
               <div className="mp-acciones">
-                <Link className="btn btn-primary" to={`/proyecto/${p.id}`}>
+                <Link className={`btn ${unico ? 'btn-primary' : 'btn-secondary'}`} to={`/proyecto/${p.id}`}>
                   Abrir
                 </Link>
                 {(t === 'direccional' || t === 'mixto') && (
@@ -195,47 +216,82 @@ export default function Mapa() {
   const [texto, setTexto] = useState('');
   const [tipos, setTipos] = useState<Set<TipoAforo>>(new Set(ORDEN));
   const [elegido, setElegido] = useState<string | null>(null);
+  const [conTeclado, setConTeclado] = useState(false);
   /* Proyecto que se está ubicando con un clic (o el sitio que se mueve). */
   const [ubicando, setUbicando] = useState<{ ids: number[]; nombre: string } | null>(null);
   const [creando, setCreando] = useState(false);
   const crear = useCreateProject();
+  const dialogo = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = dialogo.current;
+    if (!d) return;
+    if (creando && !d.open) d.showModal();
+    if (!creando && d.open) d.close();
+  }, [creando]);
 
   useEffect(() => {
     document.title = 'Mapa de aforos — Aforo Vehicular';
   }, []);
 
-  const lista = proyectos ?? [];
+  const lista = useMemo(() => proyectos ?? [], [proyectos]);
   const busca = texto.trim().toLowerCase();
-  const visibles = lista.filter(
-    (p) =>
-      tipos.has(tipoDe(p)) &&
-      (!busca || p.name.toLowerCase().includes(busca) || (p.address ?? '').toLowerCase().includes(busca)),
+  const visibles = useMemo(
+    () =>
+      lista.filter(
+        (p) =>
+          tipos.has(tipoDe(p)) &&
+          (!busca || p.name.toLowerCase().includes(busca) || (p.address ?? '').toLowerCase().includes(busca)),
+      ),
+    [lista, tipos, busca],
   );
   const sitios = useMemo(() => agrupar(visibles), [visibles]);
   const sinUbicar = visibles.filter((p) => p.latitude == null || p.longitude == null);
   const conteoTipo = (t: TipoAforo) => lista.filter((p) => tipoDe(p) === t).length;
   const sitioElegido = sitios.find((s) => s.clave === elegido) ?? null;
 
-  /* Pines: se rehacen cuando cambia lo visible o lo elegido (son pocos). */
+  /* Pines: se crean cuando cambian los sitios; elegir uno solo le cambia
+     el ícono, sin rehacer los demás. */
   const capaPines = useRef<MapaLeaflet>(null);
+  const pines = useRef(new Map<string, MapaLeaflet>());
   useEffect(() => {
     if (!mapa) return;
     capaPines.current?.remove();
+    pines.current.clear();
     const grupo = L.layerGroup().addTo(mapa);
     for (const s of sitios) {
-      L.marker([s.lat, s.lon], {
-        icon: iconoPin(s, s.clave === elegido),
+      const pin = L.marker([s.lat, s.lon], {
+        icon: iconoPin(s, false),
         keyboard: true,
         title: nombreSitio(s),
         riseOnHover: true,
-        zIndexOffset: s.clave === elegido ? 1000 : 0,
       })
         .bindTooltip(nombreSitio(s), { direction: 'top', offset: [0, -40], className: 'mp-etiqueta' })
-        .on('click', () => setElegido(s.clave))
+        .on('click', () => {
+          setConTeclado(false);
+          setElegido(s.clave);
+        })
+        // Leaflet solo usa Enter sobre un pin para abrir un popup, y aquí no
+        // hay: sin esto el pin tomaba el foco y no respondía.
+        .on('keypress', (e: { originalEvent: KeyboardEvent }) => {
+          if (e.originalEvent.key === 'Enter' || e.originalEvent.key === ' ') {
+            e.originalEvent.preventDefault();
+            setConTeclado(true);
+            setElegido(s.clave);
+          }
+        })
         .addTo(grupo);
+      pines.current.set(s.clave, pin);
     }
     capaPines.current = grupo;
-  }, [mapa, sitios, elegido]);
+  }, [mapa, sitios]);
+  useEffect(() => {
+    for (const s of sitios) {
+      const pin = pines.current.get(s.clave);
+      if (!pin) continue;
+      pin.setIcon(iconoPin(s, s.clave === elegido));
+      pin.setZIndexOffset(s.clave === elegido ? 1000 : 0);
+    }
+  }, [sitios, elegido]);
 
   /* La primera vez que hay pines, el mapa se encuadra para verlos todos. */
   const encuadrado = useRef(false);
@@ -261,33 +317,30 @@ export default function Mapa() {
     return () => window.clearTimeout(t);
   }, [mapa, sitios]);
 
-  /* Ubicar o mover: el siguiente clic en el mapa es la nueva posición. */
-  useEffect(() => {
-    if (!mapa || !ubicando) return;
-    const el = mapa.getContainer();
-    el.classList.add('is-ubicando');
-    const alClic = async (e: { latlng: { lat: number; lng: number } }) => {
-      const { lat, lng } = e.latlng;
+  /* Ubicar o mover: el siguiente clic (o "Poner aquí") es la nueva posición. */
+  const poner = useCallback(
+    async ({ lat, lon }: { lat: number; lon: number }) => {
+      if (!ubicando) return;
+      const { ids, nombre } = ubicando;
       setUbicando(null);
       try {
-        await Promise.all(ubicando.ids.map((id) => api.updateProject(id, { latitude: lat, longitude: lng })));
+        await Promise.all(ids.map((id) => api.updateProject(id, { latitude: lat, longitude: lon })));
         await qc.invalidateQueries({ queryKey: keys.projects });
-        avisar.ok(`«${ubicando.nombre}» quedó en el mapa`);
+        avisar.ok(`«${nombre}» quedó en el mapa`);
       } catch (err) {
-        avisar.error('No se pudo guardar la ubicación', { detalle: api.errorMessage(err) });
+        avisar.error('No se pudo guardar la ubicación', {
+          detalle: `${api.errorMessage(err)}. Revisa la conexión y vuelve a ubicarla.`,
+        });
       }
-    };
-    mapa.once('click', alClic);
-    return () => {
-      el.classList.remove('is-ubicando');
-      mapa.off('click', alClic);
-    };
-  }, [mapa, ubicando, qc]);
+    },
+    [ubicando, qc],
+  );
+  const cancelarUbicar = useCallback(() => setUbicando(null), []);
 
   const irA = (p: Project) => {
     if (p.latitude == null || p.longitude == null || !mapa) return;
     const s = sitios.find((x) => x.proyectos.some((q) => q.id === p.id));
-    mapa.flyTo([p.latitude, p.longitude], Math.max(mapa.getZoom(), 16), { duration: 0.8 });
+    irSuave(mapa, [p.latitude, p.longitude], Math.max(mapa.getZoom(), 16));
     if (s) setElegido(s.clave);
   };
 
@@ -311,19 +364,23 @@ export default function Mapa() {
       </header>
 
       <main className="mp-escena">
-        <div ref={contenedor} className="mp-mapa" role="application" aria-label="Mapa de intersecciones aforadas" />
+        {/* Sin role="application": apagaba la navegación normal del lector
+            de pantalla en toda la zona, y Leaflet ya da el teclado. */}
+        <div ref={contenedor} className="mp-mapa" role="region" aria-label="Mapa de intersecciones aforadas" />
 
-        {fallo && <p className="mp-aviso is-error">No se pudo cargar el mapa. La lista de intersecciones sigue funcionando.</p>}
+        {fallo && (
+          <p className="mp-aviso is-error" role="alert">
+            No se pudo cargar el mapa. Recarga la página para intentarlo otra vez; mientras, la lista de la izquierda
+            sigue funcionando.
+          </p>
+        )}
         {sinMosaicos && !fallo && (
           <p className="mp-aviso">Las imágenes del mapa vienen de internet y no están llegando: revisa la conexión.</p>
         )}
         {ubicando && (
-          <div className="mp-aviso is-modo" role="status">
-            Haz clic en el mapa donde está <strong>{ubicando.nombre}</strong>.
-            <button type="button" className="mp-enlace" onClick={() => setUbicando(null)}>
-              Cancelar
-            </button>
-          </div>
+          <Colocar mapa={mapa} onPoner={poner} onCancelar={cancelarUbicar}>
+            donde está <strong>{ubicando.nombre}</strong>
+          </Colocar>
         )}
 
         {/* --- Panel de intersecciones --- */}
@@ -400,7 +457,12 @@ export default function Mapa() {
                         {p.name}
                       </Link>
                     </span>
-                    <button type="button" className="mp-enlace" onClick={() => setUbicando({ ids: [p.id], nombre: p.name })}>
+                    <button
+                      type="button"
+                      className="mp-enlace"
+                      aria-label={`Ubicar ${p.name}`}
+                      onClick={() => setUbicando({ ids: [p.id], nombre: p.name })}
+                    >
                       Ubicar
                     </button>
                   </li>
@@ -431,6 +493,7 @@ export default function Mapa() {
         {sitioElegido && (
           <TarjetaSitio
             sitio={sitioElegido}
+            enfocar={conTeclado}
             onCerrar={() => setElegido(null)}
             onMover={() =>
               setUbicando({ ids: sitioElegido.proyectos.map((p) => p.id), nombre: nombreSitio(sitioElegido) })
@@ -438,24 +501,22 @@ export default function Mapa() {
           />
         )}
 
-        {creando && (
-          <div className="mp-modal" role="dialog" aria-modal="true" aria-label="Nueva intersección">
-            <div className="mp-modal-caja">
-              <ProjectForm
-                titulo="Nueva intersección"
-                etiquetaEnviar="Crear intersección"
-                enviando={crear.isPending}
-                error={crear.error}
-                onCancel={() => setCreando(false)}
-                onSubmit={async (data) => {
-                  const p = await crear.mutateAsync(data);
-                  setCreando(false);
-                  navigate(`/proyecto/${p.id}`);
-                }}
-              />
-            </div>
-          </div>
-        )}
+        <dialog ref={dialogo} className="mp-modal" aria-label="Nueva intersección" onClose={() => setCreando(false)}>
+          {creando && (
+            <ProjectForm
+              titulo="Nueva intersección"
+              etiquetaEnviar="Crear intersección"
+              enviando={crear.isPending}
+              error={crear.error}
+              onCancel={() => setCreando(false)}
+              onSubmit={async (data) => {
+                const p = await crear.mutateAsync(data);
+                setCreando(false);
+                navigate(`/proyecto/${p.id}`);
+              }}
+            />
+          )}
+        </dialog>
       </main>
     </div>
   );

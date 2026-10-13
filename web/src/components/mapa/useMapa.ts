@@ -27,6 +27,13 @@ const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type MapaLeaflet = any;
 
+/** Quien pidió reducir el movimiento no ve el mapa volar: salta. */
+export function irSuave(mapa: MapaLeaflet, centro: [number, number], zoom: number) {
+  const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (quieto) mapa.setView(centro, zoom, { animate: false });
+  else mapa.flyTo(centro, zoom, { duration: 0.8 });
+}
+
 export function useMapa(
   contenedor: React.RefObject<HTMLDivElement | null>,
   inicio: { centro: [number, number]; zoom: number },
@@ -45,12 +52,18 @@ export function useMapa(
     cargarLeaflet()
       .then(() => {
         if (cancelado || !contenedor.current || mapaRef.current) return;
+        const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const mapa = L.map(contenedor.current, {
           zoomControl: false,
           // Más fino que el paso por omisión: con la rueda se llega al nivel
           // de una calle sin brincarse el que se quería.
           zoomSnap: 0.5,
           wheelPxPerZoomLevel: 90,
+          // Las animaciones de zoom y de fundido de Leaflet también son
+          // movimiento: fuera para quien pidió reducirlo.
+          zoomAnimation: !quieto,
+          fadeAnimation: !quieto,
+          markerZoomAnimation: !quieto,
         }).setView(inicioRef.current.centro, inicioRef.current.zoom);
         L.control.zoom({ position: 'bottomright' }).addTo(mapa);
         L.control.scale({ position: 'bottomleft', imperial: false }).addTo(mapa);

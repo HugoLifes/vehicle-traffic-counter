@@ -19,10 +19,11 @@
   Las cifras salen de movimientos_por_acceso, el mismo camino del Excel.
 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useProjectParam } from '../lib/useProjectParam';
 import { useMapa, type MapaLeaflet } from '../components/mapa/useMapa';
+import { Colocar } from '../components/mapa/Colocar';
 import { keys, useZones } from '../lib/queries';
 import * as api from '../lib/api';
 import { avisar } from '../lib/avisos';
@@ -171,7 +172,7 @@ export default function ProyectoMapa() {
   const conMovimientos = tipo === 'direccional' || tipo === 'mixto';
 
   const { data: zonas } = useZones(project?.id ?? null);
-  const { data: mov, isFetching: calculando, error: errorMov } = useQuery({
+  const { data: mov, isFetching: calculando, error: errorMov, refetch: reintentarMov } = useQuery({
     queryKey: ['movimientos-mapa', project?.id],
     queryFn: () => api.getMovimientosMapa(project!.id),
     enabled: !!project && conMovimientos,
@@ -216,7 +217,9 @@ export default function ProyectoMapa() {
         qc.invalidateQueries({ queryKey: keys.projects });
       } catch (e) {
         setGuardado('error');
-        avisar.error('No se pudo guardar el mapa', { detalle: api.errorMessage(e) });
+        avisar.error('No se pudo guardar el mapa', {
+          detalle: `${api.errorMessage(e)}. Revisa la conexión y mueve el punto otra vez para volver a guardarlo.`,
+        });
       }
     }, 500);
   };
@@ -248,34 +251,35 @@ export default function ProyectoMapa() {
   const totalFlujos = flujos.reduce((s, f) => s + f.n, 0);
   const [resaltado, setResaltado] = useState<string | null>(null);
 
-  /* --- Colocar con un clic --- */
+  /* --- Colocar: un clic, o la mira y "Poner aquí" con teclado --- */
   const [objetivo, setObjetivo] = useState<Objetivo | null>(null);
-  useEffect(() => {
-    if (!mapa || !objetivo) return;
-    const el = mapa.getContainer();
-    el.classList.add('is-ubicando');
-    const alClic = async (e: { latlng: { lat: number; lng: number } }) => {
-      const p = { lat: e.latlng.lat, lon: e.latlng.lng };
+  const dibujoRef = useRef(dibujo);
+  dibujoRef.current = dibujo;
+  const guardarRef = useRef(guardar);
+  guardarRef.current = guardar;
+  const poner = useCallback(
+    async (p: PuntoMapa) => {
+      if (!objetivo) return;
       setObjetivo(null);
-      if (objetivo.tipo === 'acceso') guardar({ ...dibujo, accesos: { ...(dibujo.accesos ?? {}), [objetivo.clave]: p } });
-      else if (objetivo.tipo === 'camara') guardar({ ...dibujo, camara: { ...p, rumbo: dibujo.camara?.rumbo ?? 0, apertura: dibujo.camara?.apertura ?? 70 } });
+      const d = dibujoRef.current;
+      if (objetivo.tipo === 'acceso') guardarRef.current({ ...d, accesos: { ...(d.accesos ?? {}), [objetivo.clave]: p } });
+      else if (objetivo.tipo === 'camara')
+        guardarRef.current({ ...d, camara: { ...p, rumbo: d.camara?.rumbo ?? 0, apertura: d.camara?.apertura ?? 70 } });
       else if (project) {
         try {
           await api.updateProject(project.id, { latitude: p.lat, longitude: p.lon });
           await qc.invalidateQueries({ queryKey: keys.projects });
           avisar.ok('La intersección quedó ubicada');
         } catch (err) {
-          avisar.error('No se pudo guardar la ubicación', { detalle: api.errorMessage(err) });
+          avisar.error('No se pudo guardar la ubicación', {
+            detalle: `${api.errorMessage(err)}. Revisa la conexión y vuelve a ubicarla.`,
+          });
         }
       }
-    };
-    mapa.once('click', alClic);
-    return () => {
-      el.classList.remove('is-ubicando');
-      mapa.off('click', alClic);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapa, objetivo]);
+    },
+    [objetivo, project, qc],
+  );
+  const cancelar = useCallback(() => setObjetivo(null), []);
 
   /* Al ubicarse la intersección por primera vez, el mapa va hacia ella. */
   useEffect(() => {
@@ -283,15 +287,21 @@ export default function ProyectoMapa() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapa, tieneSitio]);
 
-  /* --- Capas --- */
-  const capa = useRef<MapaLeaflet>(null);
-  const dibujoRef = useRef(dibujo);
-  dibujoRef.current = dibujo;
+  /* --- Capas ---
+     Tres efectos y no uno: antes todo se rehacía al pasar el cursor por una
+     flecha o al mover el control de la cámara. Las flechas cambian con los
+     accesos o el periodo; resaltar solo les cambia el estilo; la cámara y
+     los pines de los accesos se rehacen solos. */
+  const capaFlechas = useRef<MapaLeaflet>(null);
+  const capaPuntos = useRef<MapaLeaflet>(null);
+  const flechas = useRef(new Map<string, { linea: MapaLeaflet; punta: MapaLeaflet; cifra: MapaLeaflet | null }>());
+  const claveAccesos = claves.join('|');
   useEffect(() => {
     if (!mapa) return;
-    capa.current?.remove();
+    capaFlechas.current?.remove();
+    flechas.current.clear();
     const g = L.layerGroup().addTo(mapa);
-    capa.current = g;
+    capaFlechas.current = g;
     const puestos = Object.entries(dibujo.accesos ?? {}).filter(([k]) => claves.includes(k));
 
     // Flechas: debajo de los pines.
@@ -308,11 +318,10 @@ export default function ProyectoMapa() {
         const ancho = 3 + 16 * Math.sqrt(f.n / maximo);
         const pts = curva(centro, centro, a, b, 2.5 + ancho * 0.15);
         const color = colorDe(claves, f.o);
-        const atenuar = resaltado && resaltado !== f.k;
-        L.polyline(pts, {
+        const linea = L.polyline(pts, {
           color,
           weight: ancho,
-          opacity: atenuar ? 0.18 : 0.88,
+          opacity: 0.88,
           lineCap: 'round',
         })
           .bindTooltip(`${f.o} → ${f.d}: ${formatNumber(f.n)} vehículos`, { sticky: true, className: 'mp-etiqueta' })
@@ -324,26 +333,46 @@ export default function ProyectoMapa() {
         const p2 = mapa.latLngToLayerPoint(pts[pts.length - 1]);
         const ang = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
         const tam = 8 + ancho * 0.9;
-        L.marker(pts[pts.length - 1], {
+        const punta = L.marker(pts[pts.length - 1], {
           interactive: false,
           icon: L.divIcon({
             className: 'pm-punta-caja',
-            html: `<span class="pm-punta" style="--c:${color};--t:${tam}px;rotate:${ang}deg;opacity:${atenuar ? 0.18 : 0.95}"></span>`,
+            html: `<span class="pm-punta" style="--c:${color};--t:${tam}px;rotate:${ang}deg"></span>`,
             iconSize: [0, 0],
           }),
         }).addTo(g);
-        if (!atenuar && f.n / maximo > 0.04) {
-          L.marker(pts[Math.floor(pts.length * 0.62)], {
-            interactive: false,
-            icon: L.divIcon({
-              className: 'pm-cifra-caja',
-              html: `<span class="pm-cifra" style="--c:${color}">${f.o}→${f.d} · ${formatNumber(f.n)}</span>`,
-              iconSize: [0, 0],
-            }),
-          }).addTo(g);
-        }
+        const cifra =
+          f.n / maximo > 0.04
+            ? L.marker(pts[Math.floor(pts.length * 0.62)], {
+                interactive: false,
+                icon: L.divIcon({
+                  className: 'pm-cifra-caja',
+                  html: `<span class="pm-cifra" style="--c:${color}">${f.o}→${f.d} · ${formatNumber(f.n)}</span>`,
+                  iconSize: [0, 0],
+                }),
+              }).addTo(g)
+            : null;
+        flechas.current.set(f.k, { linea, punta, cifra });
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapa, dibujo.accesos, flujos, claveAccesos]);
+
+  useEffect(() => {
+    for (const [k, f] of flechas.current) {
+      const apagada = resaltado !== null && resaltado !== k;
+      f.linea.setStyle({ opacity: apagada ? 0.18 : 0.88 });
+      f.punta.setOpacity(apagada ? 0.18 : 1);
+      f.cifra?.setOpacity(apagada ? 0 : 1);
+    }
+  }, [resaltado, flujos, dibujo.accesos]);
+
+  useEffect(() => {
+    if (!mapa) return;
+    capaPuntos.current?.remove();
+    const g = L.layerGroup().addTo(mapa);
+    capaPuntos.current = g;
+    const puestos = Object.entries(dibujo.accesos ?? {}).filter(([k]) => claves.includes(k));
 
     // Cámara y su cono.
     const cam = dibujo.camara;
@@ -368,7 +397,8 @@ export default function ProyectoMapa() {
       const puntaM = aGrados(cam, [Math.sin((cam.rumbo * Math.PI) / 180) * radio, Math.cos((cam.rumbo * Math.PI) / 180) * radio]);
       const giro = L.marker(puntaM, {
         draggable: true,
-        icon: L.divIcon({ className: 'pm-giro-caja', html: '<span class="pm-giro" title="Arrastra para girar la cámara"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+        // 28 px de agarre alrededor de un punto de 18: el mínimo de 24 px.
+        icon: L.divIcon({ className: 'pm-giro-caja', html: '<span class="pm-giro" title="Arrastra para girar la cámara"></span>', iconSize: [28, 28], iconAnchor: [14, 14] }),
       }).addTo(g);
       giro.on('dragend', () => {
         const ll = giro.getLatLng();
@@ -392,27 +422,36 @@ export default function ProyectoMapa() {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapa, dibujo, flujos, resaltado, claves.join('|')]);
+  }, [mapa, dibujo.camara, dibujo.accesos, claveAccesos]);
 
   if (!project) return null;
   const faltan = accesos.filter((a) => !dibujo.accesos?.[a.clave]);
 
   return (
     <div className="pm-estudio">
-      <div ref={contenedor} className="mp-mapa" role="application" aria-label={`Mapa de ${project.name}`} />
-      {fallo && <p className="mp-aviso is-error">No se pudo cargar el mapa.</p>}
+      <div ref={contenedor} className="mp-mapa" role="region" aria-label={`Mapa de ${project.name}`} />
+      {fallo && (
+        <p className="mp-aviso is-error" role="alert">
+          No se pudo cargar el mapa. Recarga la página para intentarlo otra vez.
+        </p>
+      )}
       {sinMosaicos && !fallo && <p className="mp-aviso">Las imágenes del mapa vienen de internet y no están llegando: revisa la conexión.</p>}
       {objetivo && (
-        <div className="mp-aviso is-modo" role="status">
-          {objetivo.tipo === 'acceso'
-            ? <>Haz clic en el mapa sobre la calle del <strong>acceso {objetivo.clave}</strong>.</>
-            : objetivo.tipo === 'camara'
-              ? <>Haz clic donde está la <strong>cámara</strong>.</>
-              : <>Haz clic donde está la <strong>intersección</strong>.</>}
-          <button type="button" className="mp-enlace" onClick={() => setObjetivo(null)}>
-            Cancelar
-          </button>
-        </div>
+        <Colocar mapa={mapa} onPoner={poner} onCancelar={cancelar}>
+          {objetivo.tipo === 'acceso' ? (
+            <>
+              sobre la calle del <strong>acceso {objetivo.clave}</strong>
+            </>
+          ) : objetivo.tipo === 'camara' ? (
+            <>
+              donde está la <strong>cámara</strong>
+            </>
+          ) : (
+            <>
+              donde está la <strong>intersección</strong>
+            </>
+          )}
+        </Colocar>
       )}
 
       <div className="mp-vistas" role="group" aria-label="Tipo de mapa">
@@ -426,10 +465,10 @@ export default function ProyectoMapa() {
       <aside className="mp-panel pm-panel" aria-label="Mapa de la intersección">
         <div className="mp-panel-cab">
           <div className="mp-panel-titulo">
-            <h1>
+            <h2>
               <span className="mp-tipo" data-tipo={tipo}>{TIPOS[tipo].nombre}</span>
-            </h1>
-            <span>{guardado === 'guardando' ? 'Guardando…' : guardado === 'error' ? 'Sin guardar' : 'Guardado'}</span>
+            </h2>
+            <span role="status">{guardado === 'guardando' ? 'Guardando…' : guardado === 'error' ? 'Sin guardar' : 'Guardado'}</span>
           </div>
           {!tieneSitio && (
             <div className="pm-bloque is-aviso">
@@ -457,7 +496,12 @@ export default function ProyectoMapa() {
                         {a.nombres.map((n) => n.replace(/^\s*\d+\s*[·\-–—:.]?\s*/, '')).join(' · ') || a.clave}
                       </span>
                     </span>
-                    <button type="button" className="mp-enlace" onClick={() => setObjetivo({ tipo: 'acceso', clave: a.clave })}>
+                    <button
+                      type="button"
+                      className="mp-enlace"
+                      aria-label={`${dibujo.accesos?.[a.clave] ? 'Mover' : 'Poner'} el acceso ${a.clave}`}
+                      onClick={() => setObjetivo({ tipo: 'acceso', clave: a.clave })}
+                    >
                       {dibujo.accesos?.[a.clave] ? 'Mover' : 'Poner'}
                     </button>
                   </li>
@@ -475,7 +519,14 @@ export default function ProyectoMapa() {
             <section className="pm-bloque">
               <h2>Movimientos</h2>
               {calculando && !mov && <p className="mp-item-meta">Calculando los movimientos… la primera vez en un aforo grande tarda unos minutos.</p>}
-              {errorMov && <p className="mp-item-meta">No se pudieron leer los movimientos: {api.errorMessage(errorMov)}</p>}
+              {errorMov && (
+                <p className="mp-item-meta">
+                  No se pudieron leer los movimientos ({api.errorMessage(errorMov)}).{' '}
+                  <button type="button" className="mp-enlace" onClick={() => void reintentarMov()}>
+                    Reintentar
+                  </button>
+                </p>
+              )}
               {opciones.length > 0 && (
                 <label className="pm-periodo">
                   <span className="sr-only">Periodo</span>

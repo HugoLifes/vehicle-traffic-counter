@@ -918,6 +918,19 @@ def _decidir_por_trayectoria(project_id: int, filas) -> Dict:
     guardado = _cache_trayectoria.get(project_id)
     if guardado and guardado[0] == firma:
         return guardado[1]
+    # También en disco: en memoria se perdía en cada reinicio, y decidir
+    # Gómez Morín (29 mil recorridos) tarda 442 s medidos en el Orin. El
+    # mapa de la intersección y el Excel quedaban esperando ese tiempo la
+    # primera vez después de cada reinicio. La firma es la misma de la
+    # memoria: un video contado o recontado la cambia y se vuelve a decidir.
+    ruta_cache = Path(DB_PATH).parent / "cache_od" / f"{project_id}.json"
+    try:
+        en_disco = json.loads(ruta_cache.read_text(encoding="utf-8"))
+        if tuple(en_disco.get("firma", ())) == firma:
+            _cache_trayectoria[project_id] = (firma, en_disco["resultado"])
+            return en_disco["resultado"]
+    except (OSError, ValueError, KeyError):
+        pass
 
     registros = []
     for f in filas:
@@ -942,6 +955,14 @@ def _decidir_por_trayectoria(project_id: int, filas) -> Dict:
     resultado = {'vehiculos': decision['vehiculos'], 'sin_decidir': decision['sin_decidir'],
                  'motivos': decision['motivos'], 'rozadas': decision['rozadas']}
     _cache_trayectoria[project_id] = (firma, resultado)
+    try:
+        ruta_cache.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ruta_cache.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"firma": list(firma), "resultado": resultado},
+                                  separators=(",", ":")), encoding="utf-8")
+        tmp.replace(ruta_cache)
+    except OSError:
+        logging.exception(f"No se pudo guardar la decisión por trayectoria del proyecto {project_id}")
     return resultado
 
 
