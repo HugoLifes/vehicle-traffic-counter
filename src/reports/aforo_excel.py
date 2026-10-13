@@ -1503,8 +1503,16 @@ def _movimientos_formato(project_id: int):
                     cuenta[k][(mov, c)] = max(0, por_clase[c] - otros)
     if not cuenta:
         return None
-    vistos = {mov for q in cuenta.values() for (mov, _), n in q.items() if n}
-    movs = [f"{o}_{de}" for o in numeros for de in numeros if o != de or f"{o}_{de}" in vistos]
+    # Las vueltas en U (3_3) solo si de verdad pesan: en las hojas de campo de
+    # la empresa no vienen, y aquí casi siempre son un vehículo que rodeó la
+    # isla de una glorieta entre dos accesos con el mismo número.
+    por_mov = defaultdict(int)
+    for q in cuenta.values():
+        for (mov, _), n in q.items():
+            por_mov[mov] += n
+    total = sum(por_mov.values()) or 1
+    movs = [f"{o}_{de}" for o in numeros for de in numeros
+            if o != de or por_mov[f"{o}_{de}"] >= 0.02 * total]
     return movs, cuenta, derivados
 
 
