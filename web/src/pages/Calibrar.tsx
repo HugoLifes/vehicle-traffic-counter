@@ -94,6 +94,8 @@ export default function Calibrar() {
   const [mapaEstado, setMapaEstado] = useState<api.EstadoRecorridos | null>(null);
   const [pedidoMapa, setPedidoMapa] = useState(0);
   const [pidiendoMapa, setPidiendoMapa] = useState(false);
+  /* Marca de versión del croquis: 0 si no hay; cambia al subir uno nuevo. */
+  const [croquisVer, setCroquisVer] = useState(1);
   const [tamano, setTamano] = useState<{ ancho: number; alto: number } | null>(null);
 
   const [herr, setHerr] = useState<Herramienta>('seleccionar');
@@ -941,6 +943,27 @@ export default function Calibrar() {
           {accesos.length > 0 && (
             <section className="est-grupo">
               <h3>Accesos (direccional)</h3>
+              <p className="est-nota">
+                Ponle a cada acceso el número del croquis de la empresa al principio del nombre ("1 · …"): el
+                Excel sale en su formato, con los movimientos 1_2, 2_3…
+              </p>
+              <div className="est-croquis">
+                {croquisVer && (
+                  <img src={`${api.croquisUrl(projectId)}?v=${croquisVer}`} alt="Croquis de la empresa" onError={() => setCroquisVer(0)} />
+                )}
+                <label className="est-enlace est-sec">
+                  {croquisVer ? 'Cambiar el croquis' : 'Subir el croquis de la empresa (imagen)'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void api.subirCroquis(projectId, f).then(() => setCroquisVer(Date.now())).catch((er) => setError(errorMessage(er)));
+                    }}
+                  />
+                </label>
+              </div>
               {accesos.map((z) => (
                 <div key={z.id} className="est-suelta" style={{ ['--c' as string]: colorZona(z) }}>
                   <span className="est-punto" />

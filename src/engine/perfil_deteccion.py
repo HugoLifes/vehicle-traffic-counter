@@ -29,6 +29,7 @@ exactamente igual que antes:
 internet (ver src/engine/clasificador_pesados.py).
 """
 import json
+import re
 import logging
 from typing import Dict, List, Optional
 
@@ -79,6 +80,18 @@ def leer(proyecto: Optional[Dict]) -> Dict:
             and all(isinstance(v, (int, float)) and v >= 0 for v in tapar)
             and tapar[2] > tapar[0] and tapar[3] > tapar[1]):
         limpio["tapar_leyenda"] = [int(v) for v in tapar]
+    # Movimientos del direccional que se toman de una línea de conteo y no de
+    # la matriz: {"3_1": {"linea": 1, "sentido": "sale"}}. En Fraccionamiento
+    # (13-oct-2026) la cámara no sigue de punta a punta el paso por la avenida
+    # y la matriz lo daba en cero; la línea del acceso 1 lo mide (544 contra
+    # 549 del conteo a mano). Ver aforo_excel._movimientos_formato.
+    por_linea = {}
+    for mov, regla in (perfil.get("movimiento_por_linea") or {}).items():
+        if (isinstance(mov, str) and re.fullmatch(r"\d+_\d+", mov) and isinstance(regla, dict)
+                and isinstance(regla.get("linea"), int) and regla.get("sentido") in ("entra", "sale")):
+            por_linea[mov] = {"linea": regla["linea"], "sentido": regla["sentido"]}
+    if por_linea:
+        limpio["movimiento_por_linea"] = por_linea
     return limpio
 
 

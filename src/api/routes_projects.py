@@ -13,7 +13,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from src.api.routes_video_frames import cerrar_captura
@@ -634,3 +635,43 @@ def direccional(project_id: int, interval_minutes: Optional[int] = None,
     return traffic_db.get_matriz_od(
         project_id, interval_minutes or project.get("interval_minutes") or 15, metodo
     )
+
+
+# --- Croquis de la empresa ----------------------------------------------------
+#
+# La imagen con los números de acceso que la empresa pone en sus hojas de
+# campo. Va en la hoja HMD del Excel direccional, a la izquierda de la tabla
+# Hr/Mov, como en su formato (aforo_excel._hojas_formato_empresa).
+
+@router.post("/{project_id}/croquis")
+async def subir_croquis(project_id: int, archivo: UploadFile = File(...)):
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    import cv2
+    import numpy as np
+    from src.reports.aforo_excel import ruta_croquis
+    datos = await archivo.read()
+    img = cv2.imdecode(np.frombuffer(datos, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(400, "No es una imagen que se pueda leer (usa PNG o JPG).")
+    destino = ruta_croquis(project_id)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(destino), img)
+    traffic_db.log_event(project_id, "proyecto", "Se subió el croquis", archivo.filename or "")
+    return {"croquis": True, "ancho": img.shape[1], "alto": img.shape[0]}
+
+
+@router.get("/{project_id}/croquis")
+def leer_croquis(project_id: int):
+    from src.reports.aforo_excel import ruta_croquis
+    ruta = ruta_croquis(project_id)
+    if not ruta.exists():
+        raise HTTPException(404, "Esta intersección no tiene croquis")
+    return Response(ruta.read_bytes(), media_type="image/png")
+
+
+@router.delete("/{project_id}/croquis")
+def borrar_croquis(project_id: int):
+    from src.reports.aforo_excel import ruta_croquis
+    ruta_croquis(project_id).unlink(missing_ok=True)
+    return {"croquis": False}

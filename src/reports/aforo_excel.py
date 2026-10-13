@@ -26,6 +26,7 @@ import logging
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from openpyxl import Workbook
@@ -1427,108 +1428,223 @@ def _hora_12(minuto: int) -> str:
     return f"{(h % 12) or 12}:{m:02d} {'AM' if h < 12 else 'PM'}"
 
 
-def _hoja_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> None:
+def _es_direccional(project_id: int) -> bool:
+    return bool(traffic_db.get_connection().execute(
+        "SELECT 1 FROM zones WHERE project_id = ? AND kind = 'acceso' AND active = 1",
+        (project_id,)).fetchone())
+
+
+CROQUIS_DIR = Path("data/croquis")
+_CLASES = ["A", "B", "C"]
+
+
+def ruta_croquis(project_id: int) -> Path:
+    """El croquis de la empresa (imagen con los números de acceso) de una
+    intersección, si se subió."""
+    return CROQUIS_DIR / f"{project_id}.png"
+
+
+def _movimientos_formato(project_id: int):
     """
     Los movimientos como los entrega la empresa: "1_2", "2_3", "3_3"...
-    con A, B y C por cuarto de hora ("Hr/Mov"), el mismo acomodo de sus
-    hojas de campo (Aforos campos.xlsx, 12-oct-2026). El número de cada
-    acceso es el que la empresa pone en su croquis, y en la plataforma va al
-    principio del nombre del acceso ("1 · Calle de la cámara"). Dos accesos
-    con el mismo número (dos lados de una glorieta) son el mismo brazo.
+    con A, B y C por cuarto de hora. El número de cada acceso es el de su
+    croquis y va al principio del nombre del acceso ("1 · Calle de la
+    cámara"); dos accesos con el mismo número (dos lados de una glorieta) son
+    el mismo brazo.
 
-    Solo sale si TODOS los accesos tienen número: sin él no hay a qué
-    traducir el movimiento.
+    Devuelve (movs, cuenta, derivados) o None si algún acceso no tiene número.
+    `cuenta[(fecha, minuto)][(mov, clase)]`.
+
+    Un movimiento puede salir de una línea de conteo en vez de la matriz, si
+    el perfil lo pide (`movimiento_por_linea`, ver perfil_deteccion): el que
+    la cámara no sigue de punta a punta. Se calcula como lo que cruzó la línea
+    de ese acceso en ese sentido menos los demás movimientos de la matriz que
+    entran o salen por ahí. Fraccionamiento, 6:45-7:45 contra el conteo a
+    mano: 3_1 sale 630 contra 529 (la matriz daba 0).
     """
+    from src.engine import perfil_deteccion
     od = traffic_db.get_matriz_od(project_id, 15)
     nombres = {int(k): v for k, v in od["accesos"].items()}
     numero = {a: _numero_de_acceso(n) for a, n in nombres.items()}
     if not numero or any(v is None for v in numero.values()):
-        return
+        return None
     numeros = sorted(set(numero.values()))
-    cuenta = defaultdict(lambda: defaultdict(int))   # (fecha, minuto) -> (mov, clase) -> n
+    cuenta = defaultdict(lambda: defaultdict(int))
     for m in od["movimientos"]:
         t = datetime.strptime(m["intervalo"], "%Y-%m-%d %H:%M")
         mov = f"{numero[int(m['origen_id'])]}_{numero[int(m['destino_id'])]}"
-        clase = _CLASE_EMPRESA.get(m.get("clase") or "", "A")
-        cuenta[(t.date(), t.hour * 60 + t.minute)][(mov, clase)] += m["total"]
+        cuenta[(t.date(), t.hour * 60 + t.minute)][(mov, _CLASE_EMPRESA.get(m.get("clase") or "", "A"))] += m["total"]
+
+    reglas = perfil_deteccion.leer(traffic_db.get_project(project_id)).get("movimiento_por_linea", {})
+    derivados = set()
+    if reglas:
+        lineas = {}
+        for l in traffic_db.get_interval_counts(project_id, 15).get("lanes", []):
+            n = _numero_de_acceso(l["lane_name"])
+            if n is not None:
+                lineas[n] = l["intervals"]
+        for mov, regla in reglas.items():
+            o, de = mov.split("_")
+            ivs = lineas.get(regla["linea"])
+            if ivs is None:
+                continue
+            derivados.add(mov)
+            lado = "out" if regla["sentido"] == "sale" else "in"
+            for iv in ivs:
+                t = datetime.strptime(iv["start"][:16], "%Y-%m-%d %H:%M")
+                k = (t.date(), t.hour * 60 + t.minute)
+                por_clase = defaultdict(int)
+                for clase, c in (iv.get("by_vehicle_type") or {}).items():
+                    por_clase[_CLASE_EMPRESA.get(clase, "A")] += c.get(lado, 0)
+                for c in _CLASES:
+                    otros = sum(n for (mv, cl), n in cuenta[k].items() if cl == c and mv != mov and (
+                        mv.split("_")[1] == str(regla["linea"]) if lado == "out"
+                        else mv.split("_")[0] == str(regla["linea"])))
+                    cuenta[k][(mov, c)] = max(0, por_clase[c] - otros)
     if not cuenta:
-        return
-    vistos = {mov for q in cuenta.values() for mov, _ in q}
-    movs = [f"{o}_{de}" for o in numeros for de in numeros
-            if o != de or f"{o}_{de}" in vistos]
-    clases = ["A", "B", "C"]
+        return None
+    vistos = {mov for q in cuenta.values() for (mov, _), n in q.items() if n}
+    movs = [f"{o}_{de}" for o in numeros for de in numeros if o != de or f"{o}_{de}" in vistos]
+    return movs, cuenta, derivados
 
-    ws = wb.create_sheet("MOVIMIENTOS (FORMATO)", 1 if "RESUMEN" in wb.sheetnames else 0)
-    ws.sheet_view.showGridLines = False
-    _celda(ws, 1, 1, "AFORO DIRECCIONAL POR MOVIMIENTO", _TITULO, borde=False)
-    _celda(ws, 2, 1, "LUGAR:", _ETIQUETA, alineacion=_IZQ, borde=False)
-    _celda(ws, 2, 2, d["proyecto"]["name"], _NORMAL, alineacion=_IZQ, borde=False)
-    fila = 3
-    for a in sorted(nombres, key=lambda i: (numero[i], nombres[i])):
-        _celda(ws, fila, 1, f"Acceso {numero[a]}:", _ETIQUETA, alineacion=_IZQ, borde=False)
-        _celda(ws, fila, 2, nombres[a], _NORMAL, alineacion=_IZQ, borde=False)
+
+def _tabla_hr_mov(ws, fila: int, col: int, titulo: Optional[str], cuartos, movs, cuenta,
+                  resaltar=frozenset()) -> int:
+    """La tabla de las hojas de campo de la empresa: "Hr/Mov", cada movimiento
+    con A, B y C, una fila por cuarto de hora, TOTAL y TOTALES. Devuelve la
+    fila siguiente."""
+    if titulo:
+        _celda(ws, fila, col, titulo, _SUBTITULO, _AZUL)
+        ws.merge_cells(start_row=fila, start_column=col, end_row=fila, end_column=col + 3 * len(movs))
         fila += 1
+    _celda(ws, fila, col, "Hr/Mov", _CABECERA, _GRIS)
+    for j, mov in enumerate(movs):
+        _celda(ws, fila, col + 1 + 3 * j, mov, _CABECERA, _GRIS)
+        ws.merge_cells(start_row=fila, start_column=col + 1 + 3 * j, end_row=fila, end_column=col + 3 + 3 * j)
+    fila += 1
+    for j in range(len(movs)):
+        for k, c in enumerate(_CLASES):
+            _celda(ws, fila, col + 1 + 3 * j + k, c, _CABECERA, _GRIS)
+    suma = defaultdict(int)
+    for clave in cuartos:
+        fila += 1
+        relleno = _AZUL if clave in resaltar else None
+        _celda(ws, fila, col, f"{_hora_12(clave[1])} - {_hora_12(clave[1] + 15)}", _NORMAL, relleno,
+               alineacion=_IZQ)
+        for j, mov in enumerate(movs):
+            for k, c in enumerate(_CLASES):
+                n = cuenta.get(clave, {}).get((mov, c), 0)
+                suma[(mov, c)] += n
+                _celda(ws, fila, col + 1 + 3 * j + k, n, relleno=relleno)
+    fila += 1
+    _celda(ws, fila, col, "TOTAL", _CABECERA, _GRIS)
+    for j, mov in enumerate(movs):
+        for k, c in enumerate(_CLASES):
+            _celda(ws, fila, col + 1 + 3 * j + k, suma[(mov, c)], _CABECERA, _GRIS)
+    fila += 1
+    _celda(ws, fila, col, "TOTALES", _CABECERA, _GRIS)
+    for j, mov in enumerate(movs):
+        _celda(ws, fila, col + 1 + 3 * j, sum(suma[(mov, c)] for c in _CLASES), _CABECERA, _GRIS)
+        ws.merge_cells(start_row=fila, start_column=col + 1 + 3 * j, end_row=fila, end_column=col + 3 + 3 * j)
+    return fila + 1
 
-    hmd = d.get("hmd_direccional", {})
+
+def _hmd_por_turno(project_id: int, d: Dict, cuenta) -> List:
+    """[(fecha, 'MAÑANA'|'TARDE', [4 cuartos])]: la hora de máxima demanda de
+    cada mañana (antes de las 12:00) y cada tarde, sumando todos los
+    movimientos. Solo entran horas con los cuatro cuartos con video completo
+    y medibles, como en el aforo por línea."""
+    tramos = traffic_db._tramos_de_video(project_id)
+    total = {k: sum(v.values()) for k, v in cuenta.items()}
+    salida = []
     for fecha in sorted({f for f, _ in cuenta}):
-        fila += 1
+        base = datetime(fecha.year, fecha.month, fecha.day)
+        for turno, desde, hasta in (("MAÑANA", 0, 720), ("TARDE", 720, 1440)):
+            mejor = None
+            for m in range(desde, hasta - 45, 15):
+                qs = [(fecha, m + 15 * k) for k in range(4)]
+                if any((fecha.weekday(), mm // 60) in d["no_medibles"] for _, mm in qs):
+                    continue
+                if tramos and any(traffic_db.cobertura_de_video(
+                        project_id, base + timedelta(minutes=mm), base + timedelta(minutes=mm + 15),
+                        tramos) < 0.995 for _, mm in qs):
+                    continue
+                vol = sum(total.get(q, 0) for q in qs)
+                if vol and (mejor is None or vol > mejor[0]):
+                    mejor = (vol, qs)
+            if mejor:
+                salida.append((fecha, turno, mejor[1]))
+    return salida
+
+
+def _hojas_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> int:
+    """
+    El Excel de un aforo direccional, en el formato de la empresa (sus hojas
+    de campo, "Aforos campos.xlsx", 12-oct-2026): el croquis con los números
+    de acceso y, al lado, la tabla Hr/Mov de la hora de máxima demanda de la
+    mañana y de la tarde de cada día; aparte, todos los cuartos de hora.
+    Nada más: el Excel direccional anterior mezclaba las hojas del aforo por
+    línea (sentidos "entra/sale", TOTALES, CLASIFICACION) y los nombres de
+    los accesos, y la empresa no lo podía leer contra su conteo.
+
+    Devuelve los vehículos del estudio (0 si los accesos no tienen número).
+    """
+    datos = _movimientos_formato(project_id)
+    if datos is None:
+        return 0
+    movs, cuenta, derivados = datos
+    p = d["proyecto"]
+
+    ws = wb.create_sheet("HMD")
+    ws.sheet_view.showGridLines = False
+    col = 1
+    croquis = ruta_croquis(project_id)
+    if croquis.exists():
+        from openpyxl.drawing.image import Image as _Imagen
+        img = _Imagen(str(croquis))
+        escala = min(1.0, 560 / img.height)
+        img.width, img.height = int(img.width * escala), int(img.height * escala)
+        ws.add_image(img, "A1")
+        col = max(2, int(img.width / 64) + 2)
+    _celda(ws, 1, col, p["name"], _TITULO, borde=False)
+    fila = 3
+    hmd = _hmd_por_turno(project_id, d, cuenta)
+    for fecha, turno, qs in hmd:
         dia = f"{DIAS[fecha.weekday()]} {fecha.day:02d}/{MESES[fecha.month - 1][:3]}/{fecha.year}"
-        _celda(ws, fila, 1, dia, _SUBTITULO, _AZUL)
-        ws.merge_cells(start_row=fila, start_column=1, end_row=fila,
-                       end_column=1 + 3 * len(movs))
+        fila = _tabla_hr_mov(ws, fila, col, f"HORA DE MÁXIMA DEMANDA, {turno} — {dia}", qs, movs, cuenta) + 1
+    notas = ["A: automóviles, camionetas, pickups y motos. B: autobuses. C: camiones y tractocamiones."]
+    if derivados:
+        notas.append(", ".join(sorted(derivados)) + ": medido con la línea de conteo de la calle, "
+                     "menos las vueltas; la cámara no sigue ese movimiento de punta a punta.")
+    for t in notas:
+        ws.cell(fila, col, t).font = Font(size=9, italic=True)
         fila += 1
-        _celda(ws, fila, 1, "Hr/Mov", _CABECERA, _GRIS)
-        for j, mov in enumerate(movs):
-            _celda(ws, fila, 2 + 3 * j, mov, _CABECERA, _GRIS)
-            ws.merge_cells(start_row=fila, start_column=2 + 3 * j, end_row=fila,
-                           end_column=4 + 3 * j)
-        fila += 1
-        for j in range(len(movs)):
-            for k, c in enumerate(clases):
-                _celda(ws, fila, 2 + 3 * j + k, c, _CABECERA, _GRIS)
-        suma = defaultdict(int)
-        ini_hmd = hmd.get(fecha)
-        for minuto in sorted(m for f, m in cuenta if f == fecha):
-            fila += 1
-            en_hmd = ini_hmd is not None and ini_hmd <= minuto < ini_hmd + 60
-            relleno = _AZUL if en_hmd else None
-            _celda(ws, fila, 1, f"{_hora_12(minuto)} - {_hora_12(minuto + 15)}", _NORMAL, relleno,
-                   alineacion=_IZQ)
-            for j, mov in enumerate(movs):
-                for k, c in enumerate(clases):
-                    n = cuenta[(fecha, minuto)].get((mov, c), 0)
-                    suma[(mov, c)] += n
-                    _celda(ws, fila, 2 + 3 * j + k, n, relleno=relleno)
-        fila += 1
-        _celda(ws, fila, 1, "TOTAL", _CABECERA, _GRIS)
-        for j, mov in enumerate(movs):
-            for k, c in enumerate(clases):
-                _celda(ws, fila, 2 + 3 * j + k, suma[(mov, c)], _CABECERA, _GRIS)
-        fila += 1
-        _celda(ws, fila, 1, "TOTALES", _CABECERA, _GRIS)
-        for j, mov in enumerate(movs):
-            _celda(ws, fila, 2 + 3 * j, sum(suma[(mov, c)] for c in clases), _CABECERA, _GRIS)
-            ws.merge_cells(start_row=fila, start_column=2 + 3 * j, end_row=fila,
-                           end_column=4 + 3 * j)
-    notas = [
-        "En azul: la hora de máxima demanda del día (hoja RESUMEN).",
-        "Solo vehículos con movimiento decidido (origen y destino). A incluye motos y los "
-        "vehículos que no se pudieron clasificar; C incluye los pesados que a ese tamaño en la "
-        "imagen no se separan de un autobús.",
-    ]
-    if d.get("cordon"):
-        # Fraccionamiento (12-oct-2026): el paso por la avenida (3_1, 529 en
-        # campo) salía en 0 aquí y la línea de esa calle lo midió en 544
-        # contra 549. Sin la nota la hoja se lee como "no pasó nadie".
-        notas.insert(0, "OJO: en esta intersección la cámara no sigue de punta a punta el "
-                        "tránsito de paso, y aquí sale corto o en cero. Su volumen lo miden las "
-                        "líneas de cada calle: hoja RESUMEN, filas '(ENTRA)' y '(SALE)'.")
-    for texto in notas:
-        fila += 2
-        ws.cell(fila, 1, texto).font = Font(size=9, italic=True)
-    ws.column_dimensions["A"].width = 22
-    for i in range(2, 2 + 3 * len(movs)):
+    ws.column_dimensions[get_column_letter(col)].width = 20
+    for i in range(col + 1, col + 1 + 3 * len(movs)):
         ws.column_dimensions[get_column_letter(i)].width = 5
+
+    ws2 = wb.create_sheet("MOVIMIENTOS (15 MIN)")
+    ws2.sheet_view.showGridLines = False
+    _celda(ws2, 1, 1, p["name"], _TITULO, borde=False)
+    fila = 3
+    en_hmd = {q for _, _, qs in hmd for q in qs}
+    for fecha in sorted({f for f, _ in cuenta}):
+        dia = f"{DIAS[fecha.weekday()]} {fecha.day:02d}/{MESES[fecha.month - 1][:3]}/{fecha.year}"
+        qs = sorted(k for k in cuenta if k[0] == fecha)
+        fila = _tabla_hr_mov(ws2, fila, 1, dia, qs, movs, cuenta, en_hmd) + 1
+    ws2.cell(fila, 1, "En azul: las horas de máxima demanda (hoja HMD).").font = Font(size=9, italic=True)
+    ws2.column_dimensions["A"].width = 20
+    for i in range(2, 2 + 3 * len(movs)):
+        ws2.column_dimensions[get_column_letter(i)].width = 5
+
+    # La hoja METODO lee estos campos.
+    claves = sorted(cuenta)
+    a, b = claves[0], claves[-1]
+    d["inicio"] = datetime(a[0].year, a[0].month, a[0].day) + timedelta(minutes=a[1])
+    d["fin"] = datetime(b[0].year, b[0].month, b[0].day) + timedelta(minutes=b[1] + 15)
+    d["fechas"] = sorted({f for f, _ in claves})
+    d["total"] = sum(sum(v.values()) for v in cuenta.values())
+    return d["total"]
 
 
 def generar(project_id: int, ruta: str) -> Dict:
@@ -1540,6 +1656,13 @@ def generar(project_id: int, ruta: str) -> Dict:
     # Un proyecto puede tener solo aforo por línea, solo direccional, o
     # ambos. Las hojas de sentidos salen si hay cruces; la direccional, si
     # hay movimientos.
+    # Aforo direccional con los accesos numerados como en el croquis de la
+    # empresa: su formato y nada más (ver _hojas_formato_empresa).
+    if _es_direccional(project_id) and _hojas_formato_empresa(wb, project_id, d):
+        _hoja_metodo(wb, d)
+        wb.save(ruta)
+        logging.info(f"Aforo direccional generado en el formato de la empresa: {ruta}")
+        return {"archivo": ruta, "cruces": d["total"], "sentidos": [], "dias": len(d["fechas"])}
     if d["sentidos"]:
         _hoja_totales(wb, d)
         _hoja_cuartos(wb, d)
@@ -1550,8 +1673,6 @@ def generar(project_id: int, ruta: str) -> Dict:
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
     if direccionales and not d["sentidos"]:
         _hoja_resumen_direccional(wb, project_id, d)
-    if direccionales:
-        _hoja_formato_empresa(wb, project_id, d)
     if not d["sentidos"] and not direccionales and "DIRECCIONAL" not in wb.sheetnames:
         raise ValueError(
             "Este proyecto todavía no tiene conteos. Procesa los videos antes "

@@ -535,6 +535,15 @@ export interface EstadoRecorridos {
   error: string | null;
   mapa: MapaRecorridos | null;
 }
+/* Croquis de la empresa (la imagen con los números de acceso): va en la hoja
+   HMD del Excel direccional, como en sus hojas de campo. */
+export const croquisUrl = (projectId: number) => `/api/projects/${projectId}/croquis`;
+export const subirCroquis = (projectId: number, archivo: File) => {
+  const datos = new FormData();
+  datos.append('archivo', archivo);
+  return request<{ croquis: boolean }>(`/api/projects/${projectId}/croquis`, { method: 'POST', body: datos });
+};
+
 export const getRecorridos = (jobId: number) =>
   request<EstadoRecorridos>(`/api/videos/${jobId}/recorridos`);
 export const pedirRecorridos = (jobId: number, minutos = 3) =>
