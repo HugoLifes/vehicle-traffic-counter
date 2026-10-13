@@ -569,7 +569,9 @@ export default function Reporte() {
   return (
     <>
       <div className="page-controls">
-        <SelectField
+        {/* El direccional va siempre por cuartos de hora, como el formato de
+            la empresa: el selector no le cambia nada. */}
+        {!esDireccional && <SelectField
           label="Intervalo"
           narrow
           value={effective}
@@ -580,7 +582,7 @@ export default function Reporte() {
               {v} minutos
             </option>
           ))}
-        </SelectField>
+        </SelectField>}
 
         {/* La exportación es lo que se entrega al cliente, así que vive
             junto al control que define qué se exporta: cambiar el

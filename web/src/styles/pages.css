@@ -2452,4 +2452,5 @@
   .hrmov-con-croquis { grid-template-columns: minmax(0, 1fr); }
 }
 .hrmov-dia { margin-top: var(--space-3); }
-.hrmov-dia summary { cursor: pointer; font-weight: 600; text-transform: capitalize; }
+.hrmov-dia summary { cursor: pointer; font-weight: 600; }
+.hrmov-dia summary::first-letter { text-transform: uppercase; }

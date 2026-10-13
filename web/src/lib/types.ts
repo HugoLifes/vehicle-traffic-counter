@@ -64,8 +64,13 @@ export interface MapaProyecto {
 }
 
 /** Un aforo solo direccional cuenta movimientos, no cruces de línea. */
-export function esDireccional(p: Pick<Project, 'crossing_count' | 'movement_count'>): boolean {
-  return p.crossing_count === 0 && (p.movement_count ?? 0) > 0;
+/* Con accesos dibujados es un direccional, aunque también tenga líneas: en
+   Fraccionamiento las líneas forman un cordón que mide el paso por la
+   avenida, y el estudio sigue siendo por movimiento (13-oct-2026). */
+export function esDireccional(
+  p: Pick<Project, 'crossing_count' | 'movement_count'> & { access_count?: number },
+): boolean {
+  return (p.access_count ?? 0) > 0 || (p.crossing_count === 0 && (p.movement_count ?? 0) > 0);
 }
 
 /** Lo contado en la intersección: cruces de línea o movimientos. */
