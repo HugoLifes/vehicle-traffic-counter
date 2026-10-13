@@ -297,12 +297,15 @@ export default function Mapa() {
   const encuadrado = useRef(false);
   useEffect(() => {
     if (!mapa || encuadrado.current || !sitios.length) return;
-    encuadrado.current = true;
     // Se mide antes de encuadrar: si el mapa se creó mientras la página se
     // acomodaba, Leaflet cree que mide otra cosa y los pines quedaban a
     // miles de píxeles fuera de la vista. Y se deja libre el lugar del
     // panel, que tapa el lado izquierdo (o el de abajo en el teléfono).
+    // "Ya encuadrado" se marca al encuadrar, no antes: si la lista se
+    // refrescaba en estos 150 ms el temporizador se cancelaba y el mapa se
+    // quedaba en el zoom de arranque, sin ningún pin a la vista.
     const t = window.setTimeout(() => {
+      encuadrado.current = true;
       mapa.invalidateSize();
       const angosta = window.innerWidth <= 760;
       mapa.fitBounds(
