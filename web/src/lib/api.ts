@@ -8,6 +8,7 @@
 */
 
 import type {
+  FormatoDireccional,
   EngineState,
   GeoResult,
   Lane,
@@ -439,6 +440,9 @@ export async function subirVideoPorPedazos(
 export const getMetrics = (projectId: number, minutes: number) =>
   request<ProjectMetrics>(`/api/videos/metrics?project_id=${projectId}&minutes=${minutes}`);
 
+export const getFormatoDireccional = (projectId: number) =>
+  request<FormatoDireccional>(`/api/projects/${projectId}/direccional/formato`);
+
 export const getDireccional = (projectId: number, minutes: number) =>
   request<AforoDireccional>(`/api/projects/${projectId}/direccional?interval_minutes=${minutes}`);
 
@@ -566,6 +570,10 @@ export const exportIntervalsUrl = (projectId: number, minutes: number) =>
    cuartos de hora. */
 export const exportAforoExcelUrl = (projectId: number) =>
   `/api/export/aforo.xlsx?project_id=${projectId}`;
+
+/* Aforo direccional: movimientos numerados por cuarto de hora, con A, B y C. */
+export const exportMovimientosUrl = (projectId: number) =>
+  `/api/export/movimientos.csv?project_id=${projectId}`;
 
 export const exportSummaryUrl = (projectId: number, minutes: number) =>
   `/api/export/resumen.csv?project_id=${projectId}&minutes=${minutes}`;

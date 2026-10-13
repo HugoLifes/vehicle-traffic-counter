@@ -2436,3 +2436,20 @@
 .comp-legend-grupo { display: flex; flex-direction: column; gap: 4px; }
 .comp-legend-item.comp-sub { padding-inline-start: 22px; font-size: var(--text-xs); color: var(--text-secondary); }
 .comp-legend-item.comp-sub .comp-pct { color: var(--text-muted); }
+
+/* Reporte direccional: tabla Hr/Mov de la empresa, con el croquis al lado. */
+.hrmov th, .hrmov td { text-align: center; font-variant-numeric: tabular-nums; padding-inline: 6px; }
+.hrmov tbody th { text-align: left; white-space: nowrap; }
+.hrmov-total th, .hrmov-total td { font-weight: 700; background: var(--surface-2); }
+.hrmov-con-croquis {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+.hrmov-croquis { width: 100%; border-radius: var(--radius-md); box-shadow: 0 0 0 1px var(--border); }
+@media (max-width: 900px) {
+  .hrmov-con-croquis { grid-template-columns: minmax(0, 1fr); }
+}
+.hrmov-dia { margin-top: var(--space-3); }
+.hrmov-dia summary { cursor: pointer; font-weight: 600; text-transform: capitalize; }

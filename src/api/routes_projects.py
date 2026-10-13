@@ -675,3 +675,17 @@ def borrar_croquis(project_id: int):
     from src.reports.aforo_excel import ruta_croquis
     ruta_croquis(project_id).unlink(missing_ok=True)
     return {"croquis": False}
+
+
+@router.get("/{project_id}/direccional/formato")
+def direccional_formato(project_id: int):
+    """El aforo direccional en el formato de la empresa (lo mismo que el
+    Excel): horas de máxima demanda con su tabla Hr/Mov y los cuartos de
+    hora. 404 si los accesos no tienen el número del croquis."""
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    from src.reports.aforo_excel import formato_direccional
+    datos = formato_direccional(project_id)
+    if datos is None:
+        raise HTTPException(404, "Los accesos no tienen el número del croquis (\"1 · …\")")
+    return datos

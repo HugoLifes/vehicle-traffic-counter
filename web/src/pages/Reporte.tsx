@@ -14,12 +14,14 @@ import { Card, EmptyState, Notice, Pill, SelectField } from '../components/ui';
 import { IconDownload, IconPrint } from '../components/Icons';
 import { CompositionChart, IntervalChart, SUBTIPO_LABEL } from '../components/charts';
 import { EscenaFlujo } from '../components/EscenaFlujo';
-import { useDireccional, useMetrics, useVideos } from '../lib/queries';
+import { ReporteDireccional } from '../components/ReporteDireccional';
+import { useDireccional, useFormatoDireccional, useMetrics, useVideos } from '../lib/queries';
 import { useProjectParam } from '../lib/useProjectParam';
 import {
   errorMessage,
   exportAforoExcelUrl,
   exportIntervalsUrl,
+  exportMovimientosUrl,
   exportSummaryUrl,
 } from '../lib/api';
 import {
@@ -558,6 +560,11 @@ export default function Reporte() {
   const sinHora = (videos ?? []).filter((v) => v.status === 'done' && !v.video_start_time).length;
   const { data: od, isLoading: cargandoOd } = useDireccional(projectId, effective);
   const hayDireccional = (od?.movimientos.length ?? 0) + (od?.incompletos.length ?? 0) > 0;
+  // Un aforo direccional es otro estudio: su reporte es el de la empresa
+  // (Hr/Mov por movimiento numerado), no el del aforo por línea. Aunque la
+  // intersección tenga líneas (cordón, Fraccionamiento), aquí no salen.
+  const esDireccional = !!od && Object.keys(od.accesos ?? {}).length > 0;
+  const { data: formato, isLoading: cargandoFormato } = useFormatoDireccional(projectId, esDireccional);
 
   return (
     <>
@@ -589,17 +596,28 @@ export default function Reporte() {
                   se veía igual de importante que un CSV de trabajo. */}
               <a className="btn btn-primary" href={exportAforoExcelUrl(projectId)} download>
                 <IconDownload size={15} />
-                Informe de aforo (Excel)
+                {esDireccional ? 'Informe direccional (Excel)' : 'Informe de aforo (Excel)'}
               </a>
               <div className="re-grupo">
-                <a className="re-mini" href={exportSummaryUrl(projectId, effective)} download>
-                  <IconDownload size={14} />
-                  Resumen
-                </a>
-                <a className="re-mini" href={exportIntervalsUrl(projectId, effective)} download>
-                  <IconDownload size={14} />
-                  Por intervalo
-                </a>
+                {esDireccional ? (
+                  formato && (
+                    <a className="re-mini" href={exportMovimientosUrl(projectId)} download>
+                      <IconDownload size={14} />
+                      Movimientos por cuarto
+                    </a>
+                  )
+                ) : (
+                  <>
+                    <a className="re-mini" href={exportSummaryUrl(projectId, effective)} download>
+                      <IconDownload size={14} />
+                      Resumen
+                    </a>
+                    <a className="re-mini" href={exportIntervalsUrl(projectId, effective)} download>
+                      <IconDownload size={14} />
+                      Por intervalo
+                    </a>
+                  </>
+                )}
                 {/* El PDF lo hace el propio navegador con la hoja de
                     impresión: así las gráficas salen vectoriales y no hay
                     que mantener una segunda versión del informe en el
@@ -621,7 +639,18 @@ export default function Reporte() {
         <Notice title="No se pudo cargar el reporte">{errorMessage(error)}</Notice>
       )}
 
-      {od && hayDireccional && <Direccional d={od} />}
+      {esDireccional && projectId !== null && formato && <ReporteDireccional f={formato} projectId={projectId} />}
+      {esDireccional && cargandoFormato && <EmptyState title="Calculando el aforo direccional…" />}
+      {esDireccional && !formato && !cargandoFormato && od && hayDireccional && (
+        <>
+          <Notice tone="warning" title="Falta el número de cada acceso">
+            Para que el reporte y el Excel salgan en el formato de la empresa (movimientos 1_2, 2_3…),
+            pon al principio del nombre de cada acceso el número de su croquis («1 · Calle…») en{' '}
+            <Link to={`/proyecto/${projectId}/calibrar`}>Calibrar</Link>.
+          </Notice>
+          <Direccional d={od} />
+        </>
+      )}
 
       {/* La primera matriz por trayectoria tarda unos segundos en el equipo;
           mientras, decir que no hay carriles hacía creer que el aforo
@@ -630,7 +659,7 @@ export default function Reporte() {
         <EmptyState title="Calculando el aforo direccional…" />
       )}
 
-      {m && m.lanes.length === 0 && !hayDireccional && !cargandoOd && (
+      {!esDireccional && m && m.lanes.length === 0 && !hayDireccional && !cargandoOd && (
         <EmptyState
           title="Esta intersección todavía no tiene carriles"
           body="Un carril es la línea que los vehículos cruzan para ser contados. Sin al menos uno, no hay nada que reportar."
@@ -650,7 +679,7 @@ export default function Reporte() {
         </Notice>
       )}
 
-      {m && m.lanes.length > 0 && (
+      {!esDireccional && m && m.lanes.length > 0 && (
         <>
           <Metrics m={m} />
 

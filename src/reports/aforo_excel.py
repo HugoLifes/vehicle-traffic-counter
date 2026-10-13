@@ -1585,6 +1585,43 @@ def _hmd_por_turno(project_id: int, d: Dict, cuenta) -> List:
     return salida
 
 
+def formato_direccional(project_id: int) -> Optional[Dict]:
+    """
+    Lo mismo que trae el Excel direccional, para la pantalla del Reporte: la
+    hora de máxima demanda de cada mañana y cada tarde con su tabla Hr/Mov,
+    y todos los cuartos de hora. Sale de las mismas funciones que el Excel,
+    así que la pantalla y el archivo no pueden decir cosas distintas.
+    None si los accesos no tienen número (no hay a qué traducir el movimiento).
+    """
+    datos = _movimientos_formato(project_id)
+    if datos is None:
+        return None
+    movs, cuenta, derivados = datos
+    d = {"no_medibles": _horas_no_medibles(traffic_db.get_connection(), project_id)}
+    hmd = _hmd_por_turno(project_id, d, cuenta)
+
+    def fila(clave):
+        f, m = clave
+        return {"fecha": f.isoformat(), "inicio": f"{m // 60:02d}:{m % 60:02d}",
+                "etiqueta": f"{_hora_12(m)} - {_hora_12(m + 15)}",
+                "valores": {mv: [cuenta.get(clave, {}).get((mv, c), 0) for c in _CLASES] for mv in movs}}
+
+    total = {k: sum(v.values()) for k, v in cuenta.items()}
+    salida_hmd = []
+    for fecha, turno, qs in hmd:
+        vol = sum(total.get(q, 0) for q in qs)
+        pico = max(total.get(q, 0) for q in qs)
+        a, b = qs[0][1], qs[-1][1] + 15
+        salida_hmd.append({"fecha": fecha.isoformat(), "turno": turno,
+                           "inicio": f"{a // 60:02d}:{a % 60:02d}", "fin": f"{b // 60:02d}:{b % 60:02d}",
+                           "volumen": vol, "fhp": round(vol / (4 * pico), 2) if pico else None,
+                           "filas": [fila(q) for q in qs]})
+    return {"movimientos": movs, "clases": _CLASES, "derivados": sorted(derivados),
+            "croquis": ruta_croquis(project_id).exists(), "hmd": salida_hmd,
+            "cuartos": [fila(k) for k in sorted(cuenta)],
+            "total": sum(total.values())}
+
+
 def _hojas_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> int:
     """
     El Excel de un aforo direccional, en el formato de la empresa (sus hojas

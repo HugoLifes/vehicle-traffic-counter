@@ -245,6 +245,31 @@ export interface VolumenAcceso {
   salidas: number;
 }
 
+/* Aforo direccional en el formato de la empresa (aforo_excel.formato_direccional). */
+export interface FilaHrMov {
+  fecha: string;
+  inicio: string;
+  etiqueta: string;
+  valores: Record<string, number[]>;
+}
+export interface FormatoDireccional {
+  movimientos: string[];
+  clases: string[];
+  derivados: string[];
+  croquis: boolean;
+  hmd: {
+    fecha: string;
+    turno: 'MAÑANA' | 'TARDE';
+    inicio: string;
+    fin: string;
+    volumen: number;
+    fhp: number | null;
+    filas: FilaHrMov[];
+  }[];
+  cuartos: FilaHrMov[];
+  total: number;
+}
+
 export interface AforoDireccional {
   /** id del acceso → nombre. Las llaves llegan como texto (JSON). */
   accesos: Record<string, string>;

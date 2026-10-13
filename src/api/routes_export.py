@@ -154,6 +154,24 @@ def exportar_resumen(project_id: int, minutes: int = 15):
     return _respuesta_csv(filas, cabeceras, _nombre_archivo(proyecto["name"], "resumen"))
 
 
+@router.get("/movimientos.csv")
+def exportar_movimientos(project_id: int):
+    """Aforo direccional: cada cuarto de hora, cada movimiento numerado
+    (1_2, 2_3...) con A, B y C, como la hoja MOVIMIENTOS (15 MIN) del Excel."""
+    from src.reports.aforo_excel import formato_direccional
+
+    proyecto = traffic_db.get_project(project_id)
+    if proyecto is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    datos = formato_direccional(project_id)
+    if datos is None:
+        raise HTTPException(404, "Los accesos no tienen el número del croquis")
+    filas = [[q["fecha"], q["etiqueta"], mv, *q["valores"][mv], sum(q["valores"][mv])]
+             for q in datos["cuartos"] for mv in datos["movimientos"]]
+    return _respuesta_csv(filas, ["fecha", "intervalo", "movimiento", "A", "B", "C", "total"],
+                          _nombre_archivo(proyecto["name"], "movimientos"))
+
+
 @router.get("/aforo.xlsx")
 def exportar_excel(project_id: int):
     """

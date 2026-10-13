@@ -81,6 +81,15 @@ export function useMetrics(projectId: number | null, minutes: number) {
   });
 }
 
+export function useFormatoDireccional(projectId: number | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['direccional-formato', projectId ?? 0],
+    queryFn: () => api.getFormatoDireccional(projectId as number),
+    enabled: projectId !== null && enabled,
+    retry: false,
+  });
+}
+
 export function useDireccional(projectId: number | null, minutes: number) {
   return useQuery({
     queryKey: ['direccional', projectId ?? 0, minutes],
