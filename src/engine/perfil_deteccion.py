@@ -108,6 +108,15 @@ def leer(proyecto: Optional[Dict]) -> Dict:
             por_sentido[str(linea)] = ok
     if por_sentido:
         limpio["umbral_linea_sentido"] = por_sentido
+    # Movimientos que la cámara no puede separar: [["2_1", "2_3"]]. En
+    # Fraccionamiento los 38 que salen del acceso 2 desaparecen todos detrás
+    # del mismo arbusto y doblan al 1 o al 3 fuera de cuadro: la suma cuadra
+    # con el conteo a mano (38 contra 38) y el reparto no se puede saber.
+    juntos = [list(g) for g in (perfil.get("movimientos_juntos") or [])
+              if isinstance(g, (list, tuple)) and len(g) >= 2
+              and all(isinstance(m, str) and re.fullmatch(r"\d+_\d+", m) for m in g)]
+    if juntos:
+        limpio["movimientos_juntos"] = juntos
     return limpio
 
 

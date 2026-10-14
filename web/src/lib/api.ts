@@ -8,6 +8,8 @@
 */
 
 import type {
+  HojaConteo,
+  Validacion,
   FormatoDireccional,
   EngineState,
   GeoResult,
@@ -439,6 +441,23 @@ export async function subirVideoPorPedazos(
 
 export const getMetrics = (projectId: number, minutes: number) =>
   request<ProjectMetrics>(`/api/videos/metrics?project_id=${projectId}&minutes=${minutes}`);
+
+/* Conteo a mano de la empresa para validar el direccional. Si el libro trae
+   varias intersecciones, la primera respuesta pide elegir la hoja. */
+export const getValidacion = (projectId: number) =>
+  request<Validacion>(`/api/projects/${projectId}/validacion`);
+export const subirConteoManual = (projectId: number, archivo: File, fecha: string, hoja?: string) => {
+  const datos = new FormData();
+  datos.append('archivo', archivo);
+  datos.append('fecha', fecha);
+  if (hoja) datos.append('hoja', hoja);
+  return request<Validacion | { pedir_hoja: HojaConteo[] }>(`/api/projects/${projectId}/conteo-manual`, {
+    method: 'POST',
+    body: datos,
+  });
+};
+export const borrarConteoManual = (projectId: number) =>
+  request<{ conteo_manual: boolean }>(`/api/projects/${projectId}/conteo-manual`, { method: 'DELETE' });
 
 export const getFormatoDireccional = (projectId: number) =>
   request<FormatoDireccional>(`/api/projects/${projectId}/direccional/formato`);

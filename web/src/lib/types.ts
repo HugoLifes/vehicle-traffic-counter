@@ -273,6 +273,40 @@ export interface FormatoDireccional {
   }[];
   cuartos: FilaHrMov[];
   total: number;
+  juntos?: string[][];
+}
+
+/* Validación contra el conteo a mano (src/reports/validacion_od.py). */
+export interface Validacion {
+  archivo: string;
+  hoja: string;
+  fecha: string;
+  error?: string;
+  movimientos?: {
+    movimiento: string;
+    plataforma: number;
+    manual: number;
+    geh: number;
+    pasa: boolean;
+    por_linea: boolean;
+    juntos?: boolean;
+  }[];
+  por_cuarto?: { inicio: string; plataforma: number; manual: number }[];
+  total_plataforma?: number;
+  total_manual?: number;
+  razon?: number | null;
+  pasan?: number;
+  de?: number;
+  pct?: number;
+  aceptado?: boolean;
+  criterio?: string;
+  cuartos_sin_contar?: string[];
+}
+export interface HojaConteo {
+  hoja: string;
+  total: number;
+  desde: string;
+  hasta: string;
 }
 
 export interface AforoDireccional {

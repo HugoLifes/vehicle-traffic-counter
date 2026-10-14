@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -689,3 +689,58 @@ def direccional_formato(project_id: int):
     if datos is None:
         raise HTTPException(404, "Los accesos no tienen el número del croquis (\"1 · …\")")
     return datos
+
+
+# --- Validación contra el conteo a mano (aforo direccional) ------------------
+#
+# Ver src/reports/validacion_od.py: el Excel de campo de la empresa se sube
+# una vez y el Reporte dice el GEH de cada movimiento y si pasa el criterio.
+
+@router.post("/{project_id}/conteo-manual")
+async def subir_conteo_manual(project_id: int, archivo: UploadFile = File(...),
+                              fecha: str = Form(...), hoja: Optional[str] = Form(None)):
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    import re as _re
+    import tempfile
+    from src.reports import validacion_od
+    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", fecha or ""):
+        raise HTTPException(400, "Falta el día del conteo (AAAA-MM-DD).")
+    datos = await archivo.read()
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp.write(datos)
+    try:
+        hojas = validacion_od.resumen_hojas(tmp.name)
+    except Exception:
+        raise HTTPException(400, "No se pudo leer el Excel. Tiene que ser el formato de campo (tabla Hr/Mov).")
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
+    if not hojas:
+        raise HTTPException(400, "El Excel no tiene ninguna tabla Hr/Mov con movimientos (1_2, 2_3…).")
+    nombres = [h["hoja"] for h in hojas]
+    if hoja is None and len(hojas) > 1:
+        # Varias intersecciones en el mismo libro: que elija cuál es esta.
+        return {"pedir_hoja": hojas}
+    hoja = hoja or nombres[0]
+    if hoja not in nombres:
+        raise HTTPException(400, f"El Excel no tiene la hoja «{hoja}» con una tabla Hr/Mov.")
+    validacion_od.guardar(project_id, datos, archivo.filename or "conteo.xlsx", hoja, fecha)
+    traffic_db.log_event(project_id, "validacion", "Se subió el conteo a mano",
+                         f"{archivo.filename}, hoja {hoja}, {fecha}")
+    return validacion_od.validar(project_id)
+
+
+@router.get("/{project_id}/validacion")
+def leer_validacion(project_id: int):
+    from src.reports import validacion_od
+    r = validacion_od.validar(project_id)
+    if r is None:
+        raise HTTPException(404, "Esta intersección no tiene conteo a mano")
+    return r
+
+
+@router.delete("/{project_id}/conteo-manual")
+def borrar_conteo_manual(project_id: int):
+    from src.reports import validacion_od
+    validacion_od.borrar(project_id)
+    return {"conteo_manual": False}

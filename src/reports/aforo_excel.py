@@ -1616,7 +1616,9 @@ def formato_direccional(project_id: int) -> Optional[Dict]:
                            "inicio": f"{a // 60:02d}:{a % 60:02d}", "fin": f"{b // 60:02d}:{b % 60:02d}",
                            "volumen": vol, "fhp": round(vol / (4 * pico), 2) if pico else None,
                            "filas": [fila(q) for q in qs]})
-    return {"movimientos": movs, "clases": _CLASES, "derivados": sorted(derivados),
+    from src.engine import perfil_deteccion
+    juntos = perfil_deteccion.leer(traffic_db.get_project(project_id)).get("movimientos_juntos", [])
+    return {"movimientos": movs, "clases": _CLASES, "derivados": sorted(derivados), "juntos": juntos,
             "croquis": ruta_croquis(project_id).exists(), "hmd": salida_hmd,
             "cuartos": [fila(k) for k in sorted(cuenta)],
             "total": sum(total.values())}
@@ -1658,6 +1660,10 @@ def _hojas_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> int:
         dia = f"{DIAS[fecha.weekday()]} {fecha.day:02d}/{MESES[fecha.month - 1][:3]}/{fecha.year}"
         fila = _tabla_hr_mov(ws, fila, col, f"HORA DE MÁXIMA DEMANDA, {turno} — {dia}", qs, movs, cuenta) + 1
     notas = ["A: automóviles, camionetas, pickups y motos. B: autobuses. C: camiones y tractocamiones."]
+    from src.engine import perfil_deteccion
+    for g in perfil_deteccion.leer(p).get("movimientos_juntos", []):
+        notas.append(" y ".join(g) + ": esta cámara no los distingue (el vehículo dobla fuera de cuadro); "
+                     "su SUMA es confiable, el reparto entre ellos no.")
     if derivados:
         notas.append(", ".join(sorted(derivados)) + ": medido con la línea de conteo de la calle, "
                      "menos las vueltas; la cámara no sigue ese movimiento de punta a punta.")
