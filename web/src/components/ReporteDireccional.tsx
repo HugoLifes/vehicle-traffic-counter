@@ -264,7 +264,7 @@ export function ReporteDireccional({ f, projectId }: { f: FormatoDireccional; pr
       <Precision projectId={projectId} fechas={[...new Set(f.cuartos.map((q) => q.fecha))]} />
 
       {(f.juntos ?? []).map((g) => (
-        <Notice key={g.join()} title={`${g.join(' y ')}: esta cámara no los distingue`}>
+        <Notice tone="info" key={g.join()} title={`${g.join(' y ')}: esta cámara no los distingue`}>
           El vehículo dobla fuera de cuadro. La suma de esos movimientos es confiable; el reparto entre
           ellos no, y así lo dice también el Excel.
         </Notice>
@@ -283,7 +283,7 @@ export function ReporteDireccional({ f, projectId }: { f: FormatoDireccional; pr
       ))}
 
       {f.derivados.length > 0 && (
-        <Notice title={`${f.derivados.join(', ')}: medidos con la línea de conteo`}>
+        <Notice tone="info" title={`${f.derivados.join(', ')}: medidos con la línea de conteo`}>
           La cámara no sigue esos movimientos de punta a punta. Se toman de lo que cruzó la línea de
           conteo de esa calle, menos las vueltas que sí se siguieron.
         </Notice>
