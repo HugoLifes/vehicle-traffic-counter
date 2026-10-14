@@ -92,6 +92,22 @@ def leer(proyecto: Optional[Dict]) -> Dict:
             por_linea[mov] = {"linea": regla["linea"], "sentido": regla["sentido"]}
     if por_linea:
         limpio["movimiento_por_linea"] = por_linea
+    # Umbral de confianza propio de un SENTIDO de una línea, por el número de
+    # la línea: {"1": {"sale": 0.25, "entra": 0.10}}. Fraccionamiento
+    # (13-oct-2026), contra el conteo a mano: en la misma línea el sentido que
+    # pasa por el carril cercano cuenta bien a 0.25 (544 contra 549) y a 0.15
+    # se pasa (668), mientras el del carril tapado necesita bajar (96 contra
+    # 183 a 0.25). Un umbral para los dos sentidos no los arregla a la vez.
+    por_sentido = {}
+    for linea, dirs in (perfil.get("umbral_linea_sentido") or {}).items():
+        if not (isinstance(dirs, dict) and re.fullmatch(r"\d+", str(linea))):
+            continue
+        ok = {d: float(u) for d, u in dirs.items()
+              if d in ("entra", "sale") and isinstance(u, (int, float)) and 0.01 <= u <= 0.99}
+        if ok:
+            por_sentido[str(linea)] = ok
+    if por_sentido:
+        limpio["umbral_linea_sentido"] = por_sentido
     return limpio
 
 

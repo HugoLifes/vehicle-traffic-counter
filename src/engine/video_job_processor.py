@@ -11,6 +11,7 @@ ya lo subió él mismo, esto no es "grabar" una cámara en vivo, es dejar
 ver el resultado de procesar algo que ya era suyo.
 """
 
+import copy
 import itertools
 import logging
 from collections import Counter
@@ -566,6 +567,30 @@ class VideoJobProcessor:
             # las líneas siguen recibiendo solo las de su umbral de siempre.
             rastreador_od = None
             umbral_linea = detector.confidence_threshold
+            # Umbral propio de un sentido de una línea (perfil
+            # umbral_linea_sentido): ese sentido se cuenta con su propio
+            # rastreador sobre las detecciones de ese umbral, y el contador de
+            # siempre deja de registrarlo. Sin la opción, nada cambia.
+            por_sentido = {}
+            for lid, meta in lane_meta.items():
+                n = traffic_db.numero_de_acceso(meta.get('name') or '')
+                reglas = perfil.get('umbral_linea_sentido', {}).get(str(n)) if n is not None else None
+                if reglas:
+                    por_sentido[lid] = {('in' if d == 'entra' else 'out'): u for d, u in reglas.items()}
+            rastreadores_sentido = {}
+            contadores_sentido = {}
+            for lid, dirs in por_sentido.items():
+                for d, u in dirs.items():
+                    if u not in rastreadores_sentido:
+                        rastreadores_sentido[u] = VehicleTracker(
+                            max_age=self.config.get('tracker', {}).get('max_age', 30),
+                            min_hits=self.config.get('tracker', {}).get('min_hits', 3),
+                            iou_threshold=self.config.get('tracker', {}).get('iou_threshold', 0.3),
+                            config=self.config.get('tracker', {}))
+                    contadores_sentido[(lid, d)] = (u, copy.deepcopy(lane_counters[lid]))
+            if por_sentido and detector.confidence_threshold > min(rastreadores_sentido):
+                detector.confidence_threshold = min(rastreadores_sentido)
+                umbral_restaurar = umbral_linea
             if direccional.activo:
                 try:
                     rastreador_od = RastreadorBytetrack(fps)
@@ -724,6 +749,15 @@ class VideoJobProcessor:
                 # Se filtra ANTES del tracker, no después: un vehículo
                 # estacionado fuera de la calzada que llega a formar track
                 # ya ensucia el conteo aunque después se descarte.
+                crudas = detections
+                tracks_sentido = {}
+                for u, rastreador_u in rastreadores_sentido.items():
+                    det_u = filter_detections(zonas, [d for d in crudas if d['confidence'] >= u])
+                    if perfil.get('quitar_anidadas'):
+                        det_u = perfil_deteccion.quitar_anidadas(det_u, perfil['quitar_anidadas'])
+                    tracks_sentido[u] = rastreador_u.update(det_u)
+                if por_sentido and rastreador_od is None:
+                    detections = [d for d in detections if d['confidence'] >= umbral_linea]
                 if rastreador_od is not None:
                     tracks_od = rastreador_od.update(filter_detections(zonas, detections), frame)
                     # Las líneas y el aviso de zonas ven exactamente lo de
@@ -807,84 +841,96 @@ class VideoJobProcessor:
                         # vehículos de la calzada atada a la línea.
                         for m in medidores[lane_id].observar(frame_count, vistos):
                             velocidades.append((lane_id, m['track_id'], m['segundos']))
-                    for crossing in crossings['in'] + crossings['out']:
-                        if crossing['track_id'] in nacidos_en_pesado:
-                            continue
-                        # Frente del autobús, chasis, faro: viaja pegado al
-                        # pesado y no es otro vehículo. Ver PedazosDePesado.
-                        if pedazos is not None and pedazos.es_pedazo(crossing['track_id']):
-                            pedazos_quitados += 1
-                            continue
-                        track = next(
-                            (t for t in vistos if t['id'] == crossing['track_id']),
-                            None
-                        )
-                        confidence = track['confidence'] if track else None
-                        # Alto de la caja en píxeles: la medida de si el
-                        # detector tiene con qué trabajar en este material.
-                        alto_caja = (
-                            int(track['bbox'][3] - track['bbox'][1]) if track else None
-                        )
-                        # De frente el ancho es el ancho real del vehículo, y
-                        # con el alto da la silueta que separa troca de auto.
-                        # La esquina se guarda para poder RECORTAR después el
-                        # vehículo: revisarlo a ojo, o armar un conjunto de
-                        # entrenamiento con material de la cámara real.
-                        ancho_caja = (
-                            int(track['bbox'][2] - track['bbox'][0]) if track else None
-                        )
-                        x_caja = int(track['bbox'][0]) if track else None
-                        y_caja = int(track['bbox'][1]) if track else None
-                        # En qué calzada ocurrió. Es lo que separa los dos
-                        # sentidos cuando la misma línea cruza las dos.
-                        zone_id = (
-                            zone_for_bbox(zonas, track['bbox'])
-                            if track and zonas else None
-                        )
-                        # La clase fina del pesado sobre su recorte, en el
-                        # cuadro exacto del cruce. Se clasifica todo cruce
-                        # (son ~20 por minuto de video, unos milisegundos
-                        # cada uno) y al leer solo cuenta donde la regla del
-                        # alto dijo pesado.
-                        clase_modelo = prob_modelo = None
-                        if clasificador is not None and track is not None:
-                            r = clasificador.clasificar(frame, track['bbox'])
-                            if r:
-                                clase_modelo, prob_modelo = r
-                        # Subtipo de los livianos (automóvil, camioneta,
-                        # pickup); al leer solo cuenta si el cruce quedó en A.
-                        subtipo = prob_subtipo = None
-                        if clasificador_livianos is not None and track is not None:
-                            r = clasificador_livianos.clasificar(frame, track['bbox'])
-                            if r:
-                                subtipo, prob_subtipo = r
-                        if marcador is not None and track is not None:
-                            marcador.registrar(lane_id, crossing['track_id'], marcador.clase(
-                                lane_id, track, frame_count, clase_modelo, prob_modelo,
-                                subtipo, prob_subtipo))
-                        # Con conteo por trayectoria el panel del video sigue
-                        # mostrando el conteo en vivo, pero lo que se GUARDA
-                        # se decide al final, sobre los recorridos completos.
-                        if not por_trayectoria:
-                            traffic_db.record_crossing(
-                                lane_id=lane_id,
-                                track_id=crossing['track_id'],
-                                direction=crossing['direction'],
-                                vehicle_type=crossing['vehicle_type'],
-                                confidence=confidence,
-                                timestamp=crossing_timestamp,
-                                job_id=job_id,
-                                zone_id=zone_id,
-                                bbox_height=alto_caja,
-                                bbox_width=ancho_caja,
-                                bbox_x=x_caja,
-                                bbox_y=y_caja,
-                                cuadro=frame_count,
-                                clase_modelo=clase_modelo,
-                                prob_modelo=prob_modelo,
-                                subtipo_modelo=subtipo,
-                                prob_subtipo=prob_subtipo
+                    fuentes = [(crossings['in'] + crossings['out'], vistos)]
+                    if lane_id in por_sentido:
+                        fuentes = [([c for c in fuentes[0][0] if c['direction'] not in por_sentido[lane_id]],
+                                    vistos)]
+                        for d in por_sentido[lane_id]:
+                            u, contador_u = contadores_sentido[(lane_id, d)]
+                            vistos_u = tracks_sentido[u]
+                            if zona_carril and zonas:
+                                vistos_u = [t for t in vistos_u
+                                            if zone_for_bbox(zonas, t['bbox']) == zona_carril]
+                            fuentes.append((contador_u.update(vistos_u)[d], vistos_u))
+                    for lista, vistos_f in fuentes:
+                        for crossing in lista:
+                            if crossing['track_id'] in nacidos_en_pesado:
+                                continue
+                            # Frente del autobús, chasis, faro: viaja pegado al
+                            # pesado y no es otro vehículo. Ver PedazosDePesado.
+                            if pedazos is not None and pedazos.es_pedazo(crossing['track_id']):
+                                pedazos_quitados += 1
+                                continue
+                            track = next(
+                                (t for t in vistos_f if t['id'] == crossing['track_id']),
+                                None
                             )
+                            confidence = track['confidence'] if track else None
+                            # Alto de la caja en píxeles: la medida de si el
+                            # detector tiene con qué trabajar en este material.
+                            alto_caja = (
+                                int(track['bbox'][3] - track['bbox'][1]) if track else None
+                            )
+                            # De frente el ancho es el ancho real del vehículo, y
+                            # con el alto da la silueta que separa troca de auto.
+                            # La esquina se guarda para poder RECORTAR después el
+                            # vehículo: revisarlo a ojo, o armar un conjunto de
+                            # entrenamiento con material de la cámara real.
+                            ancho_caja = (
+                                int(track['bbox'][2] - track['bbox'][0]) if track else None
+                            )
+                            x_caja = int(track['bbox'][0]) if track else None
+                            y_caja = int(track['bbox'][1]) if track else None
+                            # En qué calzada ocurrió. Es lo que separa los dos
+                            # sentidos cuando la misma línea cruza las dos.
+                            zone_id = (
+                                zone_for_bbox(zonas, track['bbox'])
+                                if track and zonas else None
+                            )
+                            # La clase fina del pesado sobre su recorte, en el
+                            # cuadro exacto del cruce. Se clasifica todo cruce
+                            # (son ~20 por minuto de video, unos milisegundos
+                            # cada uno) y al leer solo cuenta donde la regla del
+                            # alto dijo pesado.
+                            clase_modelo = prob_modelo = None
+                            if clasificador is not None and track is not None:
+                                r = clasificador.clasificar(frame, track['bbox'])
+                                if r:
+                                    clase_modelo, prob_modelo = r
+                            # Subtipo de los livianos (automóvil, camioneta,
+                            # pickup); al leer solo cuenta si el cruce quedó en A.
+                            subtipo = prob_subtipo = None
+                            if clasificador_livianos is not None and track is not None:
+                                r = clasificador_livianos.clasificar(frame, track['bbox'])
+                                if r:
+                                    subtipo, prob_subtipo = r
+                            if marcador is not None and track is not None:
+                                marcador.registrar(lane_id, crossing['track_id'], marcador.clase(
+                                    lane_id, track, frame_count, clase_modelo, prob_modelo,
+                                    subtipo, prob_subtipo))
+                            # Con conteo por trayectoria el panel del video sigue
+                            # mostrando el conteo en vivo, pero lo que se GUARDA
+                            # se decide al final, sobre los recorridos completos.
+                            if not por_trayectoria:
+                                traffic_db.record_crossing(
+                                    lane_id=lane_id,
+                                    track_id=crossing['track_id'],
+                                    direction=crossing['direction'],
+                                    vehicle_type=crossing['vehicle_type'],
+                                    confidence=confidence,
+                                    timestamp=crossing_timestamp,
+                                    job_id=job_id,
+                                    zone_id=zone_id,
+                                    bbox_height=alto_caja,
+                                    bbox_width=ancho_caja,
+                                    bbox_x=x_caja,
+                                    bbox_y=y_caja,
+                                    cuadro=frame_count,
+                                    clase_modelo=clase_modelo,
+                                    prob_modelo=prob_modelo,
+                                    subtipo_modelo=subtipo,
+                                    prob_subtipo=prob_subtipo
+                                )
 
                     if marcador is None:
                         color = LANE_COLORS_BGR[idx % len(LANE_COLORS_BGR)]
