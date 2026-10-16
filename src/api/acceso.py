@@ -30,8 +30,16 @@ import secrets
 # Libres del candado: la revisión de salud del contenedor y de la prueba de
 # aceptación, que corren dentro del equipo y no llevan contraseña.
 RUTAS_LIBRES = ("/api/status",)
-# Freno a quien prueba contraseñas: cada intento fallido tarda un segundo.
+# Freno a quien prueba contraseñas: cada intento fallido tarda un segundo, y
+# los fallidos esperan EN FILA. Con la espera suelta, mil intentos en paralelo
+# tardaban un segundo en total; en fila es uno por segundo para todo internet
+# (la dirección pública es un Funnel de Tailscale, y detrás de él todos llegan
+# desde 127.0.0.1, así que no se puede frenar por dirección). Quien entra con
+# la contraseña buena no pasa por la fila.
 ESPERA_FALLO_S = 1.0
+# Más fallidos esperando que esto ya es un ataque: se contesta 429 al momento
+# en vez de acumular conexiones abiertas.
+FILA_MAXIMA = 20
 
 
 class AccesoBasico:
@@ -39,6 +47,8 @@ class AccesoBasico:
         self.app = app
         self._usuario = usuario.encode("utf-8")
         self._contrasena = contrasena.encode("utf-8")
+        self._fila = asyncio.Lock()
+        self._en_fila = 0
 
     def valida(self, cabecera: bytes) -> bool:
         if not cabecera.lower().startswith(b"basic "):
@@ -62,7 +72,19 @@ class AccesoBasico:
             await self.app(scope, receive, send)
             return
         if cabeceras.get(b"authorization"):
-            await asyncio.sleep(ESPERA_FALLO_S)
+            if self._en_fila >= FILA_MAXIMA:
+                await send({"type": "http.response.start", "status": 429,
+                            "headers": [(b"retry-after", b"60"),
+                                        (b"content-type", b"text/plain; charset=utf-8")]})
+                await send({"type": "http.response.body",
+                            "body": "Demasiados intentos; espera un minuto.".encode("utf-8")})
+                return
+            self._en_fila += 1
+            try:
+                async with self._fila:
+                    await asyncio.sleep(ESPERA_FALLO_S)
+            finally:
+                self._en_fila -= 1
             logging.warning("Acceso rechazado desde %s", (scope.get("client") or ("?",))[0])
         await send({
             "type": "http.response.start",
