@@ -527,6 +527,10 @@ class VideoJobProcessor:
                 source_label, frame_height, frame_width,
                 project_id=job.get('project_id')
             )
+            # Antes de las copias por sentido de abajo, para que las hereden.
+            if perfil.get('dobles_contencion'):
+                for contador in lane_counters.values():
+                    contador.dobles_contencion = perfil['dobles_contencion']
             # Zonas dibujadas a mano sobre la calzada. Cuando existen mandan
             # ellas: describen el área real de la vía, así que acotan mejor
             # que un rectángulo deducido de las líneas y además permiten

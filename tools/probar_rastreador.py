@@ -112,8 +112,58 @@ def sin_doble_conteo_en_camara_grande():
     return total
 
 
+def _pedazo_y_entero(dobles):
+    """Rastreador y contador de verdad. Un vehículo a 4 px por cuadro: los
+    primeros 20 cuadros el detector solo ve su frente (un pedazo de 30x20) y
+    después el vehículo entero (80x40). El pedazo cruza la línea y el entero
+    cruza 6 cuadros después con otro rastro, como en Fraccionamiento."""
+    trk = VehicleTracker(max_age=30, min_hits=3, iou_threshold=0.3)
+    contador = BidirectionalCounter(line_type='vertical',
+                                    config={'dobles_contencion': dobles} if dobles else None)
+    contador.set_counting_line(line_type='vertical', x=500, frame_shape=(360, 1000))
+    total = 0
+    for cuadro in range(60):
+        cx = 400 + 4 * cuadro
+        det = (deteccion(cx + 25, 100, ancho=30, alto=20) if cuadro < 20
+               else deteccion(cx, 90, ancho=80, alto=40))
+        r = contador.update(trk.update([det]))
+        total += len(r['in']) + len(r['out'])
+    return total
+
+
+def _seguidor_joven(dobles):
+    """Dos vehículos distintos en el mismo carril: el segundo aparece de
+    detrás de algo y cruza 8 cuadros después del primero. Con el arreglo
+    tienen que seguir siendo dos."""
+    trk = VehicleTracker(max_age=30, min_hits=3, iou_threshold=0.3)
+    contador = BidirectionalCounter(line_type='vertical',
+                                    config={'dobles_contencion': dobles} if dobles else None)
+    contador.set_counting_line(line_type='vertical', x=500, frame_shape=(360, 1000))
+    total = 0
+    for cuadro in range(60):
+        dets = [deteccion(400 + 4 * cuadro, 100, ancho=40, alto=24)]
+        if cuadro >= 25:                     # el segundo nace ya cerca de la línea
+            dets.append(deteccion(368 + 4 * cuadro, 100, ancho=40, alto=24))
+        r = contador.update(trk.update(dets))
+        total += len(r['in']) + len(r['out'])
+    return total
+
+
 def main():
     fallos = 0
+
+    dobles = {'cuadros': 9, 'contencion': 0.7, 'edad_max': 20}
+    sin, con = _pedazo_y_entero(None), _pedazo_y_entero(dobles)
+    print(f'Pedazo y luego vehículo entero: {sin} conteo(s) sin dobles_contencion, {con} con')
+    if sin != 2 or con != 1:
+        print('MAL  se esperaba 2 sin la opción (el defecto) y 1 con ella')
+        fallos += 1
+
+    sin, con = _seguidor_joven(None), _seguidor_joven(dobles)
+    print(f'Dos vehículos seguidos, el segundo recién aparecido: {sin} sin, {con} con')
+    if sin != 2 or con != 2:
+        print('MAL  dobles_contencion juntó dos vehículos distintos')
+        fallos += 1
 
     n, ids = sin_partirse_con_la_via_llena()
     print(f'Vía llena, vehículo perdido 5 cuadros: {n} identidad(es) {sorted(ids)}')
@@ -140,7 +190,7 @@ def main():
         fallos += 1
 
     print()
-    print(f'4 casos, {fallos} fallos')
+    print(f'6 casos, {fallos} fallos')
     return 1 if fallos else 0
 
 

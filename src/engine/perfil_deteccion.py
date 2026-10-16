@@ -117,6 +117,20 @@ def leer(proyecto: Optional[Dict]) -> Dict:
               and all(isinstance(m, str) and re.fullmatch(r"\d+_\d+", m) for m in g)]
     if juntos:
         limpio["movimientos_juntos"] = juntos
+    # Pedazo y vehículo entero contados dos veces en una línea (ver
+    # BidirectionalCounter.dobles_contencion). true toma los valores de
+    # omisión; un dict los cambia. Sin la clave, nada cambia.
+    dobles = perfil.get("dobles_contencion")
+    if dobles is True:
+        dobles = {}
+    if isinstance(dobles, dict):
+        cfg = {"cuadros": 9, "contencion": 0.7, "edad_max": 20}
+        for clave, (lo, hi) in (("cuadros", (1, 60)), ("contencion", (0.3, 1.0)),
+                                ("edad_max", (1, 300))):
+            v = dobles.get(clave)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= v <= hi:
+                cfg[clave] = v
+        limpio["dobles_contencion"] = cfg
     return limpio
 
 

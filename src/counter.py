@@ -96,6 +96,22 @@ class BidirectionalCounter:
         self.dedup_altos = self.config.get('dedup_altos', 0.2)
         self._frame_no = 0
         self._recent_crossings = []   # [(frame, x, y, alto_caja)]
+        # Pedazo y vehículo entero (perfil `dobles_contencion`, apagado por
+        # omisión). Con umbral bajo (0.10) el detector ve primero un pedazo
+        # del vehículo y 5-9 cuadros después el vehículo entero; el IoU
+        # entre las dos cajas es bajo (una cabe en la otra), así que el
+        # rastreador abre otro rastro y los dos cruzan. El antiduplicado de
+        # arriba no los atrapa: mira solo 5 cuadros y el punto de apoyo del
+        # pedazo no es el del vehículo. Visto a ojo en Fraccionamiento (16-oct),
+        # línea 1 "entra": 72 posibles dobles de 1 497 cruces.
+        # Se compara contra la caja ACTUAL del rastro que ya cruzó (o la
+        # última que tuvo si el detector lo perdió), no contra dónde cruzó:
+        # un vehículo que viene detrás cruza el mismo punto, pero para
+        # entonces el de adelante ya avanzó y sus cajas no se encierran.
+        # {'cuadros': 9, 'contencion': 0.7, 'edad_max': 20}
+        self.dobles_contencion = self.config.get('dobles_contencion')
+        self._cruzados = []           # [(frame, track_id, bbox, direction)]
+        self.dobles_quitados = []     # [(track_id, track_id que ya cruzó)]
         
         # Historial de cruces (para análisis)
         self.crossing_history = []
@@ -295,6 +311,10 @@ class BidirectionalCounter:
         ]
         
         seen_ids = set()
+        if self.dobles_contencion:
+            ventana = self.dobles_contencion.get('cuadros', 9)
+            self._cruzados = [c for c in self._cruzados if self._frame_no - c[0] <= ventana]
+            cajas_actuales = {t['id']: t['bbox'] for t in tracks}
 
         for track in tracks:
             track_id = track['id']
@@ -352,6 +372,11 @@ class BidirectionalCounter:
                                 and abs(curr_position[1] - cy) <= max(umbral, self.dedup_altos * ch)
                                 for _, cx, cy, ch in self._recent_crossings
                             )
+                            if not duplicado and self.dobles_contencion:
+                                otro = self._pedazo_de(track, direction, cajas_actuales)
+                                if otro is not None:
+                                    duplicado = True
+                                    self.dobles_quitados.append((track_id, otro))
                             if track_id not in self.counted_ids and not duplicado:
                                 # Registrar cruce
                                 self._register_crossing(
@@ -384,6 +409,9 @@ class BidirectionalCounter:
                                     (self._frame_no, curr_position[0], curr_position[1],
                                      alto_caja)
                                 )
+                                if self.dobles_contencion:
+                                    self._cruzados.append(
+                                        (self._frame_no, track_id, track['bbox'], direction))
             
             # Actualizar estado del track (visto en este cuadro)
             self.track_states[track_id] = {
@@ -401,6 +429,34 @@ class BidirectionalCounter:
 
         return frame_crossings
     
+    @staticmethod
+    def _contencion(a, b) -> float:
+        """Fracción de la caja MÁS CHICA que queda dentro de la otra. Un
+        pedazo dentro del vehículo entero da ~1 aunque su IoU sea 0.3."""
+        ancho = min(a[2], b[2]) - max(a[0], b[0])
+        alto = min(a[3], b[3]) - max(a[1], b[1])
+        if ancho <= 0 or alto <= 0:
+            return 0.0
+        menor = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+        return ancho * alto / menor if menor > 0 else 0.0
+
+    def _pedazo_de(self, track: Dict, direction: Direction,
+                   cajas_actuales: Dict) -> Optional[int]:
+        """El rastro que ya cruzó en el mismo sentido y cuya caja se encierra
+        con la de este, o None. Solo para rastros jóvenes: el que nace como
+        pedazo y se vuelve vehículo entero cruza recién nacido; un vehículo
+        seguido desde lejos no es un pedazo de nadie."""
+        cfg = self.dobles_contencion
+        if track.get('age', 0) > cfg.get('edad_max', 20):
+            return None
+        for _, otro_id, caja_cruce, otra_dir in self._cruzados:
+            if otro_id == track['id'] or otra_dir != direction:
+                continue
+            caja = cajas_actuales.get(otro_id, caja_cruce)
+            if self._contencion(track['bbox'], caja) >= cfg.get('contencion', 0.7):
+                return otro_id
+        return None
+
     def _register_crossing(
         self,
         track_id: int,
@@ -475,6 +531,8 @@ class BidirectionalCounter:
         self.counted_ids.clear()
         self.track_states.clear()
         self.crossing_history.clear()
+        self._cruzados.clear()
+        self.dobles_quitados.clear()
         
         logging.info("Contadores reiniciados")
     
