@@ -2464,3 +2464,39 @@
 .precision-marca { font-size: var(--text-xs); color: var(--text-muted); font-weight: 400; }
 .hrmov td.geh-ok { background: color-mix(in srgb, #2e9d5b 18%, transparent); }
 .hrmov td.geh-mal { background: color-mix(in srgb, #d0453a 18%, transparent); }
+
+/* Vehículos a revisar (pages/ProyectoRevisar.tsx). */
+.rev-pagina { display: grid; gap: var(--space-4); }
+.rev-filtros { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block: var(--space-3); }
+.rev-filtro {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) var(--space-3); border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--surface-1); color: var(--text-secondary);
+  font-size: var(--text-sm); cursor: pointer;
+}
+.rev-filtro.is-activo { border-color: var(--accent); color: var(--text-primary); }
+.rev-rejilla { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.rev-tarjeta { display: grid; gap: var(--space-2); padding: var(--space-3); align-content: start; }
+.rev-recorte {
+  width: 100%; aspect-ratio: 1 / 1; object-fit: contain; max-width: 100%;
+  background: var(--surface-2); border-radius: var(--radius-sm);
+}
+.rev-sin-imagen {
+  display: grid; place-items: center; aspect-ratio: 1 / 1; background: var(--surface-2);
+  border-radius: var(--radius-sm); color: var(--text-muted); font-size: var(--text-xs);
+  text-align: center; padding: var(--space-3);
+}
+.rev-datos { display: grid; gap: var(--space-1); }
+.rev-cabeza { display: flex; justify-content: space-between; gap: var(--space-2); }
+.rev-hora { font-family: var(--font-mono); color: var(--text-muted); font-size: var(--text-xs); }
+.rev-donde { color: var(--text-secondary); font-size: var(--text-xs); }
+.rev-motivos { margin: 0; padding-inline-start: 1.1em; color: var(--text-secondary); font-size: var(--text-xs); }
+.rev-ayuda { margin: 0; color: var(--text-muted); font-size: var(--text-xs); }
+.rev-botones { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.rev-otras { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; font-size: var(--text-xs); color: var(--text-muted); }
+.rev-clase {
+  border: 1px solid var(--border); background: transparent; color: var(--text-secondary);
+  border-radius: var(--radius-sm); padding: 2px var(--space-2); font-size: var(--text-xs); cursor: pointer;
+}
+.rev-clase:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+.rev-clase.is-quitar { color: var(--warning); }

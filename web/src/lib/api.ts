@@ -8,6 +8,8 @@
 */
 
 import type {
+  ColaRevision,
+  TipoRevision,
   HojaConteo,
   Validacion,
   FormatoDireccional,
@@ -667,3 +669,20 @@ export function errorMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
   return 'Ocurrió un error inesperado.';
 }
+
+// Cola de vehículos a revisar (src/engine/revision.py).
+export const getRevision = (projectId: number, motivo?: string, desde = 0, limite = 40) => {
+  const q = new URLSearchParams({ desde: String(desde), limite: String(limite) });
+  if (motivo) q.set('motivo', motivo);
+  return request<ColaRevision>(`/api/projects/${projectId}/revision?${q}`);
+};
+export const decidirRevision = (projectId: number, tipo: TipoRevision, id: number, decision: string) =>
+  request<{ clase?: string; descartado?: number }>(`/api/projects/${projectId}/revision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo, id, decision }),
+  });
+export const restaurarDescartado = (projectId: number, descartadoId: number) =>
+  request<{ ok: boolean }>(`/api/projects/${projectId}/revision/restaurar/${descartadoId}`, { method: 'POST' });
+export const recorteRevisionUrl = (projectId: number, tipo: TipoRevision, id: number, pareja?: number | null) =>
+  `/api/projects/${projectId}/revision/recorte/${tipo}/${id}.jpg${pareja ? `?pareja=${pareja}` : ''}`;

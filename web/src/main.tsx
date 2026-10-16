@@ -19,6 +19,7 @@ import Proyecto from './pages/Proyecto';
 import ProyectoResumen from './pages/ProyectoResumen';
 import ProyectoCamara from './pages/ProyectoCamara';
 import ProyectoRegistro from './pages/ProyectoRegistro';
+import ProyectoRevisar from './pages/ProyectoRevisar';
 import Comparar from './pages/Comparar';
 import Subir from './pages/Subir';
 import Calibrar from './pages/Calibrar';
@@ -83,6 +84,7 @@ function App() {
           <Route path="subir" element={<Subir />} />
           <Route path="calibrar" element={<Calibrar />} />
           <Route path="reporte" element={<Reporte />} />
+          <Route path="revisar" element={<ProyectoRevisar />} />
           <Route path="mapa" element={<ProyectoMapa />} />
           <Route path="camara" element={<ProyectoCamara />} />
           <Route path="registro" element={<ProyectoRegistro />} />

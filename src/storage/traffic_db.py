@@ -319,6 +319,24 @@ def init_schema():
     # que pisó (src/engine/od_trayectoria.py). Los movimientos guardados
     # antes no lo tienen y se siguen decidiendo por zonas.
     _ensure_column(conn, "movimientos", "recorrido", "TEXT")
+    # Clase revisada a mano en la cola de revisión (src/engine/revision.py),
+    # igual que crossings.clase_revisada: gana sobre la regla del alto.
+    _ensure_column(conn, "movimientos", "clase_revisada", "TEXT")
+    _ensure_column(conn, "movimientos", "clase_revisada_por", "TEXT")
+    # Lo que quien revisa descartó: un doble conteo, algo que no era vehículo.
+    # El renglón sale de su tabla (así ningún conteo tiene que acordarse de
+    # filtrarlo) y se guarda aquí entero, para poder deshacerlo.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS descartados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            original_id INTEGER NOT NULL,
+            datos TEXT NOT NULL,
+            motivo TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
 
     # Diagnóstico del encuadre de un video: qué tan apto es para aforar,
     # medido ANTES de contarlo. Se guarda para no repetir el cálculo y para
@@ -986,7 +1004,7 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
                if z.get('kind') == 'acceso'}
     filas = conn.execute(
         """SELECT m.id, m.job_id, m.origen_id, m.destino_id, m.vehicle_type, m.timestamp,
-                  m.recorrido, m.bbox_height, v.video_start_time
+                  m.recorrido, m.bbox_height, m.clase_revisada, v.video_start_time
            FROM movimientos m LEFT JOIN video_jobs v ON v.id = m.job_id
            WHERE m.project_id = ? ORDER BY m.timestamp""",
         (project_id,)
@@ -1010,6 +1028,8 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
     def clase(fila, origen):
         if fila is None:
             return _cl.SIN_RESOLVER
+        if fila['clase_revisada']:
+            return fila['clase_revisada']
         acceso = fila['origen_id'] if fila['origen_id'] is not None else origen
         return _cl.clasificar(fila['vehicle_type'], fila['bbox_height'],
                               umbral_acceso.get(acceso))
@@ -1088,6 +1108,166 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
             for t, a in sorted(set(entradas) | set(salidas), key=lambda k: (k[0], k[1]))
         ],
     }
+
+
+# ── Cola de revisión (src/engine/revision.py) ───────────────────────────────
+
+def cruces_para_revision(project_id: int) -> Tuple[List[Dict], Dict]:
+    """Cruces de las líneas activas con la clase que se ENTREGA y el corte
+    liviano/pesado de su carril y su hora, más el contexto de clases."""
+    conn = get_connection()
+    lanes = list_lanes(project_id=project_id, active_only=True)
+    if not lanes:
+        return [], {"perfiles": {}}
+    nombres = {l["id"]: l["name"] for l in lanes}
+    marcas = ",".join("?" * len(lanes))
+    rows = [dict(r) for r in conn.execute(
+        f"""SELECT id, lane_id, job_id, track_id, direction, vehicle_type, confidence,
+                   timestamp, zone_id, bbox_height, bbox_width, bbox_x, bbox_y, cuadro,
+                   clase_revisada, clase_revisada_por, clase_modelo, prob_modelo
+            FROM crossings WHERE lane_id IN ({marcas}) AND timestamp IS NOT NULL
+            ORDER BY timestamp""", list(nombres)).fetchall()]
+    ctx = _contexto_de_clases(project_id, lanes, rows)
+    for r in rows:
+        r["clase"] = _clase_de_cruce(r, ctx)
+        r["umbral"] = _umbral_de_hora(r, ctx)
+        r["linea"] = nombres.get(r["lane_id"])
+    return rows, ctx
+
+
+def movimientos_para_revision(project_id: int) -> List[Dict]:
+    """Movimientos del direccional con su clase y el corte de su acceso de
+    origen, con la misma regla que get_matriz_od."""
+    from src.engine import clasificacion as _cl
+    conn = get_connection()
+    rows = [dict(r) for r in conn.execute(
+        """SELECT id, job_id, origen_id, destino_id, vehicle_type, bbox_height,
+                  confidence, timestamp, recorrido, clase_revisada
+           FROM movimientos WHERE project_id = ? ORDER BY timestamp""",
+        (project_id,)).fetchall()]
+    if not rows:
+        return []
+    alturas = defaultdict(list)
+    for f in rows:
+        if f["origen_id"] is not None and f["vehicle_type"] == "car" and f["bbox_height"]:
+            alturas[f["origen_id"]].append(f["bbox_height"])
+    umbral = {a: _cl.nivel_de_calzada(hs)[1] for a, hs in alturas.items()}
+    nombres = {z["id"]: z["name"] for z in list_zones(project_id, active_only=False)}
+
+    def numero(z):
+        if z is None:
+            return "?"
+        n = numero_de_acceso(nombres.get(z, ""))
+        return str(n) if n is not None else nombres.get(z, "?")
+
+    for f in rows:
+        f["umbral"] = umbral.get(f["origen_id"])
+        f["clase"] = f["clase_revisada"] or _cl.clasificar(
+            f["vehicle_type"], f["bbox_height"], f["umbral"])
+        f["movimiento"] = f"{numero(f['origen_id'])}_{numero(f['destino_id'])}"
+        f.pop("recorrido", None)
+    return rows
+
+
+def fps_de_videos(project_id: int) -> Dict[int, float]:
+    conn = get_connection()
+    return {r["id"]: r["fps"] for r in conn.execute(
+        "SELECT id, fps FROM video_jobs WHERE project_id = ? AND fps IS NOT NULL",
+        (project_id,)).fetchall()}
+
+
+def _tabla_de(tipo: str) -> str:
+    if tipo == "cruce":
+        return "crossings"
+    if tipo == "movimiento":
+        return "movimientos"
+    raise ValueError(f"tipo desconocido: {tipo}")
+
+
+def _es_del_proyecto(conn, project_id: int, tipo: str, item_id: int) -> bool:
+    if tipo == "cruce":
+        r = conn.execute(
+            """SELECT 1 FROM crossings c JOIN lane_configs l ON l.id = c.lane_id
+               WHERE c.id = ? AND l.project_id = ?""", (item_id, project_id)).fetchone()
+    else:
+        r = conn.execute("SELECT 1 FROM movimientos WHERE id = ? AND project_id = ?",
+                         (item_id, project_id)).fetchone()
+    return r is not None
+
+
+def revisar_clase(project_id: int, tipo: str, item_id: int, clase: str, por: str) -> None:
+    conn = get_connection()
+    if not _es_del_proyecto(conn, project_id, tipo, item_id):
+        raise KeyError(f"{tipo} {item_id} no es del proyecto {project_id}")
+    conn.execute(f"UPDATE {_tabla_de(tipo)} SET clase_revisada = ?, clase_revisada_por = ? WHERE id = ?",
+                 (clase, por, item_id))
+    conn.commit()
+
+
+def descartar(project_id: int, tipo: str, item_id: int, motivo: str) -> int:
+    """Saca el renglón de su tabla y lo guarda entero en `descartados`."""
+    conn = get_connection()
+    if not _es_del_proyecto(conn, project_id, tipo, item_id):
+        raise KeyError(f"{tipo} {item_id} no es del proyecto {project_id}")
+    tabla = _tabla_de(tipo)
+    # Una sola transacción: el INSERT abre una y el commit cierra las dos
+    # operaciones juntas, así no puede quedar el renglón en las dos tablas.
+    fila = dict(conn.execute(f"SELECT * FROM {tabla} WHERE id = ?", (item_id,)).fetchone())
+    cur = conn.execute(
+        "INSERT INTO descartados (project_id, tipo, original_id, datos, motivo) VALUES (?, ?, ?, ?, ?)",
+        (project_id, tipo, item_id, json.dumps(fila, ensure_ascii=False), motivo))
+    conn.execute(f"DELETE FROM {tabla} WHERE id = ?", (item_id,))
+    conn.commit()
+    return cur.lastrowid
+
+
+def restaurar_descartado(project_id: int, descartado_id: int) -> None:
+    """Devuelve el renglón a su tabla con el MISMO id."""
+    conn = get_connection()
+    d = conn.execute("SELECT * FROM descartados WHERE id = ? AND project_id = ?",
+                     (descartado_id, project_id)).fetchone()
+    if d is None:
+        raise KeyError(f"descartado {descartado_id} no es del proyecto {project_id}")
+    fila = json.loads(d["datos"])
+    tabla = _tabla_de(d["tipo"])
+    # Solo las columnas que la tabla tiene hoy: el renglón pudo guardarse
+    # antes de que se agregara alguna, o después de que se quitara.
+    vigentes = {r[1] for r in conn.execute(f"PRAGMA table_info({tabla})")}
+    cols = [c for c in fila if c in vigentes]
+    conn.execute(f"INSERT INTO {tabla} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                 [fila[c] for c in cols])
+    conn.execute("DELETE FROM descartados WHERE id = ?", (descartado_id,))
+    conn.commit()
+
+
+def list_descartados(project_id: int) -> List[Dict]:
+    conn = get_connection()
+    salida = []
+    for d in conn.execute("SELECT * FROM descartados WHERE project_id = ? ORDER BY id DESC",
+                          (project_id,)).fetchall():
+        datos = json.loads(d["datos"])
+        salida.append({"id": d["id"], "tipo": d["tipo"], "original_id": d["original_id"],
+                       "hora": datos.get("timestamp"), "motivo": d["motivo"],
+                       "fecha": d["created_at"]})
+    return salida
+
+
+def contar_revisados(project_id: int) -> int:
+    conn = get_connection()
+    a = conn.execute(
+        """SELECT COUNT(*) FROM crossings c JOIN lane_configs l ON l.id = c.lane_id
+           WHERE l.project_id = ? AND c.clase_revisada_por = 'revision_manual'""",
+        (project_id,)).fetchone()[0]
+    b = conn.execute(
+        "SELECT COUNT(*) FROM movimientos WHERE project_id = ? AND clase_revisada_por = 'revision_manual'",
+        (project_id,)).fetchone()[0]
+    return a + b
+
+
+def fila_para_recorte(tipo: str, item_id: int) -> Optional[Dict]:
+    conn = get_connection()
+    r = conn.execute(f"SELECT * FROM {_tabla_de(tipo)} WHERE id = ?", (item_id,)).fetchone()
+    return dict(r) if r else None
 
 
 def record_crossing(lane_id: int, track_id: int, direction: str,
@@ -1418,6 +1598,108 @@ def _tramos_de_video(project_id: int):
     return fundidos
 
 
+def _contexto_de_clases(project_id: int, lanes: List[Dict], rows) -> Dict:
+    """Lo que hace falta para dar la clase de la empresa a cada cruce.
+
+    Sale de `get_interval_counts`, que es por donde pasa todo lo que ve el
+    usuario, para que la cola de revisión (src/engine/revision.py) decida la
+    clase EXACTAMENTE igual que el Excel: una revisión que mira otra clase de
+    la que se entrega no revisa nada.
+    """
+    from src.engine import perfil_deteccion as _perfil
+    from src.engine.clasificacion import (NO_RESOLUBLE, horas_medibles as _horas_medibles,
+                                          nivel_de_calzada, perfil_de_calzada)
+    # Automovil/camioneta/pickup solo con luz: de noche, con los faros de
+    # frente, la forma no se ve y el subtipo seria inventado.
+    horas_sub = _perfil.leer(get_project(project_id)).get("horas_subtipo", (7, 19))
+
+    # Dos preguntas distintas, y mezclarlas fue un error que costo una
+    # version:
+    #
+    #   1. ¿Se puede medir a esta HORA?  -> lo dice la confianza, sobre el
+    #      proyecto entero. Separa dia de noche.
+    #   2. ¿Se puede clasificar en esta CALZADA? -> lo dice el ALTO del
+    #      vehiculo. Separa la calzada cercana de la del fondo.
+    #
+    # Usar la confianza para las dos no funciona porque se solapan: la
+    # calzada del fondo DE DIA da 0.53-0.66 y la cercana DE NOCHE da
+    # 0.54-0.69. Con un umbral unico, la calzada del fondo se callaba a
+    # todas horas aunque de dia su proporcion sale a 1.8 puntos del aforo
+    # manual. El sistema se volvia perezoso donde si podia.
+    def _hora(fila):
+        return fila["timestamp"][11:13]
+
+    por_hora_todos = {}
+    for fila in rows:
+        por_hora_todos.setdefault(_hora(fila), []).append(fila)
+    horas_medibles = _horas_medibles({
+        h: [f["confidence"] for f in fs if f["confidence"] is not None]
+        for h, fs in por_hora_todos.items()})
+
+    # El nivel de cada calzada sale del alto, sin confianza: esa ya decidio
+    # que horas cuentan.
+    niveles = {}
+    for lane in lanes:
+        propios = [f for f in rows if f["lane_id"] == lane["id"]]
+        for h in {_hora(f) for f in propios}:
+            if h not in horas_medibles:
+                niveles[(lane["id"], h)] = (NO_RESOLUBLE, None)
+                continue
+            niveles[(lane["id"], h)] = nivel_de_calzada(
+                f["bbox_height"] for f in propios
+                if _hora(f) == h and f["vehicle_type"] == "car"
+            )
+
+    # Perfil del carril: tamaño y silueta de SU automovil. Es lo que decide
+    # si ademas de liviano/pesado se pueden separar MOTO y AUTOBUS. Va por
+    # carril y no por proyecto, igual que el umbral, porque cada carril
+    # cuenta sobre una linea fija —a distancia fija de la camara— y esa es
+    # justo la condicion que hace comparables el alto y la silueta.
+    #
+    # Se calcula solo con las horas medibles: de noche la etiqueta de COCO
+    # no significa nada y el automovil sale deformado por el barrido.
+    perfiles = {
+        lane["id"]: perfil_de_calzada([
+            {"vehicle_type": f["vehicle_type"], "bbox_height": f["bbox_height"],
+             "bbox_width": f["bbox_width"]}
+            for f in rows
+            if f["lane_id"] == lane["id"] and _hora(f) in horas_medibles
+        ])
+        for lane in lanes
+    }
+    return {"horas_medibles": horas_medibles, "niveles": niveles,
+            "perfiles": perfiles, "horas_sub": horas_sub}
+
+
+def _umbral_de_hora(row, ctx: Dict) -> Optional[float]:
+    """Umbral liviano/pesado del carril del cruce, en SU hora."""
+    from src.engine.clasificacion import NO_RESOLUBLE
+    return ctx["niveles"].get((row["lane_id"], row["timestamp"][11:13]),
+                              (NO_RESOLUBLE, None))[1]
+
+
+def _clase_de_cruce(row, ctx: Dict, revision: Optional[Dict[int, str]] = None) -> str:
+    """La clase de la empresa de un cruce, como sale en pantallas y Excel."""
+    from src.engine.clasificacion import clasificar
+    from src.engine.clasificador_pesados import clase_final
+    # La clase revisada sobre el recorte gana sobre la regla.
+    # `revision` es la misma cosa sin escribirla: la usa
+    # revisar_pesados.py para enseñar el cambio antes de aplicarlo.
+    clase = (revision or {}).get(row["id"]) or row["clase_revisada"]
+    if clase:
+        return clase
+    # Cada cruce se clasifica con el umbral de SU hora.
+    perfil = ctx["perfiles"].get(row["lane_id"])
+    clase = clasificar(row["vehicle_type"], row["bbox_height"], _umbral_de_hora(row, ctx),
+                       ancho=row["bbox_width"], perfil=perfil)
+    # El clasificador propio decide QUÉ pesado es, y solo donde
+    # la regla del alto ya dijo pesado (la frontera
+    # liviano/pesado es la validada contra el conteo manual) y
+    # donde la calzada da para clases finas.
+    return clase_final(clase, row["clase_modelo"], row["prob_modelo"],
+                       bool((perfil or {}).get("fino")))
+
+
 def get_interval_counts(project_id: int, interval_minutes: int = 15,
                         por_calzada: bool = False,
                         revision: Optional[Dict[int, str]] = None) -> Dict:
@@ -1510,61 +1792,27 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
     # El umbral se saca por CARRIL y no por proyecto: cada carril cuenta
     # sobre una línea fija, o sea a una distancia fija de la cámara, que es
     # justo la condición que hace comparable el alto en píxeles.
-    from src.engine.clasificador_pesados import clase_final, subtipo_final
-    from src.engine import perfil_deteccion as _perfil
-    # Automovil/camioneta/pickup solo con luz: de noche, con los faros de
-    # frente, la forma no se ve y el subtipo seria inventado.
-    horas_sub = _perfil.leer(get_project(project_id)).get("horas_subtipo", (7, 19))
-    from src.engine.clasificacion import (MEDIDO, ESTIMADO,
-                                          NO_RESOLUBLE, SIN_RESOLVER, clasificar,
-                                          horas_medibles as _horas_medibles,
-                                          nivel_de_calzada, perfil_de_calzada)
+    from src.engine.clasificador_pesados import subtipo_final
+    from src.engine.clasificacion import MEDIDO, ESTIMADO, NO_RESOLUBLE, SIN_RESOLVER
+    ctx = _contexto_de_clases(project_id, lanes, rows)
+    horas_sub, horas_medibles = ctx["horas_sub"], ctx["horas_medibles"]
+    niveles, perfiles = ctx["niveles"], ctx["perfiles"]
 
-    # Dos preguntas distintas, y mezclarlas fue un error que costo una
-    # version:
-    #
-    #   1. ¿Se puede medir a esta HORA?  -> lo dice la confianza, sobre el
-    #      proyecto entero. Separa dia de noche.
-    #   2. ¿Se puede clasificar en esta CALZADA? -> lo dice el ALTO del
-    #      vehiculo. Separa la calzada cercana de la del fondo.
-    #
-    # Usar la confianza para las dos no funciona porque se solapan: la
-    # calzada del fondo DE DIA da 0.53-0.66 y la cercana DE NOCHE da
-    # 0.54-0.69. Con un umbral unico, la calzada del fondo se callaba a
-    # todas horas aunque de dia su proporcion sale a 1.8 puntos del aforo
-    # manual. El sistema se volvia perezoso donde si podia.
     def _hora(fila):
         return fila["timestamp"][11:13]
-
-    por_hora_todos = {}
-    for fila in rows:
-        por_hora_todos.setdefault(_hora(fila), []).append(fila)
-    horas_medibles = _horas_medibles({
-        h: [f["confidence"] for f in fs if f["confidence"] is not None]
-        for h, fs in por_hora_todos.items()})
-
-    # El nivel de cada calzada sale del alto, sin confianza: esa ya decidio
-    # que horas cuentan.
-    niveles = {}
-    for lane in lanes:
-        propios = [f for f in rows if f["lane_id"] == lane["id"]]
-        for h in {_hora(f) for f in propios}:
-            if h not in horas_medibles:
-                niveles[(lane["id"], h)] = (NO_RESOLUBLE, None)
-                continue
-            niveles[(lane["id"], h)] = nivel_de_calzada(
-                f["bbox_height"] for f in propios
-                if _hora(f) == h and f["vehicle_type"] == "car"
-            )
 
     # Lo que se reporta del carril es de lo que ES CAPAZ en sus mejores
     # horas: un carril que clasifica de dia no deja de poder porque de noche
     # no. Y como el umbral es fisico —pixeles de alto— una camara mejor
     # sube el nivel sola, sin tocar codigo.
+    # Las horas van ordenadas: `niveles` se arma desde un set, y sin orden el
+    # empate entre horas del mismo nivel se resolvía distinto en cada
+    # arranque y el umbral informado cambiaba (142 px un día, 199 otro).
     orden = {MEDIDO: 2, ESTIMADO: 1, NO_RESOLUBLE: 0}
     mejor = {
         lane["id"]: max(
-            [v for (lid, _), v in niveles.items() if lid == lane["id"]],
+            [v for (lid, _), v in sorted(niveles.items(), key=lambda kv: kv[0][1])
+             if lid == lane["id"]],
             key=lambda x: orden.get(x[0], 0), default=(NO_RESOLUBLE, None))
         for lane in lanes
     }
@@ -1576,24 +1824,6 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
         lane["id"]: umbral_de_referencia(
             f["bbox_height"] for f in rows
             if f["lane_id"] == lane["id"] and f["vehicle_type"] == "car")
-        for lane in lanes
-    }
-
-    # Perfil del carril: tamaño y silueta de SU automovil. Es lo que decide
-    # si ademas de liviano/pesado se pueden separar MOTO y AUTOBUS. Va por
-    # carril y no por proyecto, igual que el umbral, porque cada carril
-    # cuenta sobre una linea fija —a distancia fija de la camara— y esa es
-    # justo la condicion que hace comparables el alto y la silueta.
-    #
-    # Se calcula solo con las horas medibles: de noche la etiqueta de COCO
-    # no significa nada y el automovil sale deformado por el barrido.
-    perfiles = {
-        lane["id"]: perfil_de_calzada([
-            {"vehicle_type": f["vehicle_type"], "bbox_height": f["bbox_height"],
-             "bbox_width": f["bbox_width"]}
-            for f in rows
-            if f["lane_id"] == lane["id"] and _hora(f) in horas_medibles
-        ])
         for lane in lanes
     }
 
@@ -1628,22 +1858,7 @@ def get_interval_counts(project_id: int, interval_minutes: int = 15,
             bucket = interval_map[buckets[idx]]
             bucket[row["direction"]] += 1
             bucket["total"] += 1
-            # Cada cruce se clasifica con el umbral de SU hora.
-            u_hora = niveles.get((lane["id"], row["timestamp"][11:13]),
-                                 (NO_RESOLUBLE, None))[1]
-            # La clase revisada sobre el recorte gana sobre la regla.
-            # `revision` es la misma cosa sin escribirla: la usa
-            # revisar_pesados.py para enseñar el cambio antes de aplicarlo.
-            clase = (revision or {}).get(row["id"]) or row["clase_revisada"]
-            if not clase:
-                clase = clasificar(row["vehicle_type"], row["bbox_height"], u_hora,
-                                   ancho=row["bbox_width"], perfil=perfiles.get(lane["id"]))
-                # El clasificador propio decide QUÉ pesado es, y solo donde
-                # la regla del alto ya dijo pesado (la frontera
-                # liviano/pesado es la validada contra el conteo manual) y
-                # donde la calzada da para clases finas.
-                clase = clase_final(clase, row["clase_modelo"], row["prob_modelo"],
-                                    bool((perfiles.get(lane["id"]) or {}).get("fino")))
+            clase = _clase_de_cruce(row, ctx, revision)
             vt = bucket["by_vehicle_type"].setdefault(clase, {"in": 0, "out": 0})
             vt[row["direction"]] += 1
             # Lo que la validada no pudo clasificar, con la clase de

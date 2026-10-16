@@ -43,6 +43,7 @@ const HERRAMIENTAS = [
   { to: 'subir', label: 'Subir videos', end: false, paso: true },
   { to: 'calibrar', label: 'Calibrar', end: false, paso: true },
   { to: 'reporte', label: 'Reporte', end: false, paso: true },
+  { to: 'revisar', label: 'Revisar', end: false, paso: false },
   // El mapa de la intersección: dónde está cada acceso, a dónde mira la
   // cámara y, en un direccional, los movimientos dibujados como flechas.
   { to: 'mapa', label: 'Mapa', end: false, paso: false },

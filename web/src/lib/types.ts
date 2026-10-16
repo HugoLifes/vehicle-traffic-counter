@@ -558,3 +558,29 @@ export interface MovimientosMapa {
   metodo: string | null;
   sin_decidir: number;
 }
+
+// Cola de vehículos a revisar (src/engine/revision.py).
+export type TipoRevision = 'cruce' | 'movimiento';
+export type MotivoRevision = 'doble' | 'frontera' | 'modelo' | 'confianza';
+export interface ItemRevision {
+  tipo: TipoRevision;
+  id: number;
+  job_id: number | null;
+  hora: string;
+  clase: string | null;
+  linea: string | null;
+  movimiento: string | null;
+  alto: number | null;
+  confianza: number | null;
+  motivos: { motivo: MotivoRevision; texto: string }[];
+  prioridad: number;
+  pareja: number | null;
+}
+export interface ColaRevision {
+  pendientes: number;
+  resumen: { motivo: MotivoRevision; nombre: string; total: number }[];
+  revisados: number;
+  descartados: { id: number; tipo: TipoRevision; original_id: number; hora: string | null; motivo: string | null; fecha: string }[];
+  opciones: string[];
+  items: ItemRevision[];
+}
