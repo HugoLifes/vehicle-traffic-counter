@@ -129,7 +129,7 @@ function Calidad({ projectId }: { projectId: number }) {
         «Se pierden»: vehículos de ese acceso de los que no se vio el otro extremo. Si uno destaca, revisa
         en Calibrar el mapa de recorridos: un acceso mal dibujado o algo que tapa la vía. Verde desde{' '}
         {pct(c.cortes.verde)}, rojo bajo {pct(c.cortes.ambar)}. Los vehículos dudosos se revisan en{' '}
-        <Link to={`/proyecto/${projectId}/revisar`}>Revisar</Link>.
+        <Link className="est-enlace" to={`/proyecto/${projectId}/revisar`}>Revisar</Link>.
       </p>
     </Card>
   );
