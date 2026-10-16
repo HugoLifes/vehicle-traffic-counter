@@ -20,6 +20,7 @@ import { useProjectParam } from '../lib/useProjectParam';
 import {
   errorMessage,
   exportAforoExcelUrl,
+  exportEventosUrl,
   exportIntervalsUrl,
   exportMovimientosUrl,
   exportSummaryUrl,
@@ -620,6 +621,17 @@ export default function Reporte() {
                     </a>
                   </>
                 )}
+                {/* Un renglón por vehículo con el enlace a su recorte: para
+                    rastrear cualquier cifra hasta los vehículos que la forman. */}
+                <a
+                  className="re-mini"
+                  href={exportEventosUrl(projectId)}
+                  download
+                  title="Un renglón por vehículo: hora, clase, si cuenta y el enlace a su foto"
+                >
+                  <IconDownload size={14} />
+                  Lista de vehículos
+                </a>
                 {/* El PDF lo hace el propio navegador con la hoja de
                     impresión: así las gráficas salen vectoriales y no hay
                     que mantener una segunda versión del informe en el

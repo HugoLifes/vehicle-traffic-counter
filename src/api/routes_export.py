@@ -23,7 +23,7 @@ import csv
 import io
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from src.storage import traffic_db, traffic_metrics
@@ -40,7 +40,11 @@ def _nombre_archivo(proyecto: str, sufijo: str) -> str:
     Disposition sale mal formada y el navegador guarda el archivo con un
     nombre roto o lo rechaza.
     """
-    limpio = "".join(c if c.isalnum() or c in "-_" else "-" for c in proyecto)
+    # Sin acentos: `isalnum` deja pasar la "í" de "terracería", y una
+    # cabecera HTTP con caracteres fuera de ASCII sale mal formada igual.
+    import unicodedata
+    ascii_ = unicodedata.normalize("NFKD", proyecto).encode("ascii", "ignore").decode()
+    limpio = "".join(c if c.isalnum() or c in "-_" else "-" for c in ascii_)
     limpio = "-".join(filter(None, limpio.split("-")))[:60] or "aforo"
     return f"{limpio}-{sufijo}-{datetime.now():%Y%m%d}.csv"
 
@@ -170,6 +174,69 @@ def exportar_movimientos(project_id: int):
              for q in datos["cuartos"] for mv in datos["movimientos"]]
     return _respuesta_csv(filas, ["fecha", "intervalo", "movimiento", "A", "B", "C", "total"],
                           _nombre_archivo(proyecto["name"], "movimientos"))
+
+
+@router.get("/eventos.csv")
+def exportar_eventos(project_id: int, request: Request):
+    """
+    Un renglón por vehículo: hora, dónde, clase, si cuenta y el enlace a su
+    recorte. Es lo que hace auditable un aforo —Miovision lo vende así:
+    quien audita ve el mismo cuadro que vio el sistema— y lo que deja
+    rastrear cualquier cifra del Excel hasta los vehículos que la forman.
+
+    En el direccional cada renglón dice además qué se hizo con él: si cuenta,
+    en qué movimiento y cómo se decidió, o por qué no cuenta (pedazo de otro
+    vehículo, la cámara no cubre el movimiento...).
+    """
+    from src.engine.revision import _clase_mostrada, opciones_de_clase
+
+    proyecto = traffic_db.get_project(project_id)
+    if proyecto is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    # El enlace tiene que servir desde donde se abrió la plataforma: por la
+    # dirección pública llega por el relevo de Tailscale, que avisa el host
+    # original en X-Forwarded-Host.
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    esquema = request.headers.get("x-forwarded-proto") or request.url.scheme
+    base = f"{esquema}://{host}"
+    cruces, ctx = traffic_db.cruces_para_revision(project_id)
+    opciones = opciones_de_clase(project_id, ctx)
+    nombres = {z["id"]: z["name"] for z in traffic_db.list_zones(project_id, active_only=False)}
+
+    def numero(z):
+        if z is None:
+            return "?"
+        n = traffic_db.numero_de_acceso(nombres.get(z, ""))
+        return str(n) if n is not None else nombres.get(z, "?")
+
+    def revisado(f):
+        return "a mano" if f.get("clase_revisada_por") == "revision_manual" else (
+            "modelo de visión" if f.get("clase_revisada") else "")
+
+    filas = []
+    for c in cruces:
+        filas.append([c["timestamp"], "cruce de línea", c["linea"],
+                      "entra" if c["direction"] == "in" else "sale",
+                      _clase_mostrada(c["clase"], opciones), c["bbox_height"],
+                      round(c["confidence"], 2) if c["confidence"] is not None else "",
+                      "sí", "", revisado(c),
+                      f"{base}/api/projects/{project_id}/revision/recorte/cruce/{c['id']}.jpg"])
+    movs = traffic_db.movimientos_para_revision(project_id)
+    if movs:
+        decision = traffic_db.decisiones_od(project_id)
+        for m in movs:
+            d = decision.get(m["id"], {})
+            filas.append([m["timestamp"], "movimiento",
+                          f"{numero(d.get('origen_id'))}_{numero(d.get('destino_id'))}" if d.get("cuenta") else m["movimiento"],
+                          "", _clase_mostrada(m["clase"], opciones), m["bbox_height"],
+                          round(m["confidence"], 2) if m["confidence"] is not None else "",
+                          "sí" if d.get("cuenta") else "no", d.get("como", ""),
+                          "a mano" if m.get("clase_revisada") else "",
+                          f"{base}/api/projects/{project_id}/revision/recorte/movimiento/{m['id']}.jpg"])
+    filas.sort(key=lambda f: f[0])
+    return _respuesta_csv(filas, ["hora", "tipo", "linea_o_movimiento", "sentido", "clase", "alto_px",
+                                  "confianza", "cuenta", "como_se_decidio", "clase_revisada", "recorte"],
+                          _nombre_archivo(proyecto["name"], "eventos"))
 
 
 @router.get("/aforo.xlsx")

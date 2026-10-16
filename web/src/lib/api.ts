@@ -689,3 +689,4 @@ export const recorteRevisionUrl = (projectId: number, tipo: TipoRevision, id: nu
   `/api/projects/${projectId}/revision/recorte/${tipo}/${id}.jpg${pareja ? `?pareja=${pareja}` : ''}`;
 export const getCalidadDireccional = (projectId: number) =>
   request<CalidadDireccional>(`/api/projects/${projectId}/direccional/calidad`);
+export const exportEventosUrl = (projectId: number) => `/api/export/eventos.csv?project_id=${projectId}`;

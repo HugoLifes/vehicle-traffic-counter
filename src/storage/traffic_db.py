@@ -1110,6 +1110,46 @@ def get_matriz_od(project_id: int, interval_minutes: int = 15,
     }
 
 
+def decisiones_od(project_id: int) -> Dict[int, Dict]:
+    """Qué se hizo con cada renglón de `movimientos` al armar la matriz:
+    {id: {"cuenta": bool, "origen_id", "destino_id", "como"}}.
+
+    Es la misma decisión de get_matriz_od (y del Excel), renglón por renglón:
+    la lista de eventos la usa para que cualquier cifra se pueda rastrear
+    hasta los vehículos que la forman."""
+    conn = get_connection()
+    filas = conn.execute(
+        """SELECT m.id, m.job_id, m.origen_id, m.destino_id, m.vehicle_type, m.timestamp,
+                  m.recorrido, m.bbox_height, m.clase_revisada, v.video_start_time
+           FROM movimientos m LEFT JOIN video_jobs v ON v.id = m.job_id
+           WHERE m.project_id = ? ORDER BY m.timestamp""",
+        (project_id,)
+    ).fetchall()
+    salida: Dict[int, Dict] = {}
+    if any(f['recorrido'] for f in filas):
+        d = _decidir_por_trayectoria(project_id, filas)
+        for v in d['vehiculos']:
+            salida[v.get('clave')] = {"cuenta": True, "origen_id": v['origen_id'],
+                                      "destino_id": v['destino_id'],
+                                      "como": "por trayectoria" if v['decision'] == 'trayectoria' else "por zonas"}
+        for s in d['sin_decidir']:
+            salida.setdefault(s.get('clave'), {"cuenta": False, "origen_id": s['origen_id'],
+                                               "destino_id": s['destino_id'], "como": s['motivo']})
+    else:
+        for f in filas:
+            completo = f['origen_id'] is not None and f['destino_id'] is not None
+            salida[f['id']] = {"cuenta": completo, "origen_id": f['origen_id'],
+                               "destino_id": f['destino_id'],
+                               "como": "por zonas" if completo else "incompleto"}
+    for f in filas:
+        # Ni contado ni apartado: es el segundo pedazo de un vehículo que ya
+        # cuenta con otro renglón (unión de rastros partidos).
+        salida.setdefault(f['id'], {"cuenta": False, "origen_id": f['origen_id'],
+                                    "destino_id": f['destino_id'],
+                                    "como": "pedazo de otro vehículo"})
+    return salida
+
+
 # ── Cola de revisión (src/engine/revision.py) ───────────────────────────────
 
 def cruces_para_revision(project_id: int) -> Tuple[List[Dict], Dict]:
