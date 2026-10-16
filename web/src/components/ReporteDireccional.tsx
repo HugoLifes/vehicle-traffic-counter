@@ -11,11 +11,19 @@
 */
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, Notice } from './ui';
-import { borrarConteoManual, croquisUrl, errorMessage, getValidacion, subirConteoManual } from '../lib/api';
+import {
+  borrarConteoManual,
+  croquisUrl,
+  errorMessage,
+  getCalidadDireccional,
+  getValidacion,
+  subirConteoManual,
+} from '../lib/api';
 import { formatNumber } from '../lib/format';
-import type { FilaHrMov, FormatoDireccional, HojaConteo, Validacion } from '../lib/types';
+import type { CalidadDireccional, FilaHrMov, FormatoDireccional, HojaConteo, Validacion } from '../lib/types';
 
 const DIA = new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 const dia = (iso: string) => DIA.format(new Date(`${iso}T12:00:00`));
@@ -68,6 +76,62 @@ function TablaHrMov({ movs, filas }: { movs: string[]; filas: FilaHrMov[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+const pct = (x: number | null | undefined) => (x === null || x === undefined ? '—' : `${Math.round(100 * x)} %`);
+
+/**
+ * Qué parte de los vehículos se siguió de un acceso a otro (src/engine/calidad.py).
+ * Sirve cuando todavía no hay conteo a mano: en los cinco direccionales
+ * medidos, los que cuadraron pasaban del 60 % y los que no, no.
+ */
+function Calidad({ projectId }: { projectId: number }) {
+  const { data: c } = useQuery<CalidadDireccional | null>({
+    queryKey: ['calidad-od', projectId],
+    queryFn: () => getCalidadDireccional(projectId).catch(() => null),
+  });
+  if (!c || c.total === 0) return null;
+  return (
+    <Card className="chart-card">
+      <h3>Calidad del seguimiento</h3>
+      <div className="cal-cabeza">
+        <span className={`cal-numero cal-${c.color}`}>{c.cordon ? 'No aplica' : pct(c.fraccion)}</span>
+        <p className="chart-sub">
+          {formatNumber(c.completos)} de {formatNumber(c.total)} vehículos se vieron entrar y salir. {c.texto}
+        </p>
+      </div>
+      <div className="table-scroll">
+        <table className="data-table hrmov">
+          <thead>
+            <tr>
+              <th scope="col">Acceso</th>
+              <th scope="col">Entran</th>
+              <th scope="col">Salen</th>
+              <th scope="col">Se pierden</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.por_acceso.map((a) => (
+              <tr key={a.acceso_id}>
+                <th scope="row">{a.nombre}</th>
+                <td>{formatNumber(a.entran)}</td>
+                <td>{formatNumber(a.salen)}</td>
+                <td className={!c.cordon && (a.perdidos ?? 0) > 1 - c.cortes.ambar ? 'geh-mal' : undefined}>
+                  {pct(a.perdidos)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="chart-sub">
+        «Se pierden»: vehículos de ese acceso de los que no se vio el otro extremo. Si uno destaca, revisa
+        en Calibrar el mapa de recorridos: un acceso mal dibujado o algo que tapa la vía. Verde desde{' '}
+        {pct(c.cortes.verde)}, rojo bajo {pct(c.cortes.ambar)}. Los vehículos dudosos se revisan en{' '}
+        <Link to={`/proyecto/${projectId}/revisar`}>Revisar</Link>.
+      </p>
+    </Card>
   );
 }
 
@@ -262,6 +326,8 @@ export function ReporteDireccional({ f, projectId }: { f: FormatoDireccional; pr
       </div>
 
       <Precision projectId={projectId} fechas={[...new Set(f.cuartos.map((q) => q.fecha))]} />
+
+      <Calidad projectId={projectId} />
 
       {(f.juntos ?? []).map((g) => (
         <Notice tone="info" key={g.join()} title={`${g.join(' y ')}: esta cámara no los distingue`}>

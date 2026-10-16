@@ -67,6 +67,12 @@ NOMBRE_MOTIVO = {
 
 RECORTES_DIR = Path("data/recortes_revision")
 
+# Cómo se entrega cada clase cuando las opciones son las de la empresa
+# (A/B/C, formato Hr/Mov): lo mismo que aforo_excel._CLASE_EMPRESA. Sin esto
+# un direccional enseñaba "Pesado" y no ofrecía confirmarlo, porque el
+# formato no tiene esa columna.
+A_EMPRESA = {"MOTO": "A", "PESADO": "C", "T-S": "C", "T-S-R": "C", "TRACTOR": "C"}
+
 
 # ── Qué es dudoso (puro, sin base de datos: se prueba sin GPU) ──────────────
 
@@ -191,6 +197,12 @@ def opciones_de_clase(project_id: int, ctx: Optional[Dict] = None) -> List[str]:
     return ["A", "PESADO"]
 
 
+def _clase_mostrada(clase: Optional[str], opciones: List[str]) -> Optional[str]:
+    if clase in opciones or clase is None:
+        return clase
+    return A_EMPRESA.get(clase, clase) if "C" in opciones else clase
+
+
 def cola(project_id: int, motivo: Optional[str] = None,
          limite: int = 40, desde: int = 0) -> Dict:
     from src.storage import traffic_db
@@ -200,6 +212,7 @@ def cola(project_id: int, motivo: Optional[str] = None,
     movs = traffic_db.movimientos_para_revision(project_id)
     m_movs = motivos_de_movimientos(movs)
 
+    opciones = opciones_de_clase(project_id, ctx)
     items = []
     for lista, motivos, tipo in ((cruces, m_cruces, "cruce"), (movs, m_movs, "movimiento")):
         for c in lista:
@@ -208,13 +221,14 @@ def cola(project_id: int, motivo: Optional[str] = None,
                 continue
             items.append({
                 "tipo": tipo, "id": c["id"], "job_id": c.get("job_id"),
-                "hora": c["timestamp"], "clase": c.get("clase"),
+                "hora": c["timestamp"], "clase": _clase_mostrada(c.get("clase"), opciones),
                 "linea": c.get("linea"), "movimiento": c.get("movimiento"),
                 "alto": c.get("bbox_height"), "confianza": c.get("confidence"),
                 "motivos": [{"motivo": k, "texto": t} for k, t in ms],
                 "prioridad": min(PRIORIDAD[k] for k, _ in ms),
                 "pareja": c.get("_pareja"),
             })
+    total = len(items)
     resumen = defaultdict(int)
     for it in items:
         for m in it["motivos"]:
@@ -223,12 +237,16 @@ def cola(project_id: int, motivo: Optional[str] = None,
         items = [it for it in items if any(m["motivo"] == motivo for m in it["motivos"])]
     items.sort(key=lambda it: (it["prioridad"], it["hora"]))
     return {
+        # `total`: los dudosos sin filtrar; `pendientes`: los del filtro. Un
+        # vehículo con dos motivos sale en los dos grupos del resumen, así
+        # que sumar el resumen da de más.
+        "total": total,
         "pendientes": len(items),
         "resumen": [{"motivo": k, "nombre": NOMBRE_MOTIVO[k], "total": resumen[k]}
                     for k in sorted(resumen, key=PRIORIDAD.get)],
         "revisados": traffic_db.contar_revisados(project_id),
         "descartados": traffic_db.list_descartados(project_id),
-        "opciones": opciones_de_clase(project_id, ctx),
+        "opciones": opciones,
         "items": items[desde:desde + limite],
     }
 

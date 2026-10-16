@@ -8,6 +8,7 @@
 */
 
 import type {
+  CalidadDireccional,
   ColaRevision,
   TipoRevision,
   HojaConteo,
@@ -686,3 +687,5 @@ export const restaurarDescartado = (projectId: number, descartadoId: number) =>
   request<{ ok: boolean }>(`/api/projects/${projectId}/revision/restaurar/${descartadoId}`, { method: 'POST' });
 export const recorteRevisionUrl = (projectId: number, tipo: TipoRevision, id: number, pareja?: number | null) =>
   `/api/projects/${projectId}/revision/recorte/${tipo}/${id}.jpg${pareja ? `?pareja=${pareja}` : ''}`;
+export const getCalidadDireccional = (projectId: number) =>
+  request<CalidadDireccional>(`/api/projects/${projectId}/direccional/calidad`);

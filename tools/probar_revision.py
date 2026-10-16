@@ -10,7 +10,9 @@ Comprueba, con cruces fabricados:
   2. la frontera liviano/pesado (±10 % del corte) y que fuera de ella no;
   3. la confianza baja relativa a la línea: en una línea que cuenta desde
      0.10 a propósito, 0.20 no es "baja";
-  4. de punta a punta en una base temporal: corregir la clase la cambia en
+  4. el color de la calidad del seguimiento del direccional con los cortes
+     medidos (60 % y 45 %), y que en un cordón no aplique;
+  5. de punta a punta en una base temporal: corregir la clase la cambia en
      get_interval_counts, descartar saca el cruce del conteo y restaurarlo lo
      devuelve con el mismo id.
 
@@ -140,8 +142,24 @@ def de_punta_a_punta():
         comprobar("un cruce de otro proyecto se rechaza", True)
 
 
+def calidad():
+    from src.engine import calidad as cal
+    print("Calidad del seguimiento (direccional)")
+    movs = [{"job_id": 1, "origen_id": 1, "destino_id": 2}] * 30 + [{"job_id": 1, "origen_id": 1, "destino_id": None}] * 10
+    r = cal.resumir(movs, {1: "1", 2: "2"}, {}, cordon=False)
+    comprobar("75 % completos sale verde", r["color"] == "verde" and r["fraccion"] == 0.75, str(r["fraccion"]))
+    comprobar("el acceso 1 pierde los 10 sin destino", r["por_acceso"][0]["sin_destino"] == 10)
+    r = cal.resumir(movs[:12] + movs[30:], {}, {}, cordon=False)
+    comprobar("55 % sale ámbar", r["color"] == "ambar", str(r["fraccion"]))
+    r = cal.resumir(movs[30:] + movs[:5], {}, {}, cordon=False)
+    comprobar("33 % sale rojo", r["color"] == "rojo", str(r["fraccion"]))
+    r = cal.resumir(movs[30:], {}, {}, cordon=True)
+    comprobar("en un cordón no aplica (gris)", r["color"] == "gris")
+
+
 if __name__ == "__main__":
     puras()
+    calidad()
     de_punta_a_punta()
     print(f"\n{'TODO BIEN' if fallos == 0 else f'{fallos} FALLOS'}")
     sys.exit(1 if fallos else 0)

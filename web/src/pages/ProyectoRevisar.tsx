@@ -144,7 +144,7 @@ export default function ProyectoRevisar() {
   if (isLoading) return <EmptyState title="Buscando los vehículos dudosos…" />;
   if (isError || !data) return <Notice title="No se pudo cargar la revisión">{errorMessage(error)}</Notice>;
 
-  const total = data.resumen.reduce((s, r) => s + r.total, 0);
+  const total = data.total;
   const items = data.items.filter((it) => !hechos.has(`${it.tipo}${it.id}`));
 
   return (

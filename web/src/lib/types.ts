@@ -577,10 +577,24 @@ export interface ItemRevision {
   pareja: number | null;
 }
 export interface ColaRevision {
+  total: number;
   pendientes: number;
   resumen: { motivo: MotivoRevision; nombre: string; total: number }[];
   revisados: number;
   descartados: { id: number; tipo: TipoRevision; original_id: number; hora: string | null; motivo: string | null; fecha: string }[];
   opciones: string[];
   items: ItemRevision[];
+}
+
+// Calidad del seguimiento del direccional (src/engine/calidad.py).
+export interface CalidadDireccional {
+  total: number;
+  completos: number;
+  fraccion: number | null;
+  color: 'verde' | 'ambar' | 'rojo' | 'gris';
+  cordon: boolean;
+  texto: string;
+  por_acceso: { acceso_id: number; nombre: string; entran: number; salen: number; sin_destino: number; sin_origen: number; perdidos: number | null }[];
+  peores_videos: { job_id: number; nombre?: string; hora?: string; total: number; fraccion: number }[];
+  cortes: { verde: number; ambar: number };
 }

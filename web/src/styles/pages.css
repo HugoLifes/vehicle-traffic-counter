@@ -2500,3 +2500,12 @@
 }
 .rev-clase:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
 .rev-clase.is-quitar { color: var(--warning); }
+
+/* Calidad del seguimiento (ReporteDireccional). */
+.cal-cabeza { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: center; margin-block: var(--space-2); }
+.cal-cabeza .chart-sub { flex: 1 1 320px; margin: 0; }
+.cal-numero { font-size: var(--text-lg); font-weight: 700; font-variant-numeric: tabular-nums; padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--border); }
+.cal-verde { color: var(--good); border-color: var(--good); }
+.cal-ambar { color: var(--warning); border-color: var(--warning); }
+.cal-rojo { color: var(--critical); border-color: var(--critical); }
+.cal-gris { color: var(--text-muted); }
