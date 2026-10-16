@@ -33,6 +33,17 @@ cámara: Gómez Morín dio 46 %.
 
 ## 2. Ideas que sí nos faltan, por orden de valor
 
+**Estado (16-oct-2026):**
+
+| Idea | Estado |
+|---|---|
+| 2.1 Revisar solo los dudosos | **hecho**: pestaña Revisar |
+| 2.2 Panel de calidad | **hecho** para el direccional: "Calidad del seguimiento" en el Reporte |
+| 2.4 Lista de eventos con recorte | **hecho**: "Lista de vehículos" en el Reporte |
+| 2.3 Conservación entre cruces vecinos | pendiente: hacen falta dos intersecciones seguidas de la misma avenida, contadas el mismo día, para validarla |
+| 2.5 Coordenadas del mundo | pendiente, junto con las vistas (varias cámaras) |
+| 2.6 Esquema de clases configurable | pendiente hasta que un cliente pida otra taxonomía |
+
 ### 2.1 Revisar solo los vehículos dudosos
 
 **Quién lo hace:**

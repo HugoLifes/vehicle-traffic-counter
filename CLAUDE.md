@@ -2795,6 +2795,57 @@ de 1280×720 va a 14.4 cuadros/s (5 min de video en 5.2 min).
 
 ---
 
+## Revisar, calidad del seguimiento y lista de vehículos (16-oct-2026)
+
+Tres cosas que tienen las plataformas del ramo y aquí faltaban (estudio en
+`docs/IDEAS_DE_OTRAS_HERRAMIENTAS.md`):
+
+- **Pestaña Revisar** (`src/engine/revision.py`, `/api/projects/{id}/revision`).
+  Solo los dudosos, con el recorte de su cuadro:
+  - **posible doble**: misma línea y sentido a ≤ 0.6 s con las cajas encimadas;
+  - **frontera**: a ±10 % del corte liviano/pesado;
+  - **modelo**: el clasificador de pesados con probabilidad < 0.6;
+  - **confianza**: menos de 0.35 y entre el 5 % más bajo de su línea.
+
+  Corregir escribe `clase_revisada`. Descartar mueve el renglón entero a la
+  tabla `descartados`, que ningún conteo lee, y se puede devolver.
+
+  La clase que se revisa es la que se entrega: la regla salió de
+  `get_interval_counts` a `_clase_de_cruce`, y los proyectos 7 y 27 dan
+  idéntico (con `PYTHONHASHSEED` fijo; sin él, el umbral *informado* cambiaba
+  entre arranques, ya corregido).
+
+  **El doble exige la caja de los dos.** Solo con el segundo salían 1 076
+  "dobles" en el frontal: parejas en los dos carriles de la calzada.
+- **Calidad del seguimiento** en el Reporte direccional (`src/engine/calidad.py`):
+  la fracción de vehículos vistos entrar y salir, en color y por acceso.
+  Cortes medidos en los cinco direccionales con resultado conocido:
+
+  | aforo | fracción | resultado |
+  |---|---|---|
+  | Calle terracería | 89 % | cuadró |
+  | Entrada y salida Altozano | 66 % | cuadró |
+  | Blvd. Independencia | 56 % | no cuadró |
+  | Gómez Morín | 36 % | no cuadró |
+
+  Verde desde 60 %, rojo bajo 45 %. En un cordón no aplica (Fraccionamiento
+  da 4 % y cuadra por las líneas).
+- **Lista de vehículos** (`/api/export/eventos.csv`, botón en el Reporte).
+  Un renglón por vehículo con el enlace a su recorte, y en el direccional
+  cómo se decidió. Los que cuentan cuadran con la matriz al vehículo: 988 de
+  988 en Terracería, 15 713 de 15 713 en Gómez Morín.
+
+**Lo que destapó la revisión en Fraccionamiento.** De los "posibles dobles"
+mirados a ojo, la mayoría son el MISMO vehículo: primero un pedazo detectado,
+unos cuadros después el vehículo entero, con otro rastro.
+- Se concentra en la línea 1, sentido "entra": el carril tapado, con umbral
+  0.10. Ahí son 72 de 1 497 cruces (4.8 %).
+- Esa misma línea sale corta contra el conteo a mano (1_3: 151 contra 180),
+  así que el doble conteo está **tapando** pérdidas. Es la trampa de
+  cancelación de siempre.
+- No se tocó el entregable. Antes de descartar en bloque hay que revisarlos
+  en la pestaña, y volver a comparar.
+
 ## Al desplegar en el Jetson
 
 Guía completa en [docs/JETSON_DEPLOY.md](docs/JETSON_DEPLOY.md). Lo
