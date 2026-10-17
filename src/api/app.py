@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
     video_processor.stop()
 
 
-app = FastAPI(title="Aforo Vehicular - Plataforma", lifespan=lifespan)
+app = FastAPI(title="apia_vision - Plataforma de aforo vehicular", lifespan=lifespan)
 
 # Usuario y contraseña, solo si están en el entorno (el .env del Jetson). Sin
 # ellos la plataforma queda como siempre, para usarla dentro de la oficina.

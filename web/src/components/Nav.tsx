@@ -53,7 +53,7 @@ export function Nav() {
     <div className="topbar">
       <Link className="brand" to="/">
         <IconBrand size={26} />
-        <span className="brand-name">Aforo Vehicular</span>
+        <span className="brand-name">apia_vision</span>
       </Link>
       <div className="topbar-right">
         <nav className="nav-links" aria-label="Navegación principal">

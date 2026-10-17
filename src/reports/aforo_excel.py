@@ -400,7 +400,7 @@ def _hoja_cuartos(wb: Workbook, d: Dict):
                         celda.comment = Comment(
                             f"Video incompleto: cubre el {100 * cv:.0f} % de este cuarto "
                             "de hora. El conteo es parcial, no un bajon del transito.",
-                            "Aforo vehicular")
+                            "apia_vision")
                 fila += 1
             # Fila de total de la hora, como en los originales.
             _celda(ws, fila, col, f"{hora:02d}:00-{hora + 1:02d}:00", _CABECERA, _GRIS)
@@ -550,7 +550,7 @@ def _hoja_clases(wb: Workbook, project_id: int, d: Dict) -> None:
                         if parcial and c == "TOTAL":
                             celda.comment = Comment(
                                 f"Video incompleto: cubre el {100 * cv:.0f} % de este "
-                                "cuarto de hora. El conteo es parcial.", "Aforo vehicular")
+                                "cuarto de hora. El conteo es parcial.", "apia_vision")
                         if valor != "":
                             suma_hora[c] += n
                     fila += 1
@@ -1201,7 +1201,7 @@ def _hoja_direccional(wb: Workbook, project_id: int, proyecto: Dict) -> int:
             if rojo is not None:
                 texto.append(f"Incluye video calificado NO RECOMENDABLE por el diagnóstico de "
                              f"encuadre ({rojo}/100): lo contado ahí no representa el tránsito.")
-            total.comment = Comment(" ".join(texto), "Aforo vehicular")
+            total.comment = Comment(" ".join(texto), "apia_vision")
     if parciales:
         fila += 1
         n = ws.cell(fila, 1, "En naranja: intervalo con video incompleto o no apto (el conteo no "
@@ -1393,7 +1393,7 @@ def _hoja_resumen_direccional(wb: Workbook, project_id: int, d: Dict) -> int:
         _celda(ws, fila, 3 + len(accesos), decididos.get(k, 0), relleno=relleno)
         if parcial:
             tot.comment = Comment(f"Video incompleto: cubre el {100 * cv:.0f} % de este intervalo.",
-                                  "Aforo vehicular")
+                                  "apia_vision")
     if parciales:
         fila += 1
         ws.cell(fila, 1, "En naranja: intervalo con video incompleto; no entra a la hora de "

@@ -25,7 +25,7 @@ el aforo validado (386 de 386, minuto por minuto).
 
 ## Entrar
 
-**https://aforo.tail2bdded.ts.net** desde cualquier lugar, con el usuario y la
+**https://apia-vision.tail2bdded.ts.net** desde cualquier lugar, con el usuario y la
 contraseña que te pasen (el navegador los pide una vez). En la oficina también
 `http://10.197.1.156:8080`, con los mismos datos.
 

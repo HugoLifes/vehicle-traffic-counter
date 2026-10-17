@@ -50,7 +50,7 @@ export function Page({ title, subtitle, hideGuide, hideHeader, actions, children
   // El título de la pestaña identifica la página, no solo el producto:
   // con varias abiertas hay que poder distinguirlas.
   useEffect(() => {
-    document.title = `${title} — Aforo Vehicular`;
+    document.title = `${title} — apia_vision`;
   }, [title]);
 
   return (

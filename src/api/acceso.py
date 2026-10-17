@@ -90,7 +90,7 @@ class AccesoBasico:
             "type": "http.response.start",
             "status": 401,
             "headers": [
-                (b"www-authenticate", b'Basic realm="Aforo vehicular", charset="UTF-8"'),
+                (b"www-authenticate", b'Basic realm="apia_vision", charset="UTF-8"'),
                 (b"content-type", b"text/plain; charset=utf-8"),
             ],
         })

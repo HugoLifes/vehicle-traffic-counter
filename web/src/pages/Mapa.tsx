@@ -230,7 +230,7 @@ export default function Mapa() {
   }, [creando]);
 
   useEffect(() => {
-    document.title = 'Mapa de aforos — Aforo Vehicular';
+    document.title = 'Mapa de aforos — apia_vision';
   }, []);
 
   const lista = useMemo(() => proyectos ?? [], [proyectos]);

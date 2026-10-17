@@ -1,9 +1,9 @@
 # Dirección pública fija para la plataforma, sin tocar el router ni usar sudo.
 #
 #   docker compose -f docker-compose.tailscale.yml up -d
-#   docker exec tailscale tailscale up --hostname=aforo       # da el enlace para iniciar sesión (1a vez)
+#   docker exec tailscale tailscale up --hostname=apia-vision       # da el enlace para iniciar sesión (1a vez)
 #   docker exec tailscale tailscale funnel --bg 8080          # publicar la plataforma
-#   docker exec tailscale tailscale funnel status             # la dirección https://aforo.<red>.ts.net
+#   docker exec tailscale tailscale funnel status             # la dirección https://apia-vision.<red>.ts.net
 #
 # Por qué así: la plataforma no se puede alojar en Vercel ni en GitHub Pages
 # (el conteo necesita la GPU, los videos y la base del Jetson), así que lo
@@ -29,7 +29,7 @@ services:
   tailscale:
     image: tailscale/tailscale:stable
     container_name: tailscale
-    hostname: aforo
+    hostname: apia-vision
     network_mode: host
     restart: unless-stopped
     entrypoint: ["tailscaled"]
