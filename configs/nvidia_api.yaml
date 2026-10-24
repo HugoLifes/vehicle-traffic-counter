@@ -28,7 +28,25 @@ models:
   #   nemotron-3.5-lightning  - filtra su razonamiento interno en inglés
   #   openai/gpt-oss-20b      - ignora el idioma pedido
   #   moonshotai/kimi-k3      - correcto pero 3 veces más lento (10.5 s)
-  chat: "nvidia/nemotron-3-super-120b-a12b"
+  #
+  # 24-oct-2026: nemotron-3-super-120b dejó de responder (404 "Function not
+  # found for account") aunque /v1/models lo sigue listando: estar en la
+  # lista no garantiza que conteste. Probado con una pregunta de RAG real
+  # (dos fuentes, FHP + un caso de la plataforma), sin razonamiento:
+  #   nemotron-3.5-super-vl-120b  2.1 s, correcto, cita cada frase  <- este
+  #   nemotron-3.5-lightning-30b  1.4 s, correcto, citas al final    <- respaldo
+  #   openai/gpt-oss-20b          13 s, fórmulas en LaTeX
+  #   gemma-4-31b, deepseek-v4.1-flash: timeout a 90 s
+  #   nemotron-nano-3, mistral-large-2, llama-3.1-nemotron-70b: 404
+  # Los dos de 3.5 son de razonamiento: con el razonamiento encendido tardan
+  # 4-9 s y gastan cientos de tokens pensando; `chat_extra` lo apaga.
+  chat: "nvidia/nemotron-3.5-super-vl-120b-a12b"
+
+  # Si el modelo de chat da 404 (lo retiraron), se prueba el siguiente sin
+  # reintentar el que ya no existe: así un cambio del catálogo no tumba el RAG
+  # hasta que alguien lo note, que es lo que pasó el 24-oct.
+  chat_respaldo:
+    - "nvidia/nemotron-3.5-lightning-30b-a3b"
 
   # IA visual: contexto cualitativo de la escena (congestión, sentido
   # contrario, clima). Versión más chica/rápida para llamadas periódicas.
@@ -60,6 +78,13 @@ request_timeout_s: 30
 # 30 s se agota siempre. Medido contra la API real desde México.
 rag_timeout_s: 120
 max_retries: 2
+
+# Campos extra para las llamadas de chat. Apaga el razonamiento de los
+# modelos 3.5: la respuesta del RAG sale igual de correcta en la mitad del
+# tiempo (medido arriba).
+chat_extra:
+  chat_template_kwargs:
+    enable_thinking: false
 
 # Intervalos de las IAs periódicas (segundos) — no llamar la API en
 # cada frame, el free tier es rate-limited.

@@ -70,6 +70,10 @@ def _with_retries(label: str, call: Callable[[], T]) -> T:
             return call()
         except (APIStatusError, APITimeoutError, APIError) as e:
             last_error = e
+            # 404 = el modelo ya no existe en la cuenta: reintentar solo
+            # gasta segundos antes de pasar al de respaldo.
+            if isinstance(e, APIStatusError) and e.status_code == 404:
+                break
             if attempt < max_retries:
                 wait = 1.5 * (attempt + 1)
                 logging.warning(f"{label} falló (intento {attempt + 1}/{max_retries + 1}): {e} — reintentando en {wait}s")
@@ -90,18 +94,31 @@ def chat(messages: List[dict], max_tokens: int = 512, temperature: float = 0.2,
     """
     client = _get_client()
     config = _load_config()
+    modelos = [config["models"]["chat"]] + list(config["models"].get("chat_respaldo") or [])
 
-    def _call():
-        response = client.chat.completions.create(
-            model=config["models"]["chat"],
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=timeout_s or config.get("request_timeout_s", 30),
-        )
-        return response.choices[0].message.content or ""
-
-    return _with_retries("el modelo de chat", _call)
+    ultimo = None
+    for modelo in modelos:
+        def _call(modelo=modelo):
+            response = client.chat.completions.create(
+                model=modelo,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout_s or config.get("request_timeout_s", 30),
+                extra_body=config.get("chat_extra") or None,
+            )
+            return response.choices[0].message.content or ""
+        try:
+            return _with_retries("el modelo de chat", _call)
+        except NvidiaClientError as e:
+            # Un 404 es un modelo retirado del catálogo: reintentarlo no sirve,
+            # se pasa al de respaldo. Cualquier otro error sí es de la llamada.
+            if getattr(e.__cause__, "status_code", None) != 404:
+                raise
+            logging.warning(f"El modelo de chat {modelo} ya no existe en la API (404); "
+                            f"se usa el de respaldo. Actualiza configs/nvidia_api.yaml.")
+            ultimo = e
+    raise ultimo
 
 
 def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400,
