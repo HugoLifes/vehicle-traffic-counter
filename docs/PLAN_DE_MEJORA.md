@@ -252,6 +252,8 @@ Es lo que convierte a la empresa en la que mide si una obra funcionó.
 
 ## Orden propuesto
 
+Los costos de la tabla son de programación a mano. Con IA, programar cada punto toma de horas a unos días. Lo que de verdad marca el paso es conseguir los datos de campo y comprobar cada mejora contra un conteo a mano, así que el orden importa más que las fechas. La versión para compartir está en el documento "Plan de mejora apia_vision", que trae las fases y qué necesita cada una.
+
 | # | Qué | Costo aproximado | Por qué en este orden |
 |---|---|---|---|
 | 1 | A2 dobles de Fraccionamiento | 1–2 días | corrige un entregable ya enviado |
