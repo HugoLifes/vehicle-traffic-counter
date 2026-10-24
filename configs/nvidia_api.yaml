@@ -60,7 +60,22 @@ models:
   # vacías). 2.5 s por recorte. llama-3.2-90b-vision da timeout, gemma-3 y
   # cosmos-reason2 dan 404, llama-4-maverick 410; kimi-k3 contesta pero
   # tarda 42 s y acertó 27/33.
-  clasificacion: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+  #
+  # 24-oct-2026: se cambia a nemotron-3.5-super-vl. Medido sobre 76 recortes
+  # de data/nuevos/clasif_pesados (las 5 clases, día 12-17 h y noche 19-23 h),
+  # mirando a ojo cada desacuerdo (2 eran de la etiqueta, no del modelo):
+  #   nano-omni (el anterior)  ~66/76 (87 %), 1.7 s; ya devolvía respuestas
+  #                            VACÍAS en 6 de 16 tractores sin caja, y 503s
+  #   super-vl-120b            ~73/76 (96 %), 0.9 s; día 39/40, noche 32/36
+  #   llama-3.2-11b-vision     llamó "auto" a 5 de 16 autobuses, 17 s
+  #   deepseek-v4.1-flash      timeout a 90 s en todos
+  # Sus 3 fallos: un tractor sin caja de espaldas (dijo tractocamión), una
+  # pickup con redilas (camión) y un auto delante de una caja blanca.
+  # Las etiquetas YA APLICADAS al proyecto 7 son del modelo anterior; no se
+  # tocan. El nuevo vale para revisiones nuevas.
+  clasificacion: "nvidia/nemotron-3.5-super-vl-120b-a12b"
+  clasificacion_respaldo:
+    - "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 
   # Embeddings para el RAG (2048 dimensiones)
   embedding: "nvidia/nemotron-3-embed-1b"
@@ -79,12 +94,16 @@ request_timeout_s: 30
 rag_timeout_s: 120
 max_retries: 2
 
-# Campos extra para las llamadas de chat. Apaga el razonamiento de los
+# Campos extra para las llamadas de chat y de visión. Apaga el razonamiento de los
 # modelos 3.5: la respuesta del RAG sale igual de correcta en la mitad del
 # tiempo (medido arriba).
 chat_extra:
   chat_template_kwargs:
     enable_thinking: false
+# A qué modelos se les manda `chat_extra`: solo a los que lo aceptan.
+sin_razonamiento:
+  - "nvidia/nemotron-3.5-super-vl-120b-a12b"
+  - "nvidia/nemotron-3.5-lightning-30b-a3b"
 
 # Intervalos de las IAs periódicas (segundos) — no llamar la API en
 # cada frame, el free tier es rate-limited.

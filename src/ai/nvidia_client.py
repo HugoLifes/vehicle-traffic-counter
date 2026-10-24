@@ -82,6 +82,36 @@ def _with_retries(label: str, call: Callable[[], T]) -> T:
     raise NvidiaClientError(f"Error llamando a {label} tras {max_retries + 1} intentos: {last_error}") from last_error
 
 
+def _modelos_de(rol: str) -> List[str]:
+    """El modelo del rol y sus respaldos (`<rol>_respaldo` en la config)."""
+    modelos = _load_config()["models"]
+    return [modelos[rol]] + list(modelos.get(f"{rol}_respaldo") or [])
+
+
+def _extra(modelo: str) -> Optional[dict]:
+    """`chat_extra` (apagar el razonamiento) solo para los modelos que lo
+    aceptan: los listados en `sin_razonamiento`."""
+    config = _load_config()
+    return config.get("chat_extra") if modelo in (config.get("sin_razonamiento") or []) else None
+
+
+def _con_respaldo(rol: str, etiqueta: str, llamar: Callable[[str], T]) -> T:
+    """Prueba el modelo del rol y, si la API dice que ya no existe (404),
+    sus respaldos en orden. Un 404 es un modelo retirado del catálogo:
+    reintentarlo no sirve. Cualquier otro error sí es de la llamada."""
+    ultimo = None
+    for modelo in _modelos_de(rol):
+        try:
+            return _with_retries(etiqueta, lambda: llamar(modelo))
+        except NvidiaClientError as e:
+            if getattr(e.__cause__, "status_code", None) != 404:
+                raise
+            logging.warning(f"{etiqueta}: {modelo} ya no existe en la API (404); "
+                            f"se usa el de respaldo. Actualiza configs/nvidia_api.yaml.")
+            ultimo = e
+    raise ultimo
+
+
 def chat(messages: List[dict], max_tokens: int = 512, temperature: float = 0.2,
          timeout_s: Optional[float] = None) -> str:
     """
@@ -94,31 +124,19 @@ def chat(messages: List[dict], max_tokens: int = 512, temperature: float = 0.2,
     """
     client = _get_client()
     config = _load_config()
-    modelos = [config["models"]["chat"]] + list(config["models"].get("chat_respaldo") or [])
 
-    ultimo = None
-    for modelo in modelos:
-        def _call(modelo=modelo):
-            response = client.chat.completions.create(
-                model=modelo,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                timeout=timeout_s or config.get("request_timeout_s", 30),
-                extra_body=config.get("chat_extra") or None,
-            )
-            return response.choices[0].message.content or ""
-        try:
-            return _with_retries("el modelo de chat", _call)
-        except NvidiaClientError as e:
-            # Un 404 es un modelo retirado del catálogo: reintentarlo no sirve,
-            # se pasa al de respaldo. Cualquier otro error sí es de la llamada.
-            if getattr(e.__cause__, "status_code", None) != 404:
-                raise
-            logging.warning(f"El modelo de chat {modelo} ya no existe en la API (404); "
-                            f"se usa el de respaldo. Actualiza configs/nvidia_api.yaml.")
-            ultimo = e
-    raise ultimo
+    def _call(modelo):
+        response = client.chat.completions.create(
+            model=modelo,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout_s or config.get("request_timeout_s", 30),
+            extra_body=_extra(modelo),
+        )
+        return response.choices[0].message.content or ""
+
+    return _con_respaldo("chat", "el modelo de chat", _call)
 
 
 def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400,
@@ -145,9 +163,10 @@ def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400,
         raise NvidiaClientError("No se pudo codificar el frame para enviarlo")
     b64 = base64.b64encode(buf.tobytes()).decode()
 
-    def _call():
+    def _call(modelo):
         response = client.chat.completions.create(
-            model=config["models"][rol],
+            model=modelo,
+            extra_body=_extra(modelo),
             messages=[{
                 "role": "user",
                 "content": [
@@ -160,7 +179,7 @@ def vision(prompt: str, frame: np.ndarray, max_tokens: int = 400,
         )
         return response.choices[0].message.content or ""
 
-    return _with_retries("el modelo de visión", _call)
+    return _con_respaldo(rol, "el modelo de visión", _call)
 
 
 def embed(texts: List[str], input_type: str = "passage") -> List[List[float]]:
