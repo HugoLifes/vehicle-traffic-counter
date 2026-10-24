@@ -225,6 +225,46 @@ def salud(max_horas_respaldo, min_disco):
     except Exception as e:
         anotar("salud", "La plataforma responde", "AVISO", f"no respondió ({e.__class__.__name__})")
 
+    modelos_api()
+
+
+def modelos_api():
+    """Que los modelos de la API de NVIDIA que usa la plataforma sigan
+    contestando. El catálogo gratuito los retira sin avisar: el 24-oct-2026
+    el del RAG daba 404 y nadie lo supo hasta preguntarle algo. AVISO y no
+    FALLA porque contar no depende de internet; lo que se cae es el RAG y la
+    revisión de pesados."""
+    try:
+        from src.ai import nvidia_client
+        if not nvidia_client.is_configured():
+            anotar("salud", "Modelos de la API de NVIDIA", "AVISO", "sin NVIDIA_API_KEY: el RAG y la revisión de pesados no funcionan")
+            return
+        modelos = nvidia_client._load_config()["models"]
+    except Exception as e:
+        anotar("salud", "Modelos de la API de NVIDIA", "AVISO", str(e)[:120])
+        return
+    # Una imagen de 1 x 1 basta para saber si el modelo de visión existe.
+    pixel = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==")
+    pruebas = {
+        "chat (RAG)": lambda: nvidia_client.chat([{"role": "user", "content": "Responde solo: ok"}], max_tokens=16),
+        "embeddings (RAG)": lambda: nvidia_client.embed(["prueba"], input_type="query"),
+    }
+    cliente = nvidia_client._get_client()
+    for rol, etiqueta in (("clasificacion", "revisión de pesados"), ("vision", "visión")):
+        if modelos.get(rol):
+            pruebas[f"{rol} ({etiqueta})"] = (lambda m=modelos[rol]: cliente.chat.completions.create(
+                model=m, max_tokens=16, timeout=60, messages=[{"role": "user", "content": [
+                    {"type": "text", "text": "Reply: ok"}, {"type": "image_url", "image_url": {"url": pixel}}]}]))
+    caidos = []
+    for nombre, prueba in pruebas.items():
+        try:
+            prueba()
+        except Exception as e:
+            caidos.append(f"{nombre}: {str(e)[:70]}")
+    anotar("salud", "Modelos de la API de NVIDIA", "AVISO" if caidos else "PASA",
+           "; ".join(caidos) + " — ver configs/nvidia_api.yaml" if caidos else
+           f"responden los {len(pruebas)}: {', '.join(pruebas)}")
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
