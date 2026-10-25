@@ -12,8 +12,16 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, EmptyState, Notice, Pill } from '../components/ui';
-import { decidirRevision, errorMessage, getRevision, recorteRevisionUrl, restaurarDescartado } from '../lib/api';
+import { Button, Card, ConfirmDialog, EmptyState, Notice, Pill } from '../components/ui';
+import {
+  decidirRevision,
+  devolverDobles,
+  errorMessage,
+  getRevision,
+  quitarDobles,
+  recorteRevisionUrl,
+  restaurarDescartado,
+} from '../lib/api';
 import { formatNumber } from '../lib/format';
 import type { ColaRevision, ItemRevision, MotivoRevision } from '../lib/types';
 
@@ -136,6 +144,24 @@ export default function ProyectoRevisar() {
   });
   // Lo que ya se decidió sale de la lista enseguida, sin esperar a la base.
   const [hechos, setHechos] = useState<Set<string>>(new Set());
+  const [pregunta, setPregunta] = useState<'quitar' | 'devolver' | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const enBloque = async (que: 'quitar' | 'devolver') => {
+    setPregunta(null);
+    try {
+      const r = que === 'quitar' ? await quitarDobles(projectId) : await devolverDobles(projectId);
+      setAviso(
+        que === 'quitar'
+          ? `Se quitaron ${formatNumber(r.quitados ?? 0)} posibles dobles del conteo.`
+          : `Se devolvieron ${formatNumber(r.devueltos ?? 0)} al conteo.`,
+      );
+      setHechos(new Set());
+      void qc.invalidateQueries({ queryKey: ['revision', projectId] });
+      void qc.invalidateQueries({ queryKey: ['validacion', projectId] });
+    } catch (e) {
+      setAviso(errorMessage(e));
+    }
+  };
   const marcar = (it: ItemRevision) => {
     setHechos((h) => new Set(h).add(`${it.tipo}${it.id}`));
     void qc.invalidateQueries({ queryKey: ['revision', projectId] });
@@ -145,6 +171,8 @@ export default function ProyectoRevisar() {
   if (isError || !data) return <Notice title="No se pudo cargar la revisión">{errorMessage(error)}</Notice>;
 
   const total = data.total;
+  const dobles = data.resumen.find((r) => r.motivo === 'doble')?.total ?? 0;
+  const enBloqueQuitados = data.descartados.filter((d) => d.motivo === 'doble (en bloque)').length;
   const items = data.items.filter((it) => !hechos.has(`${it.tipo}${it.id}`));
 
   return (
@@ -175,6 +203,23 @@ export default function ProyectoRevisar() {
         <p className="chart-sub">
           {formatNumber(data.revisados)} revisados a mano · {formatNumber(data.descartados.length)} quitados del conteo
         </p>
+        {(dobles > 0 || enBloqueQuitados > 0) && (
+          <div className="rev-bloque">
+            {dobles > 0 && (
+              <Button onClick={() => setPregunta('quitar')}>Quitar los {formatNumber(dobles)} posibles dobles</Button>
+            )}
+            {enBloqueQuitados > 0 && (
+              <Button onClick={() => setPregunta('devolver')}>
+                Devolver los {formatNumber(enBloqueQuitados)} dobles quitados
+              </Button>
+            )}
+          </div>
+        )}
+        {aviso && (
+          <Notice tone="info" onDismiss={() => setAviso(null)}>
+            {aviso}
+          </Notice>
+        )}
       </Card>
 
       {items.length === 0 ? (
@@ -194,6 +239,20 @@ export default function ProyectoRevisar() {
           Ver más ({formatNumber(data.pendientes - data.items.length)} por revisar)
         </Button>
       )}
+
+      <ConfirmDialog
+        open={pregunta !== null}
+        title={pregunta === 'quitar' ? `¿Quitar los ${formatNumber(dobles)} posibles dobles?` : '¿Devolver los dobles quitados?'}
+        body={
+          pregunta === 'quitar'
+            ? 'Revisados a ojo en Fraccionamiento, unos 9 de cada 10 eran el mismo vehículo contado dos veces. Cambian el Excel y el Reporte; se pueden devolver todos con un clic.'
+            : `Vuelven al conteo los ${formatNumber(enBloqueQuitados)} que se quitaron en bloque.`
+        }
+        confirmLabel={pregunta === 'quitar' ? 'Quitar del conteo' : 'Devolver al conteo'}
+        destructive={pregunta === 'quitar'}
+        onConfirm={() => pregunta && void enBloque(pregunta)}
+        onCancel={() => setPregunta(null)}
+      />
 
       {data.descartados.length > 0 && (
         <Card className="chart-card">

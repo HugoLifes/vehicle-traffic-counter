@@ -1624,6 +1624,42 @@ def formato_direccional(project_id: int) -> Optional[Dict]:
             "total": sum(total.values())}
 
 
+_RELLENO_NIVEL = {"Validado": PatternFill("solid", fgColor="E2EFDA"),
+                  "No pasó la validación": PatternFill("solid", fgColor="F8CBAD"),
+                  "Medido con reservas": PatternFill("solid", fgColor="FFF2CC"),
+                  "Poco confiable": PatternFill("solid", fgColor="F8CBAD")}
+
+
+def _tabla_confiabilidad(ws, fila: int, col: int, project_id: int) -> int:
+    """Qué tan confiable es cada movimiento (src/reports/confiabilidad.py),
+    debajo de las tablas de la hora de máxima demanda: quien recibe el Excel
+    lee la cifra y su nivel en la misma hoja."""
+    from src.reports import confiabilidad
+    formato = formato_direccional(project_id)
+    if not formato:
+        return fila
+    renglones = confiabilidad.niveles_de_proyecto(project_id, formato)
+    if not renglones:
+        return fila
+    _celda(ws, fila, col, "QUÉ TAN CONFIABLE ES CADA MOVIMIENTO", _SUBTITULO, borde=False)
+    fila += 1
+    for j, t in enumerate(("Movimiento", "Nivel", "Por qué")):
+        _celda(ws, fila, col + (0 if j == 0 else 1 if j == 1 else 4), t, _CABECERA, _GRIS)
+    ws.merge_cells(start_row=fila, start_column=col + 1, end_row=fila, end_column=col + 3)
+    ws.merge_cells(start_row=fila, start_column=col + 4, end_row=fila, end_column=col + 18)
+    fila += 1
+    for r in renglones:
+        _celda(ws, fila, col, r["movimiento"], _ETIQUETA)
+        _celda(ws, fila, col + 1, r["nivel"], _NORMAL, _RELLENO_NIVEL.get(r["nivel"]), _IZQ)
+        ws.merge_cells(start_row=fila, start_column=col + 1, end_row=fila, end_column=col + 3)
+        _celda(ws, fila, col + 4, r["detalle"][:1].upper() + r["detalle"][1:] + ".", _NORMAL, alineacion=_IZQ)
+        ws.merge_cells(start_row=fila, start_column=col + 4, end_row=fila, end_column=col + 18)
+        fila += 1
+    ws.cell(fila, col, "Validado: se comparó contra un conteo a mano y pasó el GEH (menor a 5). "
+                       "Sin conteo a mano, lo más alto que se declara es «Medido».").font = Font(size=9, italic=True)
+    return fila + 1
+
+
 def _hojas_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> int:
     """
     El Excel de un aforo direccional, en el formato de la empresa (sus hojas
@@ -1670,6 +1706,7 @@ def _hojas_formato_empresa(wb: Workbook, project_id: int, d: Dict) -> int:
     for t in notas:
         ws.cell(fila, col, t).font = Font(size=9, italic=True)
         fila += 1
+    fila = _tabla_confiabilidad(ws, fila + 1, col, project_id)
     ws.column_dimensions[get_column_letter(col)].width = 20
     for i in range(col + 1, col + 1 + 3 * len(movs)):
         ws.column_dimensions[get_column_letter(i)].width = 5

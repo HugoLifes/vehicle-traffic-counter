@@ -46,6 +46,7 @@ REGRESIONES = [
     ("Velocidad por tramo", "probar_velocidad.py"),
     ("Cordón de líneas (direccional)", "probar_cordon.py"),
     ("Vehículos a revisar", "probar_revision.py"),
+    ("Confiabilidad por movimiento", "probar_confiabilidad.py"),
     ("Usuario y contraseña", "probar_acceso.py"),
 ]
 

@@ -106,3 +106,18 @@ def resumir(movs: List[Dict], nombres: Dict[int, str], videos: Dict[int, Dict],
             "color": color, "cordon": cordon, "texto": texto,
             "por_acceso": por_acceso, "peores_videos": por_video[:5],
             "cortes": {"verde": VERDE, "ambar": AMBAR}}
+
+
+def calidad_de_proyecto(project_id: int) -> Dict:
+    """`resumir` sobre los movimientos guardados de un proyecto."""
+    from src.storage import traffic_db
+    conn = traffic_db.get_connection()
+    movs = [dict(r) for r in conn.execute(
+        "SELECT job_id, origen_id, destino_id FROM movimientos WHERE project_id = ?",
+        (project_id,)).fetchall()]
+    nombres = {z["id"]: z["name"] for z in traffic_db.list_zones(project_id, active_only=False)}
+    videos = {r["id"]: {"nombre": r["original_name"], "hora": r["video_start_time"]}
+              for r in conn.execute(
+                  "SELECT id, original_name, video_start_time FROM video_jobs WHERE project_id = ?",
+                  (project_id,)).fetchall()}
+    return resumir(movs, nombres, videos, traffic_db.es_cordon(project_id))

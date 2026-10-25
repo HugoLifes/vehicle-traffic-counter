@@ -598,3 +598,10 @@ export interface CalidadDireccional {
   peores_videos: { job_id: number; nombre?: string; hora?: string; total: number; fraccion: number }[];
   cortes: { verde: number; ambar: number };
 }
+
+// Qué tan confiable es cada movimiento del direccional (src/reports/confiabilidad.py).
+export interface NivelMovimiento {
+  movimiento: string;
+  nivel: 'Validado' | 'No pasó la validación' | 'Medido' | 'Medido con reservas' | 'Poco confiable';
+  detalle: string;
+}

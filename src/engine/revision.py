@@ -264,6 +264,38 @@ def decidir(project_id: int, tipo: str, item_id: int, decision: str) -> Dict:
     return {"clase": decision}
 
 
+def quitar_dobles(project_id: int) -> Dict:
+    """Quita del conteo, de una vez, todos los posibles dobles pendientes.
+
+    Revisados a ojo en Fraccionamiento (25-oct-2026), 36 pares al azar de tres
+    líneas: ~9 de cada 10 eran el mismo vehículo contado dos veces (un pedazo
+    detrás del arbusto o del poste y, unos cuadros después, el vehículo
+    entero). Quitarlos dejó el aforo aceptado contra el conteo a mano (5 de 5)
+    con 693 en vez de 707. Por eso existe la opción en bloque, pero es del
+    operador: queda cada uno en `descartados` con su motivo y se devuelve uno
+    por uno o todos (`devolver_dobles`)."""
+    from src.storage import traffic_db
+    cruces, _ = traffic_db.cruces_para_revision(project_id)
+    motivos = motivos_de_cruces(cruces, traffic_db.fps_de_videos(project_id))
+    pendientes = {c["id"] for c in cruces if not c.get("clase_revisada")}
+    ids = [i for i, ms in motivos.items() if i in pendientes and any(k == "doble" for k, _ in ms)]
+    for i in ids:
+        traffic_db.descartar(project_id, "cruce", i, MOTIVO_EN_BLOQUE)
+    return {"quitados": len(ids)}
+
+
+def devolver_dobles(project_id: int) -> Dict:
+    """Devuelve al conteo todo lo que `quitar_dobles` sacó."""
+    from src.storage import traffic_db
+    ids = [d["id"] for d in traffic_db.list_descartados(project_id) if d["motivo"] == MOTIVO_EN_BLOQUE]
+    for i in ids:
+        traffic_db.restaurar_descartado(project_id, i)
+    return {"devueltos": len(ids)}
+
+
+MOTIVO_EN_BLOQUE = "doble (en bloque)"
+
+
 # ── El recorte ──────────────────────────────────────────────────────────────
 
 def _caja_de_movimiento(m: Dict, fps: float):

@@ -129,6 +129,10 @@ def de_punta_a_punta():
         comprobar("restaurar lo devuelve", total() == 41, str(total()))
         vuelto = traffic_db.fila_para_recorte("cruce", dobles[0]["id"])
         comprobar("con el mismo id", vuelto is not None)
+        r = revision.quitar_dobles(pid)
+        comprobar("quitar en bloque saca el doble", r["quitados"] == 1 and total() == 40, f"{r} / {total()}")
+        r = revision.devolver_dobles(pid)
+        comprobar("devolver en bloque lo regresa", r["devueltos"] == 1 and total() == 41, f"{r} / {total()}")
 
     try:
         revision.decidir(pid, "cruce", objetivo, "INVENTADA")

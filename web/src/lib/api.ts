@@ -9,6 +9,7 @@
 
 import type {
   CalidadDireccional,
+  NivelMovimiento,
   ColaRevision,
   TipoRevision,
   HojaConteo,
@@ -690,3 +691,9 @@ export const recorteRevisionUrl = (projectId: number, tipo: TipoRevision, id: nu
 export const getCalidadDireccional = (projectId: number) =>
   request<CalidadDireccional>(`/api/projects/${projectId}/direccional/calidad`);
 export const exportEventosUrl = (projectId: number) => `/api/export/eventos.csv?project_id=${projectId}`;
+export const getConfiabilidad = (projectId: number) =>
+  request<NivelMovimiento[]>(`/api/projects/${projectId}/direccional/confiabilidad`);
+export const quitarDobles = (projectId: number) =>
+  request<{ quitados?: number; devueltos?: number }>(`/api/projects/${projectId}/revision/quitar-dobles`, { method: 'POST' });
+export const devolverDobles = (projectId: number) =>
+  request<{ quitados?: number; devueltos?: number }>(`/api/projects/${projectId}/revision/devolver-dobles`, { method: 'POST' });

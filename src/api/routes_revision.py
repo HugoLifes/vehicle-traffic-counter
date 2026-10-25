@@ -46,6 +46,18 @@ def decidir(project_id: int, d: Decision):
         raise HTTPException(400, str(e))
 
 
+@router.post("/{project_id}/revision/quitar-dobles")
+def quitar_dobles(project_id: int):
+    _proyecto(project_id)
+    return revision.quitar_dobles(project_id)
+
+
+@router.post("/{project_id}/revision/devolver-dobles")
+def devolver_dobles(project_id: int):
+    _proyecto(project_id)
+    return revision.devolver_dobles(project_id)
+
+
 @router.post("/{project_id}/revision/restaurar/{descartado_id}")
 def restaurar(project_id: int, descartado_id: int):
     _proyecto(project_id)

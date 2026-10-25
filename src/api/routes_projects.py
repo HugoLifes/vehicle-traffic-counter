@@ -677,6 +677,19 @@ def borrar_croquis(project_id: int):
     return {"croquis": False}
 
 
+@router.get("/{project_id}/direccional/confiabilidad")
+def direccional_confiabilidad(project_id: int):
+    """Qué tan confiable es cada movimiento (src/reports/confiabilidad.py)."""
+    if traffic_db.get_project(project_id) is None:
+        raise HTTPException(404, "Proyecto no encontrado")
+    from src.reports.aforo_excel import formato_direccional
+    from src.reports import confiabilidad
+    formato = formato_direccional(project_id)
+    if formato is None:
+        raise HTTPException(404, "Los accesos no tienen el número del croquis (\"1 · …\")")
+    return confiabilidad.niveles_de_proyecto(project_id, formato)
+
+
 @router.get("/{project_id}/direccional/calidad")
 def direccional_calidad(project_id: int):
     """Qué parte de los vehículos se siguió de un acceso a otro, con color y
@@ -684,16 +697,7 @@ def direccional_calidad(project_id: int):
     if traffic_db.get_project(project_id) is None:
         raise HTTPException(404, "Proyecto no encontrado")
     from src.engine import calidad
-    conn = traffic_db.get_connection()
-    movs = [dict(r) for r in conn.execute(
-        "SELECT job_id, origen_id, destino_id FROM movimientos WHERE project_id = ?",
-        (project_id,)).fetchall()]
-    nombres = {z["id"]: z["name"] for z in traffic_db.list_zones(project_id, active_only=False)}
-    videos = {r["id"]: {"nombre": r["original_name"], "hora": r["video_start_time"]}
-              for r in conn.execute(
-                  "SELECT id, original_name, video_start_time FROM video_jobs WHERE project_id = ?",
-                  (project_id,)).fetchall()}
-    return calidad.resumir(movs, nombres, videos, traffic_db.es_cordon(project_id))
+    return calidad.calidad_de_proyecto(project_id)
 
 
 @router.get("/{project_id}/direccional/formato")

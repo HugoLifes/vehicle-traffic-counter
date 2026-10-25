@@ -19,11 +19,12 @@ import {
   croquisUrl,
   errorMessage,
   getCalidadDireccional,
+  getConfiabilidad,
   getValidacion,
   subirConteoManual,
 } from '../lib/api';
 import { formatNumber } from '../lib/format';
-import type { CalidadDireccional, FilaHrMov, FormatoDireccional, HojaConteo, Validacion } from '../lib/types';
+import type { CalidadDireccional, FilaHrMov, FormatoDireccional, HojaConteo, NivelMovimiento, Validacion } from '../lib/types';
 
 const DIA = new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 const dia = (iso: string) => DIA.format(new Date(`${iso}T12:00:00`));
@@ -76,6 +77,58 @@ function TablaHrMov({ movs, filas }: { movs: string[]; filas: FilaHrMov[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+const TONO_NIVEL: Record<NivelMovimiento['nivel'], string> = {
+  Validado: 'is-ok',
+  'No pasó la validación': 'is-mal',
+  Medido: '',
+  'Medido con reservas': 'is-aviso',
+  'Poco confiable': 'is-mal',
+};
+
+/**
+ * El nivel de cada movimiento junto a la cifra: validado contra el conteo a
+ * mano, medido, o poco confiable, y cómo se obtuvo (por línea, juntos). Lo
+ * mismo que la hoja HMD del Excel (src/reports/confiabilidad.py).
+ */
+function Confiabilidad({ projectId }: { projectId: number }) {
+  const { data } = useQuery<NivelMovimiento[] | null>({
+    queryKey: ['confiabilidad', projectId],
+    queryFn: () => getConfiabilidad(projectId).catch(() => null),
+  });
+  if (!data || data.length === 0) return null;
+  return (
+    <Card className="chart-card">
+      <h3>Qué tan confiable es cada movimiento</h3>
+      <div className="table-scroll">
+        <table className="data-table hrmov conf-tabla">
+          <thead>
+            <tr>
+              <th scope="col">Movimiento</th>
+              <th scope="col">Nivel</th>
+              <th scope="col">Por qué</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((r) => (
+              <tr key={r.movimiento}>
+                <th scope="row">{r.movimiento.replace(/_/g, ' → ')}</th>
+                <td>
+                  <span className={`conf-nivel ${TONO_NIVEL[r.nivel]}`}>{r.nivel}</span>
+                </td>
+                <td className="conf-detalle">{r.detalle[0].toUpperCase() + r.detalle.slice(1)}.</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="chart-sub">
+        Validado: se comparó contra un conteo a mano y pasó el GEH (menor a 5). Sin conteo a mano, lo más
+        alto que se declara es «Medido».
+      </p>
+    </Card>
   );
 }
 
@@ -328,6 +381,8 @@ export function ReporteDireccional({ f, projectId }: { f: FormatoDireccional; pr
       <Precision projectId={projectId} fechas={[...new Set(f.cuartos.map((q) => q.fecha))]} />
 
       <Calidad projectId={projectId} />
+
+      <Confiabilidad projectId={projectId} />
 
       {(f.juntos ?? []).map((g) => (
         <Notice tone="info" key={g.join()} title={`${g.join(' y ')}: esta cámara no los distingue`}>
