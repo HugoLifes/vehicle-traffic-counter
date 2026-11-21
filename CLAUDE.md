@@ -2934,6 +2934,34 @@ abajo y a la izquierda): las líneas del 29 caían en el pasto.
   arregla sin recontar con `cuadro`: hora = inicio + cuadro × 60 / cuadros del
   archivo.
 
+**Contador de ejes de la carretera** (`referencias/aforo_carretera/`, 21-nov-2026).
+Solo la calzada **Sur-Norte** (la que viene hacia la cámara, zona `sur-norte`),
+del 3 al 9 de noviembre, serie **140084**: el mismo aparato que en agosto
+perdió el 31 % en Juárez. Una manguera, "Number of Lanes: 1", en una calzada
+de dos carriles. Según el inge de campo, **los días que sirven para calibrar
+son el lunes 9 y el martes 3** ("se cuatrapearon" videos y mangueras); el
+"Jueves 10" queda fuera del rango del tubo.
+`comparar_aforo_real.py` necesita la carpeta con UN solo archivo
+(`data/referencias_carretera/clasif/` en el Jetson): con los cuatro toma el de
+velocidad y dice "0 días".
+
+Lunes 9, proyecto 29, `sur-norte` contra el tubo:
+
+| | nuestro | tubo | razón |
+|---|---|---|---|
+| 07:00–17:59 | 7 370 | 6 967 | **1.06×** (1.03–1.11 por hora) |
+| 06:00 y 18:00 | 12 / 356 | 449 / 538 | transición |
+| 19:00–05:59 | ~10 | ~2 600 | no medible (faros) |
+
+En la revisión de "posibles dobles" (633 en el día), mirando 24 recortes: la
+mayoría son dos vehículos lado a lado en los dos carriles; unos 5–7 parecen el
+mismo vehículo (una pickup con remolque ganadero contada como dos, cajas que
+brincan). Eso pesa ~1 %; el resto del 6 % es lo esperado de una sola manguera
+en dos carriles (22 % de los cruces de día tienen otro a ≤ 1 s), igual que en
+el frontal, donde el conteo manual luego dio 1.00×. Pendiente: Martes 3 contra
+el tubo, y el perfil por hora del "Jueves" contra los días 5 y 6 del tubo para
+saber de qué día es.
+
 ## Al desplegar en el Jetson
 
 Guía completa en [docs/JETSON_DEPLOY.md](docs/JETSON_DEPLOY.md). Lo
