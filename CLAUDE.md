@@ -2962,6 +2962,43 @@ el frontal, donde el conteo manual luego dio 1.00×. Pendiente: Martes 3 contra
 el tubo, y el perfil por hora del "Jueves" contra los días 5 y 6 del tubo para
 saber de qué día es.
 
+**Revisado a ojo en la plataforma** (barrido + `hoja_cruces.py`): lunes 16:20
+Sur-Norte 16 de 16 vehículos reales y distintos, ninguno sin marca (dos
+parejas lado a lado que la manguera única cuenta como uno); lunes 08:10 9 de
+9; martes 07:40 (proyecto 31) Sur-Norte 12 de 12 y Norte-Sur 9 de 9.
+
+**Objetivos del aforo** (los dio el dueño, 21-nov-2026):
+1. **Artículo de comparación cámara contra mangueras** en Sur-Norte, la calzada
+   con doble manguera. En el aforo anterior no se pudo (lluvia, mangueras
+   cortadas). Calibrar con lunes 9 y martes 3 y luego comparar la semana.
+2. **Conteo normal de la semana**, sobre todo **Norte-Sur**, donde no hubo
+   mangueras: la cámara es lo único que rescata esos datos.
+
+**De noche no se ve el vehículo** (capturas de 21:10, 23:20 y 05:40): los
+faros queman la calzada derecha a blanco y lo demás son rayas de luz. No es el
+detector, así que entrenar no lo arregla. Los dos objetivos quedan de día
+(07:00–17:59) salvo que se decida estimar la noche.
+
+**Tercer encuadre: Viernes 13 y Sábado 14, proyecto 32** ("— 13 y 14 nov").
+La cámara está girada y movida (el ajuste por fondo no fue confiable: 157 de
+800 puntos), así que se calibró con los puntos de apoyo: zona `norte-sur`
+`[[1300,700],[1600,720],[2000,800],[2400,870],[2560,880],[2560,1230],[2070,1230],[1800,1020],[1600,935],[1400,850],[1300,740]]`,
+línea `[[1835,745],[1885,1085]]`; zona `sur-norte`
+`[[0,815],[200,795],[400,772],[600,750],[800,726],[1000,702],[1250,698],[1250,735],[1000,775],[800,810],[600,850],[400,875],[200,905],[0,965]]`,
+línea `[[440,745],[478,895]]`. Emulando el rastreador de la plataforma en tres
+minutos, las propuestas son las que más cuentan (35 contra 30/34 y 22 contra
+21/22), y el barrido de viernes 17:00 da a ojo ~18 y ~10, lo mismo que el
+contador. Domingo 8 tiene el encuadre del lunes (22 px más abajo) y va al 29.
+Viernes y Sábado quedan fuera del rango del tubo: solo sirven al objetivo 2.
+
+**Vigilante de la carpeta de entrada** (`data/vigilar_entrada.py`, lanzado
+desde el host con un `until ... sleep 900`, registro en
+`/home/apia/vigilar_entrada.log`): importa Domingo (29), Viernes y Sábado (32)
+en ese orden cuando cada uno termina de subirse, y lanza el conteo. Ojo: lo
+que dice si un día terminó de subirse es la fecha de las **carpetas**, no la de
+los archivos, que llegan con la fecha de grabación (la primera versión
+importó el domingo a medias por eso).
+
 ## Al desplegar en el Jetson
 
 Guía completa en [docs/JETSON_DEPLOY.md](docs/JETSON_DEPLOY.md). Lo
