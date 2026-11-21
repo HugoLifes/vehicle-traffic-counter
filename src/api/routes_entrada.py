@@ -4,6 +4,7 @@ Jetson) a una intersección. Ver src/storage/entrada.py.
 """
 
 import re
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
@@ -37,6 +38,14 @@ def importar(datos: dict):
             raise HTTPException(400, detail={"mensaje": f"Falta la fecha y la hora de inicio de {p.get('ruta')}."})
         if len(inicio) == 16:
             inicio += ":00"
+        # Un año imposible no da error en ningún otro lado: el video cae en un
+        # día que nadie consulta. Pasó con "0002-11-09" (19-nov-2026).
+        try:
+            fecha = datetime.strptime(inicio, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            raise HTTPException(400, detail={"mensaje": f"La fecha de {p.get('ruta')} no existe: {inicio}."})
+        if not 2000 <= fecha.year <= 2100:
+            raise HTTPException(400, detail={"mensaje": f"El año de {p.get('ruta')} es {fecha.year}; revisa la fecha."})
         pedidos.append({"ruta": str(p.get("ruta") or ""), "inicio": inicio})
     if not pedidos:
         raise HTTPException(400, detail={"mensaje": "No se eligió ningún video."})

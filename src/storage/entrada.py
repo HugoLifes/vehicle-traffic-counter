@@ -30,8 +30,11 @@ _HMS = re.compile(r"(?<!\d)(\d{2})[-_:.](\d{2})[-_:.](\d{2})(?!\d)")
 _MINUTO = re.compile(r"^(\d{1,2})(?:-\d+)?$")            # 00.mp4 … 59.mp4
 _HORA_CARPETA = re.compile(r"^(\d{1,2})(?:h|hrs?|[-_:.]00)?$", re.I)  # 14, 14h, 14-00
 _FECHA = (
-    (re.compile(r"(?<!\d)(20\d{2})[-_.]?(\d{2})[-_.]?(\d{2})(?!\d)"), (1, 2, 3)),   # 2026-10-05, 20261005
-    (re.compile(r"(?<!\d)(\d{2})[-_.](\d{2})[-_.](20\d{2})(?!\d)"), (3, 2, 1)),     # 05-10-2026
+    # Con espacio también: la grabadora de la supercarretera nombra la carpeta
+    # "Lunes 2026 11 09" y, sin reconocerla, la fecha se tecleó a mano y quedó
+    # en el año 0002 (19-nov-2026).
+    (re.compile(r"(?<!\d)(20\d{2})[-_. ]?(\d{2})[-_. ]?(\d{2})(?!\d)"), (1, 2, 3)),  # 2026-10-05, 20261005, 2026 10 05
+    (re.compile(r"(?<!\d)(\d{2})[-_. ](\d{2})[-_. ](20\d{2})(?!\d)"), (3, 2, 1)),     # 05-10-2026
 )
 
 
@@ -106,6 +109,16 @@ def listar(proyecto_id: Optional[int] = None) -> Dict:
         importados = {r[0]: r[1] for r in traffic_db.get_connection().execute(
             "SELECT subida_id, id FROM video_jobs WHERE project_id = ? AND subida_id LIKE 'entrada-%'",
             (proyecto_id,))}
+    # Lo importado a OTRA intersección: la carpeta de entrada no se vacía (es
+    # de solo lectura) y al crear el proyecto de la supercarretera "elegir
+    # todo" arrastró 10 238 videos de Juárez de septiembre (19-nov-2026). Se
+    # reconoce por el nombre y el tamaño, que son los de la copia.
+    en_otro = {}
+    for nombre, tamano, pid, pnombre in traffic_db.get_connection().execute(
+            """SELECT v.original_name, v.size_bytes, v.project_id, p.name FROM video_jobs v
+               JOIN projects p ON p.id = v.project_id
+               WHERE v.subida_id LIKE 'entrada-%' AND v.project_id IS NOT ?""", (proyecto_id,)):
+        en_otro.setdefault((nombre, tamano), pnombre)
     archivos = []
     for ruta in sorted(DIRECTORIO.rglob("*")):
         if not ruta.is_file() or ruta.suffix.lower() not in EXTENSIONES or ruta.name.startswith("."):
@@ -121,6 +134,7 @@ def listar(proyecto_id: Optional[int] = None) -> Dict:
             **hora_de(rel),
             "importado": (importados.get(huella(rel, st.st_size, st.st_mtime, proyecto_id))
                           if proyecto_id is not None else None),
+            "en_otro_proyecto": en_otro.get((visible(rel).replace("/", " / "), st.st_size)),
         })
     return {"disponible": True, "archivos": archivos}
 

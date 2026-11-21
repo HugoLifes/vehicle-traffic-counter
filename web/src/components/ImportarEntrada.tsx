@@ -94,7 +94,10 @@ export function ImportarEntrada({ projectId }: { projectId: number }) {
         n[a.ruta] = prev[a.ruta] ?? {
           fecha: a.fecha ?? '',
           hora: a.hora ?? '',
-          elegido: a.importado == null && Boolean(a.fecha && a.hora),
+          // Lo que ya está en otra intersección no se marca solo: la carpeta de
+          // entrada no se vacía y "elegir todo" metió 10 238 videos de Juárez
+          // al proyecto de la supercarretera (19-nov-2026).
+          elegido: a.importado == null && !a.en_otro_proyecto && Boolean(a.fecha && a.hora),
         };
       }
       return n;
@@ -137,7 +140,7 @@ export function ImportarEntrada({ projectId }: { projectId: number }) {
     setFilas((p) => {
       const n = { ...p };
       for (const a of g.archivos) {
-        if (a.importado != null) continue;
+        if (a.importado != null || (si && a.en_otro_proyecto)) continue;
         n[a.ruta] = { ...n[a.ruta], elegido: si && conHora(n[a.ruta]) };
       }
       return n;
@@ -264,6 +267,14 @@ export function ImportarEntrada({ projectId }: { projectId: number }) {
                   {sinHora.length > 0 && (
                     <span className="eg-chip is-aviso">{sinHora.length} sin hora</span>
                   )}
+                  {pend.some((a) => a.en_otro_proyecto) && (
+                    <span
+                      className="eg-chip is-aviso"
+                      title={`Ya importados a: ${[...new Set(pend.map((a) => a.en_otro_proyecto).filter(Boolean))].join(', ')}`}
+                    >
+                      {pend.filter((a) => a.en_otro_proyecto).length} ya están en otro proyecto
+                    </span>
+                  )}
                   {faltan.length > 0 && (
                     <span className="eg-chip is-aviso" title={faltan.join(', ')}>
                       {faltan.length === 1 ? `falta ${faltan[0]}` : `faltan ${faltan.length} minutos`}
@@ -294,6 +305,10 @@ export function ImportarEntrada({ projectId }: { projectId: number }) {
                         <span className="ea-peso num">{formatSize(a.tamano)}</span>
                         {hecho ? (
                           <span className="ea-nota">ya importado</span>
+                        ) : a.en_otro_proyecto && !f.elegido ? (
+                          <span className="ea-nota" title={a.en_otro_proyecto}>
+                            ya está en «{a.en_otro_proyecto}»
+                          </span>
                         ) : (
                           <span className="ea-inicio">
                             <input

@@ -492,6 +492,8 @@ export interface ArchivoEntrada {
   fecha: string | null;
   hora: string | null;
   importado: number | null;
+  // Ya se importó a OTRA intersección (su nombre): no se elige solo.
+  en_otro_proyecto?: string | null;
 }
 export interface EstadoImportacion {
   activa: boolean;
