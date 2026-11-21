@@ -2846,6 +2846,49 @@ unos cuadros después el vehículo entero, con otro rastro.
 - No se tocó el entregable. Antes de descartar en bloque hay que revisarlos
   en la pestaña, y volver a comparar.
 
+## Supercarretera Delicias–Chihuahua, km 140+580 (proyecto 29, 20-nov-2026)
+
+Primer aforo fuera de Cd. Juárez. Cámara en el camellón, baja, mirando a lo
+largo de la carretera, 2560×1440. De día 20 cuadros/s; de noche 10 y con
+destellos fuertes de los faros. Un día completo, el lunes 9-nov-2026, en
+1 439 videos de un minuto.
+
+- **Calzada derecha (`norte-sur`):** se aleja de la cámara. Los vehículos
+  entran grandes por la orilla derecha y se achican hacia el horizonte.
+- **Calzada izquierda (`sur-norte`):** viene hacia la cámara y sale por abajo
+  a la izquierda.
+- **Las líneas van casi verticales,** perpendiculares al flujo, que en la
+  imagen corre casi horizontal: x≈1950 la derecha, x≈400 la izquierda, cada
+  una atada a la zona de su calzada.
+- **Validado contra los recorridos del diagnóstico,** minuto de las 12:00:
+  12 y 8 cruces, justo los recorridos que pasan por cada línea. Los 20
+  revisados a ojo eran vehículos reales y distintos.
+- **El vehículo mide 160–220 px en la línea:** da para clases finas.
+- **Límite:** en un camión ganadero rojo la caja tomó solo la cabina
+  (175 px) y puede salir liviano.
+- **Sin video anotado,** para que el día quepa en un fin de semana: ~25 s por
+  minuto de video de madrugada.
+- **El tramo de velocidad se quitó:** tenía 10 m sin medir (`origen` vacío).
+  Para velocidad hace falta una distancia medida en el pavimento.
+
+**Lo que salió mal al crearlo, y quedó arreglado:**
+- **"Elegir todo" en Importar de la carpeta de entrada metió 10 238 videos
+  viejos de Juárez** (28-sep a 5-oct) delante de los de la carretera. La
+  carpeta es de solo lectura y no se vacía. La cola contó 862 de esos con las
+  líneas de la carretera. Se movieron al proyecto 30 ("importados por
+  error"), sin contar y sin borrar archivos, y se quitaron sus cruces.
+  - Respaldo previo: `data/respaldos/antes_limpieza_p29_2026-11-20.db`.
+  - Ahora la lista marca lo ya importado a OTRA intersección y no lo
+    preselecciona.
+- **La carpeta "Lunes 2026 11 09" no se leía como fecha** (espacios), y a
+  mano quedó en el año 0002. Ahora se lee, y la API rechaza años fuera de
+  2000–2100.
+- **El contenedor se reinició ~10 veces en 30 h** sin traza en el registro.
+  Antes de varios reinicios aparecen `NvMap ... error 12` y "NMS time limit
+  exceeded", o sea presión de memoria de la GPU (lfb de 4 MB: memoria
+  fragmentada). La cola sobrevive porque al arrancar vuelve a encolar lo que
+  quedó a medias. Un video quedó en error por "CUDA out of memory".
+
 ## Al desplegar en el Jetson
 
 Guía completa en [docs/JETSON_DEPLOY.md](docs/JETSON_DEPLOY.md). Lo
