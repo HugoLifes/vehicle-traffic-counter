@@ -2889,6 +2889,51 @@ destellos fuertes de los faros. Un día completo, el lunes 9-nov-2026, en
   fragmentada). La cola sobrevive porque al arrancar vuelve a encolar lo que
   quedó a medias. Un video quedó en error por "CUDA out of memory".
 
+### Los cuatro días de la carretera (20-nov-2026)
+
+En la carpeta venían **cuatro** días, no uno: Martes 3, Miércoles 4, Lunes 9
+y "Jueves 2026 11 10". Lunes y Jueves van al proyecto **29**; Martes y
+Miércoles al **31** ("carretera km 140 + 580 — 3 y 4 nov"), porque esos dos
+días la **cámara estaba en otra posición** (más cielo, la carretera más
+abajo y a la izquierda): las líneas del 29 caían en el pasto.
+
+- **Calibración del 31**, de los puntos de apoyo de 4 300 detecciones: zona
+  `norte-sur` `[[1430,765],[1600,795],[2560,1020],[2560,1270],[2060,1270],[1800,1110],[1600,1000],[1420,830]]`,
+  línea `[[1875,845],[1935,1200]]`; zona `sur-norte`
+  `[[0,742],[900,745],[1250,748],[1380,760],[1380,800],[1000,825],[600,870],[300,885],[0,900]]`,
+  línea `[[595,725],[605,880]]`. La franja cae en 384x1280, el mismo motor
+  TensorRT del 29. Miércoles está ~22 px más arriba que Martes; la orilla
+  superior de la calzada izquierda pasa entre la vía y el camino de terracería
+  de arriba, con ~18 px de holgura a cada lado.
+- **Las líneas se eligieron emulando el rastreador de la plataforma**, no
+  ByteTrack: con ByteTrack otras posiciones daban 5 % más; con el rastreador
+  propio las puestas empatan o ganan (8 minutos de 08, 12, 17 y 18 h: 45 contra
+  45/44 y 63 contra 61/62 en el 31; 29 contra 30 y 31 contra 31 en el 29). En el
+  barrido de la línea, la calzada izquierda del 31 pierde 1–2 de ~11 tapados
+  por un camión del carril cercano: oclusión, no línea.
+- **La leyenda de la cámara no es la hora.** Es el reloj de fábrica
+  (2026-09-18, se reinicia al apagarse). Dos veces alguien la puso en hora y
+  coincidió **al segundo** con el nombre del archivo: Miércoles 17:30 →
+  `2026-11-04 17:30:01`, y "Jueves" 18:00 → `2026-11-06 18:00:00`. O sea que la
+  carpeta "Jueves 2026 11 10" puede no ser del 10 (que además es martes); está
+  cargada con el 10 hasta que la empresa diga. El Lunes no tiene leyenda.
+  Contra el sol (Delicias, UTC-6): la imagen aclara 06:40–07:10 y oscurece
+  18:30–19:00, con salida 07:14–07:19 y puesta 18:12–18:16: la hora del archivo
+  es la local.
+- **Minutos de 284 bytes**: la grabadora deja el nombre del minuto vacío y el
+  video real como `MM_new.mp4`. Se importa el `_new` con la hora de su minuto.
+  En Miércoles 17:27 el minuto viene partido: `27.mp4` (40 s) y `27_new.mp4`
+  (18 s, importado a las 17:27:40).
+- **Archivos cortados sin índice** (`moov atom not found`), quedan en error y
+  como hueco: Lunes 11:32, Martes 19:08, Miércoles 18:11, Jueves 11:34 y 18:20.
+- **El encabezado miente en el ritmo de cuadros** al anochecer y de noche (la
+  cámara cambia entre 10 y 20 cuadros/s): un minuto con 1 113 cuadros dice
+  "10/s" y aparenta 111 s. Comprobado que cada archivo empieza en el cuadro
+  siguiente al último del anterior: no se encima nada y no hay doble conteo.
+  Solo se corre la hora de algunos cruces de ese minuto (hasta ~50 s). Se
+  arregla sin recontar con `cuadro`: hora = inicio + cuadro × 60 / cuadros del
+  archivo.
+
 ## Al desplegar en el Jetson
 
 Guía completa en [docs/JETSON_DEPLOY.md](docs/JETSON_DEPLOY.md). Lo
