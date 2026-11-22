@@ -2960,10 +2960,10 @@ brincan). Eso pesa ~1 %; el resto del 6 % es lo esperado de una sola manguera
 en dos carriles (22 % de los cruces de día tienen otro a ≤ 1 s), igual que en
 el frontal, donde el conteo manual luego dio 1.00×.
 
-**Martes 3, proyecto 31, el mismo patrón con otro encuadre:** 07:00–15:59
-6 591 contra 6 181, **1.07×**, entre 1.04 y 1.10 cada hora (lunes: 1.03–1.11).
-A las 06:00 da 0.23× (lunes 0.03×): la transición del amanecer cambia de un
-día a otro. Pendiente: el perfil por hora del "Jueves" contra los días 5 y 6
+**Martes 3, proyecto 31, el mismo patrón con otro encuadre:** 07:00–17:59
+7 993 contra 7 521, **1.06×**, entre 1.04 y 1.10 cada hora (lunes: 7 370 contra
+6 967, 1.06×, 1.03–1.11). A las 06:00 da 0.23× (lunes 0.03×): la transición
+del amanecer cambia de un día a otro; a las 18:00, 0.69× (lunes 0.66×). Pendiente: el perfil por hora del "Jueves" contra los días 5 y 6
 del tubo para saber de qué día es.
 
 **El "Jueves" se pasó al final de la cola** (21-nov-2026) para que el Domingo
