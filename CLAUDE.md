@@ -2958,9 +2958,21 @@ mayoría son dos vehículos lado a lado en los dos carriles; unos 5–7 parecen 
 mismo vehículo (una pickup con remolque ganadero contada como dos, cajas que
 brincan). Eso pesa ~1 %; el resto del 6 % es lo esperado de una sola manguera
 en dos carriles (22 % de los cruces de día tienen otro a ≤ 1 s), igual que en
-el frontal, donde el conteo manual luego dio 1.00×. Pendiente: Martes 3 contra
-el tubo, y el perfil por hora del "Jueves" contra los días 5 y 6 del tubo para
-saber de qué día es.
+el frontal, donde el conteo manual luego dio 1.00×.
+
+**Martes 3, proyecto 31, el mismo patrón con otro encuadre:** 07:00–15:59
+6 591 contra 6 181, **1.07×**, entre 1.04 y 1.10 cada hora (lunes: 1.03–1.11).
+A las 06:00 da 0.23× (lunes 0.03×): la transición del amanecer cambia de un
+día a otro. Pendiente: el perfil por hora del "Jueves" contra los días 5 y 6
+del tubo para saber de qué día es.
+
+**El "Jueves" se pasó al final de la cola** (21-nov-2026) para que el Domingo
+8, que sí tiene tubo, se cuente antes. La cola vive en memoria y no se
+reordena: se pusieron sus 1 440 videos en `awaiting_calibration` (el
+procesador los salta) y el vigilante los vuelve a pedir cuando ya empezó el
+Domingo, así sus turnos viejos ya pasaron. Llegaron incompletos el Domingo
+(faltan 08–11 h) y el Sábado (faltan 16–17 h); el vigilante sigue mirando
+hasta el 25-nov por si los suben.
 
 **Revisado a ojo en la plataforma** (barrido + `hoja_cruces.py`): lunes 16:20
 Sur-Norte 16 de 16 vehículos reales y distintos, ninguno sin marca (dos
