@@ -2976,7 +2976,15 @@ cuadro exacto, de las que tienen las cajas encimadas (las sospechosas):
 y una madrina partida en tractor y caja. Eso da ~0.5 % del total. **No se baja la razón contra el tubo
 a 0.98–0.99**: sería tirar ~6 % de vehículos reales para parecerse a un
 aparato que los junta. Mismo resultado que en el frontal, donde el tubo daba
-1.10–1.18× y el conteo manual 1.00×. Pendiente: el perfil por hora del "Jueves" contra los días 5 y 6
+1.10–1.18× y el conteo manual 1.00×.
+
+**Miércoles 4 (proyecto 31), el tercer día:** 07:00–17:29 7 364 contra 6 974,
+**1.06×** (1.01–1.07 por hora), y juntando a 0.5 s **0.99×**. De 17:30 a 17:44
+bajó a 0.72× y no es la calibración: es cuando alguien estuvo en la cámara.
+A las 17:27 se reinició (archivo partido), a las 17:30 la pusieron en hora, y
+el barrido de la línea enseña el fondo ondulando, o sea la cámara moviéndose.
+Ese cuarto deja vehículos sin contar. Desde 17:46 la cámara sale con otro
+aspecto, sin leyenda. Esa media hora no sirve para comparar. Pendiente: el perfil por hora del "Jueves" contra los días 5 y 6
 del tubo para saber de qué día es.
 
 **El "Jueves" se pasó al final de la cola** (21-nov-2026) para que el Domingo
