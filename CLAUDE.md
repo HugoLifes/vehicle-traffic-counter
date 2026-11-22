@@ -2963,7 +2963,20 @@ el frontal, donde el conteo manual luego dio 1.00×.
 **Martes 3, proyecto 31, el mismo patrón con otro encuadre:** 07:00–17:59
 7 993 contra 7 521, **1.06×**, entre 1.04 y 1.10 cada hora (lunes: 7 370 contra
 6 967, 1.06×, 1.03–1.11). A las 06:00 da 0.23× (lunes 0.03×): la transición
-del amanecer cambia de un día a otro; a las 18:00, 0.69× (lunes 0.66×). Pendiente: el perfil por hora del "Jueves" contra los días 5 y 6
+del amanecer cambia de un día a otro; a las 18:00, 0.69× (lunes 0.66×).
+
+**El 6 % de más es de la manguera, no nuestro** (22-nov-2026). Juntando
+nuestros cruces como los junta una sola manguera (hora exacta por `cuadro`,
+los separados por menos de 0.5 s cuentan uno), 07:00–17:59 queda en **0.998×
+el martes y 1.000× el lunes**; con 0.3 s, 1.03×; con 0.7 s, 0.96–0.97×. Las
+parejas a < 0.6 s son 621 y 501 en el día. Revisadas a ojo 24 al azar, en su
+cuadro exacto, de las que tienen las cajas encimadas (las sospechosas):
+**22 son dos vehículos distintos**, uno tapando al otro en los dos carriles
+(la cámara está baja). Solo 2 son el mismo vehículo: una pickup con remolque
+y una madrina partida en tractor y caja. Eso da ~0.5 % del total. **No se baja la razón contra el tubo
+a 0.98–0.99**: sería tirar ~6 % de vehículos reales para parecerse a un
+aparato que los junta. Mismo resultado que en el frontal, donde el tubo daba
+1.10–1.18× y el conteo manual 1.00×. Pendiente: el perfil por hora del "Jueves" contra los días 5 y 6
 del tubo para saber de qué día es.
 
 **El "Jueves" se pasó al final de la cola** (21-nov-2026) para que el Domingo
