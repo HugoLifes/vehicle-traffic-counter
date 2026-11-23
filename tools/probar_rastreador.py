@@ -191,8 +191,29 @@ def _aparece_junto_a_la_linea(desde_nacimiento):
     return total
 
 
+def _remolque_atrapa_al_siguiente():
+    """El rastro de un remolque (1000x400) y la caja de otro vehículo
+    (600x250) que apenas lo toca: IoU 0.16, que no empareja. Agrandadas un 50 %
+    se enciman a 0.33 y emparejaban. Visto el viernes 13-nov a las 08:15:15:
+    el rastro del remolque, ya contado, atrapó al tractocamión siguiente y
+    este no se contó. Devuelve cuántos emparejamientos hubo (debe ser 0)."""
+    import numpy as np
+    trk = VehicleTracker(max_age=30, min_hits=1, iou_threshold=0.3, margen_iou=0.5)
+    grande = [0, 0, 1000, 400]
+    trk.update([{'bbox': grande, 'confidence': 0.9, 'class_id': 7, 'class_name': 'truck'}])
+    chica = {'bbox': [700, 100, 1300, 350], 'confidence': 0.9, 'class_id': 7, 'class_name': 'truck'}
+    pares, _, _ = trk._associate_detections_to_tracks([chica], trk.tracks, [np.array(grande, float)])
+    return len(pares)
+
+
 def main():
     fallos = 0
+
+    n = _remolque_atrapa_al_siguiente()
+    print(f'Margen entre un remolque y una caja de otro tamaño: {n} emparejamiento(s)')
+    if n != 0:
+        print('MAL  el margen emparejó cajas de tamaño muy distinto')
+        fallos += 1
 
     sin, con = _aparece_junto_a_la_linea(False), _aparece_junto_a_la_linea(True)
     print(f'Moto que cruza antes de confirmarse: {sin} sin cruce_desde_nacimiento, {con} con')
@@ -244,7 +265,7 @@ def main():
         fallos += 1
 
     print()
-    print(f'8 casos, {fallos} fallos')
+    print(f'9 casos, {fallos} fallos')
     return 1 if fallos else 0
 
 

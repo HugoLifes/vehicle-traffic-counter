@@ -393,15 +393,30 @@ class VehicleTracker:
             w, h = b[2] - b[0], b[3] - b[1]
             return [b[0] - m * w, b[1] - m * h, b[2] + m * w, b[3] + m * h]
 
+        def _parecidas(a, b):
+            # El margen solo empareja cajas de tamaño parecido. Sin esto, la
+            # caja de 845 px de un remolque que sale del cuadro, agrandada,
+            # alcanzó al tractocamión que entraba por el otro lado (viernes
+            # 13-nov, 08:15:15): el rastro ya estaba contado y el
+            # tractocamión no se contó. Un vehículo no cambia de tamaño a más
+            # del doble de un cuadro al siguiente.
+            wa, ha = a[2] - a[0], a[3] - a[1]
+            wb, hb = b[2] - b[0], b[3] - b[1]
+            if min(wa, ha, wb, hb) <= 0:
+                return False
+            return 0.67 <= wa / wb <= 1.5 and 0.67 <= ha / hb <= 1.5
+
         cajas_pred = [_con_margen(p) for p in predichos]
         for d, detection in enumerate(detections):
             caja_det = _con_margen(detection['bbox'])
             for t, track in enumerate(tracks):
                 # Caja predicha UNA vez por cuadro (ver Track.predict)
-                predicted_bbox = cajas_pred[t]
+                predicted_bbox = predichos[t]
 
                 # Calcular IoU
-                iou = self.calculate_iou(caja_det, predicted_bbox)
+                iou = self.calculate_iou(detection['bbox'], predicted_bbox)
+                if m and _parecidas(detection['bbox'], predicted_bbox):
+                    iou = max(iou, self.calculate_iou(caja_det, cajas_pred[t]))
                 
                 # Costo = 1 - IoU (queremos minimizar)
                 cost_matrix[d, t] = 1 - iou
