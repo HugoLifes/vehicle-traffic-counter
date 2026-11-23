@@ -288,7 +288,8 @@ class VehicleTracker:
         iou_threshold: float = 0.3,
         buffer_size: int = 60,
         config: Optional[Dict] = None,
-        margen_iou: float = 0.0
+        margen_iou: float = 0.0,
+        margen_ancho_max: Optional[float] = None
     ):
         """
         Inicializar tracker
@@ -315,6 +316,12 @@ class VehicleTracker:
         # bajar su umbral a 0.10 no cambió un solo cruce en 33 minutos.
         # En 0 (por omisión) empareja exactamente como antes.
         self.margen_iou = float(margen_iou or 0.0)
+        # El margen solo hace falta para lo angosto (la moto mide 40-90 px de
+        # ancho a 2560). Con cajas de tráiler de 800-1 200 px, agrandadas un
+        # 50 %, el rastro de un tráiler ya contado atrapaba al siguiente, de
+        # tamaño parecido, y este no se contaba (lunes 9-nov 15:19, Norte-Sur).
+        # El procesador lo fija en 6 % del ancho del cuadro; None = sin tope.
+        self.margen_ancho_max = margen_ancho_max
         
         # Tracks activos
         self.tracks: List[Track] = []
@@ -403,6 +410,8 @@ class VehicleTracker:
             wa, ha = a[2] - a[0], a[3] - a[1]
             wb, hb = b[2] - b[0], b[3] - b[1]
             if min(wa, ha, wb, hb) <= 0:
+                return False
+            if self.margen_ancho_max and max(wa, wb) > self.margen_ancho_max:
                 return False
             return 0.67 <= wa / wb <= 1.5 and 0.67 <= ha / hb <= 1.5
 

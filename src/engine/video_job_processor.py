@@ -39,6 +39,10 @@ from src.engine.zones import (band_from_zones, draw_zones, filter_detections,
                               load_zones, zone_for_bbox, zone_for_point)
 from src.visualizer import Visualizer
 
+# Tope de ancho para el margen del IoU del rastreador (perfil margen_iou), como
+# fracción del ancho del cuadro: ver VehicleTracker.margen_ancho_max.
+MARGEN_ANCHO_MAX = 0.06
+
 
 # Ancho máximo del video anotado. El de entrada puede ser de 2560x1440 (la
 # cámara frontal de Cd. Juárez), y escribir y recodificar eso cuesta más que
@@ -511,6 +515,7 @@ class VideoJobProcessor:
             )
 
             frame_width = int(cap.get(3)) or 640
+            tracker.margen_ancho_max = MARGEN_ANCHO_MAX * frame_width
             frame_height = int(cap.get(4)) or 480
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or None
             fps_declarado = cap.get(cv2.CAP_PROP_FPS) or 25.0
@@ -595,7 +600,8 @@ class VideoJobProcessor:
                             min_hits=self.config.get('tracker', {}).get('min_hits', 3),
                             iou_threshold=self.config.get('tracker', {}).get('iou_threshold', 0.3),
                             config=self.config.get('tracker', {}),
-                            margen_iou=perfil.get('margen_iou', 0.0))
+                            margen_iou=perfil.get('margen_iou', 0.0),
+                            margen_ancho_max=MARGEN_ANCHO_MAX * frame_width)
                     contadores_sentido[(lid, d)] = (u, copy.deepcopy(lane_counters[lid]))
             if por_sentido and detector.confidence_threshold > min(rastreadores_sentido):
                 detector.confidence_threshold = min(rastreadores_sentido)
