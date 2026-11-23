@@ -400,7 +400,8 @@ def generar_video(job: Dict, detector, config: Dict, salida: str, ancho: int = 1
         detector.set_detection_band(None)
     t = dict(config.get("tracker", {}))
     tracker = VehicleTracker(max_age=t.get("max_age", 30), min_hits=t.get("min_hits", 3),
-                             iou_threshold=t.get("iou_threshold", 0.3), config=t)
+                             iou_threshold=t.get("iou_threshold", 0.3), config=t,
+                             margen_iou=perfil.get("margen_iou", 0.0))
     pesados, livianos = clasificadores
     umbral, perfil_carril = escala_por_carril(job.get("project_id"))
     inicio = (datetime.fromisoformat(job["video_start_time"])

@@ -74,7 +74,8 @@ def medir(job: Dict, detector, config: Dict, detener=None, progreso=None,
         detector.set_detection_band(None)
     t = dict(config.get("tracker", {}))
     tracker = VehicleTracker(max_age=t.get("max_age", 30), min_hits=t.get("min_hits", 3),
-                             iou_threshold=t.get("iou_threshold", 0.3), config=t)
+                             iou_threshold=t.get("iou_threshold", 0.3), config=t,
+                             margen_iou=perfil.get("margen_iou", 0.0))
     quitar_nacidos = bool(perfil.get("quitar_nacidos_en_pesado"))
     vistos_ids, nacidos = set(), set()
     cruces, tiempos = [], {}

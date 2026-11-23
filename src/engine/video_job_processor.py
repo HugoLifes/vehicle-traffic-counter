@@ -506,7 +506,8 @@ class VideoJobProcessor:
                 max_age=self.config.get('tracker', {}).get('max_age', 30),
                 min_hits=self.config.get('tracker', {}).get('min_hits', 3),
                 iou_threshold=self.config.get('tracker', {}).get('iou_threshold', 0.3),
-                config=self.config.get('tracker', {})
+                config=self.config.get('tracker', {}),
+                margen_iou=perfil.get('margen_iou', 0.0)
             )
 
             frame_width = int(cap.get(3)) or 640
@@ -590,7 +591,8 @@ class VideoJobProcessor:
                             max_age=self.config.get('tracker', {}).get('max_age', 30),
                             min_hits=self.config.get('tracker', {}).get('min_hits', 3),
                             iou_threshold=self.config.get('tracker', {}).get('iou_threshold', 0.3),
-                            config=self.config.get('tracker', {}))
+                            config=self.config.get('tracker', {}),
+                            margen_iou=perfil.get('margen_iou', 0.0))
                     contadores_sentido[(lid, d)] = (u, copy.deepcopy(lane_counters[lid]))
             if por_sentido and detector.confidence_threshold > min(rastreadores_sentido):
                 detector.confidence_threshold = min(rastreadores_sentido)

@@ -281,7 +281,8 @@ class VehicleTracker:
         min_hits: int = 3,
         iou_threshold: float = 0.3,
         buffer_size: int = 60,
-        config: Optional[Dict] = None
+        config: Optional[Dict] = None,
+        margen_iou: float = 0.0
     ):
         """
         Inicializar tracker
@@ -298,6 +299,16 @@ class VehicleTracker:
         self.iou_threshold = iou_threshold
         self.buffer_size = buffer_size
         self.config = config or {}
+        # IoU con margen (C-BIoU, Yang et al. 2023): para emparejar, cada caja
+        # se agranda esta fracción de su ancho y de su alto por lado. Existe
+        # por la carretera Delicias–Chihuahua (23-nov-2026): con la cámara
+        # baja, una moto cerca de la cámara mide ~40 px de ancho y avanza
+        # ~30 px por cuadro, así que dos cuadros seguidos se enciman con IoU
+        # ~0.16 < 0.3. Cada cuadro abría un rastro nuevo y la moto nunca
+        # cruzaba la línea con el mismo rastro: YOLO la veía a 0.75–0.85 y
+        # bajar su umbral a 0.10 no cambió un solo cruce en 33 minutos.
+        # En 0 (por omisión) empareja exactamente como antes.
+        self.margen_iou = float(margen_iou or 0.0)
         
         # Tracks activos
         self.tracks: List[Track] = []
@@ -368,13 +379,23 @@ class VehicleTracker:
         if predichos is None:
             predichos = [track.predict() for track in tracks]
 
+        m = self.margen_iou
+
+        def _con_margen(b):
+            if not m:
+                return b
+            w, h = b[2] - b[0], b[3] - b[1]
+            return [b[0] - m * w, b[1] - m * h, b[2] + m * w, b[3] + m * h]
+
+        cajas_pred = [_con_margen(p) for p in predichos]
         for d, detection in enumerate(detections):
+            caja_det = _con_margen(detection['bbox'])
             for t, track in enumerate(tracks):
                 # Caja predicha UNA vez por cuadro (ver Track.predict)
-                predicted_bbox = predichos[t]
+                predicted_bbox = cajas_pred[t]
 
                 # Calcular IoU
-                iou = self.calculate_iou(detection['bbox'], predicted_bbox)
+                iou = self.calculate_iou(caja_det, predicted_bbox)
                 
                 # Costo = 1 - IoU (queremos minimizar)
                 cost_matrix[d, t] = 1 - iou

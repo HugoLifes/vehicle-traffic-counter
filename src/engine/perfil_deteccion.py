@@ -65,6 +65,11 @@ def leer(proyecto: Optional[Dict]) -> Dict:
     if (isinstance(horas, (list, tuple)) and len(horas) == 2
             and all(isinstance(h, int) and 0 <= h <= 24 for h in horas) and horas[0] < horas[1]):
         limpio["horas_subtipo"] = (horas[0], horas[1])
+    # Margen del IoU del rastreador (VehicleTracker.margen_iou): fracción del
+    # ancho y del alto que se agranda cada caja SOLO para emparejarla.
+    margen = perfil.get("margen_iou")
+    if isinstance(margen, (int, float)) and 0 < margen <= 1.0:
+        limpio["margen_iou"] = float(margen)
     if perfil.get("quitar_nacidos_en_pesado") is True:
         limpio["quitar_nacidos_en_pesado"] = True
     if perfil.get("quitar_pedazos_de_pesado") is True:
