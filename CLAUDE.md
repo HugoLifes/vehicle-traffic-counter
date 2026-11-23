@@ -3032,6 +3032,52 @@ que dice si un día terminó de subirse es la fecha de las **carpetas**, no la d
 los archivos, que llegan con la fecha de grabación (la primera versión
 importó el domingo a medias por eso).
 
+### Contra un conteo a mano propio: 0.97×, y por qué faltaban (23-nov-2026)
+
+Conté a mano, vehículo por vehículo sobre el barrido y el cuadro exacto, dos
+cuartos de hora de Sur-Norte: lunes 15:15 (216 reales) y martes 15:00 (249).
+El sistema daba 210 y 243, **0.97×, nunca arriba**. Las otras calzadas y días
+(lunes, martes, miércoles, domingo y viernes, 3 minutos cada uno) dieron lo
+mismo: nada de más, motos de menos.
+
+**Bajar el umbral de motos a 0.10, como en Juárez, no cambió un solo cruce en
+33 minutos.** YOLO ya veía las motos a 0.45–0.85. Faltaban por tres defectos,
+cada uno trazado por el camino de producción (`data/aud/motos/trazar.py` en el
+Jetson):
+
+1. **La moto se movía más que su ancho.** ~40 px de ancho y ~30 px por cuadro:
+   IoU ~0.16 entre cuadros, un rastro nuevo en cada uno. `margen_iou` (perfil):
+   para emparejar, cada caja se agranda 50 % (C-BIoU), **solo** si las dos son
+   angostas (≤ 6 % del ancho del cuadro) y de tamaño parecido. Sin esos topes,
+   el rastro ya contado de un remolque de 845 px atrapó al tractocamión que lo
+   seguía.
+2. **Cruzaba antes de confirmarse.** El rastreador entrega el rastro hasta la
+   3a detección y el contador medía desde ahí: la moto del domingo 17:01:19
+   nació a 46 px de la línea y se confirmó del otro lado.
+   `cruce_desde_nacimiento` (perfil) mide desde donde nació el rastro.
+3. **Las líneas y las zonas quedaban cortas hacia la cámara.** Dos pickups del
+   viernes 08:15 (0.81–0.83 de confianza) tenían la llanta 1 px fuera de la zona,
+   y la de un tractocamión pasaba a y=900 con la línea terminando en 895. Se
+   alargaron las seis líneas y se bajaron las zonas (`calib_carretera.py`,
+   respaldo previo `data/respaldos/traffic_2026-11-23_2205.db`). **Tope de las
+   zonas**: la franja (`band_from_zones`, ±115 px) tiene que seguir midiendo
+   ≤ 768 px para usar el motor TensorRT 384x1280; con más no hay motor y se cuenta
+   con el `.pt` al doble de tiempo.
+
+Medido con las tres, por producción sobre una copia, en los 35 minutos:
+**lunes 213 y martes 244 de 216 y 249 (0.983×)**, más la moto del domingo y las
+dos pickups y el tractocamión del viernes. Lo que queda son vehículos tapados
+por otro en el carril cercano (cámara baja) y alguna moto. Regresiones:
+`probar_rastreador.py`, 9 casos.
+
+**Cuidado al comparar dos corridas cruce por cruce**: el emparejamiento por
+cuadro y alto se equivoca con los tráileres (la caja cambia de alto) y reporta
+"perdidos" que sí están. Antes de creer un "quita", trazar ese cruce.
+
+Desde el 23-nov 22:08 la cola cuenta con esto: viernes de día (recuento) y
+sábado (32), martes y miércoles de día (31), domingo y lunes de día y el
+"jueves" (29). ~6 600 videos, unos 3 días.
+
 ## Al desplegar en el Jetson
 
 Guía completa en [docs/JETSON_DEPLOY.md](docs/JETSON_DEPLOY.md). Lo
