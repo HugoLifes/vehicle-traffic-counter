@@ -111,6 +111,17 @@ class BidirectionalCounter:
         # {'cuadros': 9, 'contencion': 0.7, 'edad_max': 20}
         self.dobles_contencion = self.config.get('dobles_contencion')
         self._cruzados = []           # [(frame, track_id, bbox, direction)]
+        # Cruce desde donde nació el rastro (perfil `cruce_desde_nacimiento`,
+        # apagado por omisión). El rastreador entrega un rastro solo cuando ya
+        # lo vio min_hits (3) veces, y el contador mide el cruce entre la
+        # posición anterior QUE ÉL VIO y la actual. Un vehículo rápido que
+        # cruza la línea antes de su tercera detección nunca se cuenta: su
+        # primera posición conocida ya está del otro lado. Trazado en la
+        # carretera Delicias–Chihuahua (23-nov-2026, domingo 17:01:19): la moto
+        # se detecta a 0.45–0.74, su rastro nace a 46 px de la línea y se
+        # confirma 24 px después de cruzarla. Con la opción, la primera vez que
+        # aparece un rastro se toma como posición previa su punto de nacimiento.
+        self.cruce_desde_nacimiento = bool(self.config.get('cruce_desde_nacimiento', False))
         self.dobles_quitados = []     # [(track_id, track_id que ya cruzó)]
         
         # Historial de cruces (para análisis)
@@ -337,6 +348,12 @@ class BidirectionalCounter:
             # ahora línea y zona hablan del mismo punto.
             x1, y1, x2, y2 = track['bbox']
             curr_position = ((x1 + x2) / 2, y2)
+
+            if (self.cruce_desde_nacimiento and track_id not in self.track_states
+                    and track.get('primer_apoyo') is not None):
+                self.track_states[track_id] = {
+                    'last_position': tuple(track['primer_apoyo']),
+                    'crossed': False, 'frames_since_seen': 0}
 
             # Verificar si ya tenemos estado previo de este track
             if track_id in self.track_states:

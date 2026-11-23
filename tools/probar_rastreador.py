@@ -17,6 +17,15 @@ equivocados. Corre en un segundo:
 3. **Antiduplicado del contador a escala.** El umbral de 6 px se midió sobre
    video de 640×360; con 2560×1440 el mismo vehículo mide 150 px y sus cajas
    duplicadas quedan a 20-40 px de distancia.
+4. **Moto angosta y rápida que nunca cruza.** En la carretera Delicias–
+   Chihuahua la moto cerca de la cámara mide ~40 px de ancho y avanza ~30 px
+   por cuadro: dos cuadros seguidos se enciman con IoU ~0.16, cada cuadro abre
+   un rastro nuevo y ninguno cruza la línea. Con `margen_iou` (perfil del
+   proyecto) se cuenta; sin él sigue igual que antes, a propósito.
+5. **El vehículo que cruza antes de confirmarse.** El rastreador entrega un
+   rastro hasta su tercera detección y el contador solo ve desde ahí. La
+   moto del domingo 17:01:19 nació a 46 px de la línea y se confirmó ya del
+   otro lado. Con `cruce_desde_nacimiento` cuenta desde donde nació.
 """
 
 import os
@@ -149,8 +158,53 @@ def _seguidor_joven(dobles):
     return total
 
 
+def _moto_rapida(margen):
+    """Moto de 40x60 px que avanza 30 px por cuadro y cruza x=500, con dos
+    autos de 200 px en el carril de al lado que también cruzan."""
+    trk = VehicleTracker(max_age=30, min_hits=3, iou_threshold=0.3, margen_iou=margen)
+    contador = BidirectionalCounter(line_type='vertical')
+    contador.set_counting_line(line_type='vertical', x=500, frame_shape=(720, 1000))
+    total = 0
+    for cuadro in range(30):
+        dets = [{**deteccion(200 + 30 * cuadro, 300, ancho=40, alto=60, clase=3),
+                 'class_name': 'motorcycle'}]
+        dets.append(deteccion(900 - 30 * cuadro, 500, ancho=200, alto=120))
+        dets.append(deteccion(1150 - 30 * cuadro, 500, ancho=200, alto=120))
+        r = contador.update(trk.update(dets))
+        total += len(r['in']) + len(r['out'])
+    return total
+
+
+def _aparece_junto_a_la_linea(desde_nacimiento):
+    """Moto que el detector ve por primera vez 50 px antes de la línea y que
+    avanza 30 px por cuadro: cruza entre su 2a y su 3a detección."""
+    trk = VehicleTracker(max_age=30, min_hits=3, iou_threshold=0.3, margen_iou=0.5)
+    contador = BidirectionalCounter(line_type='vertical',
+                                    config={'cruce_desde_nacimiento': desde_nacimiento})
+    contador.set_counting_line(line_type='vertical', x=500, frame_shape=(720, 1000))
+    total = 0
+    for cuadro in range(12):
+        dets = [{**deteccion(550 - 30 * cuadro, 300, ancho=40, alto=60, clase=3),
+                 'class_name': 'motorcycle'}]
+        r = contador.update(trk.update(dets))
+        total += len(r['in']) + len(r['out'])
+    return total
+
+
 def main():
     fallos = 0
+
+    sin, con = _aparece_junto_a_la_linea(False), _aparece_junto_a_la_linea(True)
+    print(f'Moto que cruza antes de confirmarse: {sin} sin cruce_desde_nacimiento, {con} con')
+    if sin != 0 or con != 1:
+        print('MAL  se esperaba 0 sin la opción (el defecto) y 1 con ella')
+        fallos += 1
+
+    sin, con = _moto_rapida(0.0), _moto_rapida(0.5)
+    print(f'Moto angosta a 30 px por cuadro y dos autos: {sin} cruces sin margen_iou, {con} con 0.5')
+    if sin != 2 or con != 3:
+        print('MAL  se esperaba 2 sin margen (la moto se pierde: el defecto) y 3 con él')
+        fallos += 1
 
     dobles = {'cuadros': 9, 'contencion': 0.7, 'edad_max': 20}
     sin, con = _pedazo_y_entero(None), _pedazo_y_entero(dobles)
@@ -190,7 +244,7 @@ def main():
         fallos += 1
 
     print()
-    print(f'6 casos, {fallos} fallos')
+    print(f'8 casos, {fallos} fallos')
     return 1 if fallos else 0
 
 

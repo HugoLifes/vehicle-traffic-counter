@@ -54,6 +54,9 @@ def medir(job: Dict, detector, config: Dict, detener=None, progreso=None,
     zonas = load_zones(job.get("project_id"))
     contadores, meta = build_lane_counters(job.get("source_label") or "", H, W,
                                            project_id=job.get("project_id"))
+    if perfil.get("cruce_desde_nacimiento"):
+        for _c in contadores.values():
+            _c.cruce_desde_nacimiento = True
     tramo_de = {lid: (tramos or {}).get(lid) or m.get("tramo") for lid, m in meta.items()}
     medidores = {lid: MedidorVelocidad(meta[lid]["points"], tr["linea"], tr["distancia_m"], fps)
                  for lid, tr in tramo_de.items() if tr and tr.get("distancia_m")}

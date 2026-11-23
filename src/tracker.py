@@ -74,6 +74,11 @@ class Track:
         # Trayectoria
         self.trajectory = deque(maxlen=buffer_size)
         self.trajectory.append(self._bbox_center(bbox))
+        # Punto de apoyo (centro del borde inferior) donde NACIÓ el rastro.
+        # El rastreador solo entrega rastros confirmados (min_hits), así que
+        # el contador no ve sus primeros cuadros; ver
+        # BidirectionalCounter.cruce_desde_nacimiento.
+        self.primer_apoyo = ((bbox[0] + bbox[2]) / 2, bbox[3])
         
         # Filtro de Kalman para predicción
         self.kf = self._init_kalman_filter(bbox)
@@ -234,6 +239,7 @@ class Track:
             'age': self.age,
             'hits': self.hits,
             'trajectory': list(self.trajectory),
+            'primer_apoyo': self.primer_apoyo,
             'is_confirmed': self.is_confirmed,
             'velocity': self.get_velocity(),
             'metadata': self.metadata

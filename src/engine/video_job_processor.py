@@ -532,6 +532,9 @@ class VideoJobProcessor:
             if perfil.get('dobles_contencion'):
                 for contador in lane_counters.values():
                     contador.dobles_contencion = perfil['dobles_contencion']
+            if perfil.get('cruce_desde_nacimiento'):
+                for contador in lane_counters.values():
+                    contador.cruce_desde_nacimiento = True
             # Zonas dibujadas a mano sobre la calzada. Cuando existen mandan
             # ellas: describen el área real de la vía, así que acotan mejor
             # que un rectángulo deducido de las líneas y además permiten

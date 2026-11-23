@@ -383,6 +383,9 @@ def generar_video(job: Dict, detector, config: Dict, salida: str, ancho: int = 1
     zonas = load_zones(job.get("project_id"))
     contadores, meta = build_lane_counters(job.get("source_label") or "", H, W,
                                            project_id=job.get("project_id"))
+    if perfil.get("cruce_desde_nacimiento"):
+        for _c in contadores.values():
+            _c.cruce_desde_nacimiento = True
     if not contadores:
         cap.release()
         raise RuntimeError("El proyecto no tiene líneas de conteo que dibujar")

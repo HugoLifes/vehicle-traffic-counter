@@ -70,6 +70,8 @@ def leer(proyecto: Optional[Dict]) -> Dict:
     margen = perfil.get("margen_iou")
     if isinstance(margen, (int, float)) and 0 < margen <= 1.0:
         limpio["margen_iou"] = float(margen)
+    if perfil.get("cruce_desde_nacimiento") is True:
+        limpio["cruce_desde_nacimiento"] = True
     if perfil.get("quitar_nacidos_en_pesado") is True:
         limpio["quitar_nacidos_en_pesado"] = True
     if perfil.get("quitar_pedazos_de_pesado") is True:
