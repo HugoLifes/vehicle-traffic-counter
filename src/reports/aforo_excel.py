@@ -440,7 +440,7 @@ def _hoja_cuartos(wb: Workbook, d: Dict):
 
 # Orden de las columnas de clase: el de la hoja de la empresa (A, B, C, T-S,
 # T-S-R) y despues lo que el sistema declara aparte.
-_ORDEN_CLASES = ("A", "B", "C", "T-S", "T-S-R", "TRACTOR", "MOTO", "PESADO",
+_ORDEN_CLASES = ("A", "B", "C", "C/T-S", "T-S", "T-S-R", "TRACTOR", "MOTO", "PESADO",
                  "SIN_RESOLVER")
 _TITULO_CLASE = {"SIN_RESOLVER": "SIN CLASIFICAR"}
 
@@ -509,6 +509,12 @@ def _hoja_clases(wb: Workbook, project_id: int, d: Dict) -> None:
             notas.append("MOTO: la clasificacion de la empresa no tiene columna de "
                          "motocicletas; se entregan aparte para sumarlas donde "
                          "corresponda.")
+        if c == "C/T-S":
+            notas.append("C/T-S: camiones unitarios y tractocamiones juntos. Con esta "
+                         "camara (baja y a lo largo de la via) no se separan de forma "
+                         "confiable: probado contra el contador de ejes, el reparto entre "
+                         "los dos cambiaba de un dia a otro. Liviano contra pesado si "
+                         "esta comprobado (ver METODO).")
         if c == "PESADO":
             notas.append("PESADO: autobuses y camiones juntos; en esta calzada el "
                          "vehiculo se ve demasiado pequeno para separarlos.")
@@ -703,7 +709,10 @@ def _hoja_resumen(wb: Workbook, project_id: int, d: Dict) -> None:
                 _celda(ws, fila, 2 + i, round(100 * suma[c] / tot, 1) if tot else "")
             fila += 1
 
-    sub = _subtipos_por_sentido(project_id)
+    # El subtipo de A solo sale si el proyecto tiene el clasificador de
+    # livianos: en la carretera km 140 daba camionetas 6 % en un sentido y
+    # 25 % en el otro (entrenado con otra cámara), y se quitó.
+    sub = _subtipos_por_sentido(project_id) if _con_subtipos(project_id) else {}
     if any(n for s in sub.values() for q in s.values()
            for k, n in q.items() if k != "SIN_SUBTIPO"):
         fila += 1
@@ -740,6 +749,11 @@ def _hoja_resumen(wb: Workbook, project_id: int, d: Dict) -> None:
     ws.column_dimensions["B"].width = 26
     for col in range(3, 13):
         ws.column_dimensions[get_column_letter(col)].width = 13
+
+
+def _con_subtipos(project_id: int) -> bool:
+    from src.engine import perfil_deteccion
+    return bool(perfil_deteccion.leer(traffic_db.get_project(project_id)).get("clasificador_livianos"))
 
 
 def _subtipos_por_sentido(project_id: int) -> Dict:
@@ -892,7 +906,7 @@ def _hoja_metodo(wb: Workbook, d: Dict):
         filas.append((f"Excluida {fecha} {hora:02d}:00", motivo or "evento de la cámara"))
     if d.get("revisados"):
         filas.append(("Clase de los pesados",
-                      "Revisada sobre el recorte de cada vehículo: " + ", ".join(
+                      "Revisada después del conteo: " + ", ".join(
                           f"{n} por {quien}" for quien, n in d["revisados"].items())
                       + ". El resto, por la regla de alto y silueta del "
                       "automóvil de su calzada."))
@@ -1776,7 +1790,8 @@ def generar(project_id: int, ruta: str) -> Dict:
         _hoja_totales(wb, d)
         _hoja_cuartos(wb, d)
         _hoja_clases(wb, project_id, d)
-        _hoja_livianos(wb, project_id, d)
+        if _con_subtipos(project_id):
+            _hoja_livianos(wb, project_id, d)
         _hoja_resumen(wb, project_id, d)
     _hoja_velocidad(wb, project_id, d)
     direccionales = _hoja_direccional(wb, project_id, d["proyecto"])
