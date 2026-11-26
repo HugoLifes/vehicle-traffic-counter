@@ -65,7 +65,9 @@ def main():
         sys.exit("El proyecto no tiene ningún video legible para saber el tamaño del cuadro.")
 
     # La franja, igual que el procesador: zonas primero, si no, las líneas.
-    banda = band_from_zones(traffic_db.list_zones(a.proyecto), alto)
+    from src.engine import perfil_deteccion
+    perfil = perfil_deteccion.leer(traffic_db.get_project(a.proyecto))
+    banda = band_from_zones(traffic_db.list_zones(a.proyecto), alto, perfil=perfil)
     if banda is None:
         lineas = [l["points"] for l in traffic_db.list_lanes(project_id=a.proyecto) if l.get("points")]
         banda = VehicleDetector.band_from_lanes(

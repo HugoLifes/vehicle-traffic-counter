@@ -76,6 +76,40 @@ def leer(proyecto: Optional[Dict]) -> Dict:
         limpio["quitar_nacidos_en_pesado"] = True
     if perfil.get("quitar_pedazos_de_pesado") is True:
         limpio["quitar_pedazos_de_pesado"] = True
+    # Horario medible [desde, hasta) en horas del día: fuera de él el Excel
+    # deja la celda en blanco aunque la confianza media pase el umbral. En la
+    # carretera km 140 (nov-2026) las 06 y las 18 h salen con buena confianza
+    # pero contra la manguera dan 0.03-0.23x y 0.66-0.69x: el detector ve
+    # bien los pocos vehículos que alcanza a ver con media luz.
+    horario = perfil.get("horas_medibles")
+    if (isinstance(horario, (list, tuple)) and len(horario) == 2
+            and all(isinstance(h, int) and 0 <= h <= 24 for h in horario) and horario[0] < horario[1]):
+        limpio["horas_medibles"] = [horario[0], horario[1]]
+    # Horas sueltas que no se publican: [["2026-11-04", 17, "motivo"], ...].
+    # Para un evento de la cámara (alguien la mueve o la tapa) que la
+    # confianza no delata porque lo que sí se ve se ve bien.
+    excluidas = []
+    for e in perfil.get("horas_excluidas") or []:
+        if (isinstance(e, (list, tuple)) and len(e) >= 2 and isinstance(e[0], str)
+                and re.fullmatch(r"\d{4}-\d{2}-\d{2}", e[0]) and isinstance(e[1], int) and 0 <= e[1] <= 23):
+            excluidas.append([e[0], e[1], str(e[2]) if len(e) > 2 else ""])
+    if excluidas:
+        limpio["horas_excluidas"] = excluidas
+    # Carpeta (dentro de data/) donde el procesador deja el recorte de cada
+    # posible pesado al contarlo: para etiquetarlo y entrenar un clasificador
+    # de ESA cámara sin volver a decodificar el video.
+    g = perfil.get("guardar_recortes")
+    if isinstance(g, str) and re.fullmatch(r"data/[\w./-]+", g) and ".." not in g:
+        limpio["guardar_recortes"] = g
+    if isinstance(perfil.get("nota_horario"), str) and perfil["nota_horario"].strip():
+        limpio["nota_horario"] = perfil["nota_horario"].strip()
+    # Franja de detección fija [y0, y1] en vez de la de las zonas
+    # (zones.band_from_zones). Un motor de TensorRT sirve para un solo tamaño:
+    # al cambiarla hay que crear el suyo (tools/exportar_tensorrt.py).
+    banda = perfil.get("banda")
+    if (isinstance(banda, (list, tuple)) and len(banda) == 2
+            and all(isinstance(v, int) and v >= 0 for v in banda) and banda[1] > banda[0]):
+        limpio["banda"] = [banda[0], banda[1]]
     for clave in ("clasificador_pesados", "clasificador_livianos"):
         if isinstance(perfil.get(clave), str) and perfil[clave].strip():
             limpio[clave] = perfil[clave].strip()
@@ -270,7 +304,15 @@ class PedazosDePesado:
         self._vida: Dict[int, List] = {}
 
     def observar(self, rastros: List[Dict]):
-        pesados = [r for r in rastros if r.get("class_name") in GRANDES]
+        # Solo cuenta como pesado el que el detector VIO en este cuadro. Un
+        # rastro que va de largo (miss_streak > 0) es la caja congelada de su
+        # última detección. Medido en la carretera (km 140, 12:35:48 del
+        # 13-nov): una caja fantasma de 0.33-0.49 que envolvía al camión y un
+        # trozo de asfalto se vio 9 cuadros y siguió 20 más congelada; el
+        # camión entero, que viajaba "dentro" de ella, salía como pedazo y
+        # no se contaba.
+        pesados = [r for r in rastros if r.get("class_name") in GRANDES
+                   and not r.get("miss_streak")]
         for r in rastros:
             x1, y1, x2, y2 = r["bbox"]
             area = max(1.0, (x2 - x1) * (y2 - y1))

@@ -116,7 +116,18 @@ def _horas_no_medibles(conn, project_id: int) -> set:
         horas[t] = (f["cf"], f["n"])
     # El umbral es de ESTA cámara (ver clasificacion.umbral_de_medicion).
     umbral = umbral_de_medicion(horas)
-    return {(t.weekday(), t.hour) for t, (cf, _) in horas.items() if cf < umbral}
+    fuera = {(t.weekday(), t.hour) for t, (cf, _) in horas.items() if cf < umbral}
+    # El horario y las horas excluidas del perfil (perfil_deteccion.leer):
+    # medidos contra una referencia, no deducibles de la confianza.
+    from src.engine import perfil_deteccion
+    perfil = perfil_deteccion.leer(traffic_db.get_project(project_id))
+    if perfil.get("horas_medibles"):
+        desde, hasta = perfil["horas_medibles"]
+        dias = {t.weekday() for t in horas}
+        fuera |= {(d, h) for d in dias for h in range(24) if not desde <= h < hasta}
+    for fecha, hora, _ in perfil.get("horas_excluidas", []):
+        fuera.add((datetime.strptime(fecha, "%Y-%m-%d").weekday(), hora))
+    return fuera
 
 
 def _datos(project_id: int) -> Dict:
@@ -866,10 +877,19 @@ def _hoja_metodo(wb: Workbook, d: Dict):
                           "vehículos: significa que no se grabó, o que se "
                           "grabó en condiciones donde el sistema no puede "
                           "medir (ver abajo)."),
-        ("Horas no medibles", f"{len(d['no_medibles'])} de las 24. Se dejan en "
+        ("Horas no medibles", f"{len(d['no_medibles'])} horas en blanco, sumando "
+                              f"los {len(d['fechas'])} días. Se dejan en "
                               "blanco a propósito, en vez de publicar el "
                               "conteo parcial que produjo el detector."),
     ]
+    from src.engine import perfil_deteccion
+    perfil = perfil_deteccion.leer(p)
+    if perfil.get("horas_medibles"):
+        desde, hasta = perfil["horas_medibles"]
+        filas.append(("Horario medible", f"{desde:02d}:00 a {hasta - 1:02d}:59, "
+                                         "comprobado contra una referencia de campo."))
+    for fecha, hora, motivo in perfil.get("horas_excluidas", []):
+        filas.append((f"Excluida {fecha} {hora:02d}:00", motivo or "evento de la cámara"))
     if d.get("revisados"):
         filas.append(("Clase de los pesados",
                       "Revisada sobre el recorte de cada vehículo: " + ", ".join(
@@ -891,7 +911,8 @@ def _hoja_metodo(wb: Workbook, d: Dict):
     # propias cifras.
     if not d["no_medibles"]:
         return
-    aviso = ws.cell(len(filas) + 5, 1,
+    nota = perfil.get("nota_horario")
+    aviso = ws.cell(len(filas) + 5, 1, nota or
                     "Las horas en blanco no son medición fiable: la confianza "
                     "media del detector quedó muy por debajo de la de esta cámara de día. Suele ser de "
                     "noche, y no por falta de luz sino por lo contrario — la "

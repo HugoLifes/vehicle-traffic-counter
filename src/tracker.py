@@ -238,6 +238,7 @@ class Track:
             'confidence': self.confidence,
             'age': self.age,
             'hits': self.hits,
+            'miss_streak': self.miss_streak,
             'trajectory': list(self.trajectory),
             'primer_apoyo': self.primer_apoyo,
             'is_confirmed': self.is_confirmed,

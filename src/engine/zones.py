@@ -118,14 +118,28 @@ def filter_detections(zones: List[Dict], detections: List[Dict]) -> List[Dict]:
 
 
 def band_from_zones(zones: List[Dict], frame_height: int,
-                    margin_ratio: float = 0.08) -> Optional[Tuple[int, int]]:
+                    margin_ratio: float = 0.08,
+                    perfil: Optional[Dict] = None) -> Optional[Tuple[int, int]]:
     """
     Franja vertical que cubre las calzadas dibujadas.
 
     El margen es menor que el de `band_from_lanes` porque una zona ya
     describe el área completa del vehículo, no solo la línea que cruza:
     no hace falta tanto colchón para el tráiler alto.
+
+    Con `banda` en el perfil del proyecto ([y0, y1] del cuadro original) se
+    usa esa. Carretera km 140 (25-nov-2026): con la cámara baja el tráiler
+    que pasa pegado a ella sube hasta la fila ~400 y baja hasta la orilla; la
+    franja de las zonas (583-1351) le cortaba el techo y el detector lo
+    perdía. Con 400-1440, en 8 minutos de Norte-Sur, +7 vehículos reales
+    (cinco tractocamiones) y ningún conteo de más.
     """
+    fija = (perfil or {}).get('banda')
+    if fija:
+        y0, y1 = max(0, int(fija[0])), min(frame_height, int(fija[1]))
+        if y1 - y0 >= frame_height * 0.9 or y1 <= y0:
+            return None
+        return (y0, y1)
     ys = [p[1] for z in zones if z.get('kind') in ('calzada', 'acceso') for p in z['points']]
     if not ys:
         return None

@@ -184,6 +184,14 @@ recorrido(pp, [[r_(1, "bus", 300 + 5 * n, 700, 900 + 5 * n, 980),
                 r_(2, "car", 300 + 15 * n, 840, 470 + 15 * n, 960)] for n in range(40)])
 comprobar(not pp.es_pedazo(2), "auto que rebasa al autobús, encimado: se cuenta")
 
+# Carretera, 13-nov 12:35:48: una caja fantasma ancha (vista 9 cuadros y
+# luego congelada, miss_streak > 0) envolvía al camión entero, que iba de
+# frente; el camión no es pedazo de una caja que ya nadie ve.
+pp = pd.PedazosDePesado()
+recorrido(pp, [[dict(r_(1, "truck", 1398, 663, 2060, 849), miss_streak=0 if n < 3 else n - 2),
+                r_(2, "truck", 1780 - 12 * n, 667, 2030 - 12 * n, 840)] for n in range(25)])
+comprobar(not pp.es_pedazo(2), "camión dentro de una caja fantasma congelada: se cuenta")
+
 pp = pd.PedazosDePesado()
 recorrido(pp, [[r_(2, "car", 600 + 10 * n, 850, 760 + 10 * n, 960)] for n in range(10)])
 comprobar(not pp.es_pedazo(2) and not pp.es_pedazo(99),

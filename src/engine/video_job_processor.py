@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import cv2
+from src.engine.clasificador_pesados import recortar as recortar_pesado
 import imageio_ffmpeg
 
 from src.detector import VehicleDetector
@@ -556,6 +557,10 @@ class VideoJobProcessor:
             recorridos = {}
             quitar_nacidos = bool(perfil.get('quitar_nacidos_en_pesado'))
             rastros_vistos, nacidos_en_pesado = set(), set()
+            dir_recortes = None
+            if perfil.get('guardar_recortes'):
+                dir_recortes = Path(perfil['guardar_recortes'])
+                dir_recortes.mkdir(parents=True, exist_ok=True)
             pedazos = (perfil_deteccion.PedazosDePesado()
                        if perfil.get('quitar_pedazos_de_pesado') else None)
             pedazos_quitados = 0
@@ -631,7 +636,8 @@ class VideoJobProcessor:
             # 112 cruces en 2 min del mismo video.
             band_cfg = self.config.get('detector', {}).get('band', {})
             if band_cfg.get('enabled', True):
-                banda = band_from_zones(zonas, frame_height) if zonas else None
+                banda = (band_from_zones(zonas, frame_height, perfil=perfil)
+                         if zonas or perfil.get('banda') else None)
                 if banda is None and lane_meta:
                     banda = VehicleDetector.band_from_lanes(
                         [m['points'] for m in lane_meta.values()],
@@ -856,25 +862,27 @@ class VideoJobProcessor:
                         # vehículos de la calzada atada a la línea.
                         for m in medidores[lane_id].observar(frame_count, vistos):
                             velocidades.append((lane_id, m['track_id'], m['segundos']))
-                    fuentes = [(crossings['in'] + crossings['out'], vistos)]
+                    fuentes = [(crossings['in'] + crossings['out'], vistos, counter)]
                     if lane_id in por_sentido:
                         fuentes = [([c for c in fuentes[0][0] if c['direction'] not in por_sentido[lane_id]],
-                                    vistos)]
+                                    vistos, counter)]
                         for d in por_sentido[lane_id]:
                             u, contador_u = contadores_sentido[(lane_id, d)]
                             vistos_u = tracks_sentido[u]
                             if zona_carril and zonas:
                                 vistos_u = [t for t in vistos_u
                                             if zone_for_bbox(zonas, t['bbox']) == zona_carril]
-                            fuentes.append((contador_u.update(vistos_u)[d], vistos_u))
-                    for lista, vistos_f in fuentes:
+                            fuentes.append((contador_u.update(vistos_u)[d], vistos_u, contador_u))
+                    for lista, vistos_f, contador_f in fuentes:
                         for crossing in lista:
                             if crossing['track_id'] in nacidos_en_pesado:
+                                contador_f.anular_cruce(crossing['track_id'])
                                 continue
                             # Frente del autobús, chasis, faro: viaja pegado al
                             # pesado y no es otro vehículo. Ver PedazosDePesado.
                             if pedazos is not None and pedazos.es_pedazo(crossing['track_id']):
                                 pedazos_quitados += 1
+                                contador_f.anular_cruce(crossing['track_id'])
                                 continue
                             track = next(
                                 (t for t in vistos_f if t['id'] == crossing['track_id']),
@@ -912,6 +920,23 @@ class VideoJobProcessor:
                                 r = clasificador.clasificar(frame, track['bbox'])
                                 if r:
                                     clase_modelo, prob_modelo = r
+                            # Recorte del posible pesado, el mismo que ve el
+                            # clasificador (caja + 15 %), para etiquetarlo y
+                            # entrenar uno propio de la cámara sin volver a
+                            # leer el video (perfil `guardar_recortes`).
+                            if dir_recortes is not None and track is not None and (
+                                    crossing['vehicle_type'] in ('truck', 'bus')
+                                    or (alto_caja or 0) >= 200):
+                                rec = recortar_pesado(frame, track['bbox'])
+                                if rec is not None:
+                                    esc = 400.0 / max(rec.shape[:2])
+                                    if esc < 1:
+                                        rec = cv2.resize(rec, None, fx=esc, fy=esc,
+                                                         interpolation=cv2.INTER_AREA)
+                                    cv2.imwrite(str(dir_recortes / (
+                                        f"{job_id}_{lane_id}_{crossing['track_id']}_{frame_count}"
+                                        f"_{crossing['vehicle_type']}.jpg")), rec,
+                                        [cv2.IMWRITE_JPEG_QUALITY, 88])
                             # Subtipo de los livianos (automóvil, camioneta,
                             # pickup); al leer solo cuenta si el cruce quedó en A.
                             subtipo = prob_subtipo = None

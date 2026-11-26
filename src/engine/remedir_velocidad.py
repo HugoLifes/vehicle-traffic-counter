@@ -67,7 +67,8 @@ def medir(job: Dict, detector, config: Dict, detener=None, progreso=None,
     detector.confidence_threshold = perfil_deteccion.umbral_de_deteccion(perfil, general)
     band_cfg = config.get("detector", {}).get("band", {})
     if band_cfg.get("enabled", True):
-        banda = band_from_zones(zonas, H) if zonas else None
+        banda = (band_from_zones(zonas, H, perfil=perfil)
+                 if zonas or perfil.get("banda") else None)
         if banda is None:
             banda = VehicleDetector.band_from_lanes(
                 [m["points"] for m in meta.values()], H,

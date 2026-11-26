@@ -443,7 +443,9 @@ def detecciones_de_cuadro(job_id: int, frame: int = 0):
     alto = imagen.shape[0]
     zonas = load_zones(job.get("project_id"))
     detector = _detector_de_vista()
-    banda = band_from_zones(zonas, alto) if zonas else None
+    from src.engine import perfil_deteccion
+    perfil = perfil_deteccion.leer(traffic_db.get_project(job.get("project_id")) if job.get("project_id") else None)
+    banda = band_from_zones(zonas, alto, perfil=perfil) if zonas or perfil.get("banda") else None
     detector.set_detection_band(banda)
 
     crudas, _ = detector.detect(imagen)

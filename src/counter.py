@@ -95,7 +95,7 @@ class BidirectionalCounter:
         self.dedup_pixels = self.config.get('dedup_pixels', 6)
         self.dedup_altos = self.config.get('dedup_altos', 0.2)
         self._frame_no = 0
-        self._recent_crossings = []   # [(frame, x, y, alto_caja)]
+        self._recent_crossings = []   # [(frame, x, y, alto_caja, track_id)]
         # Pedazo y vehículo entero (perfil `dobles_contencion`, apagado por
         # omisión). Con umbral bajo (0.10) el detector ve primero un pedazo
         # del vehículo y 5-9 cuadros después el vehículo entero; el IoU
@@ -387,7 +387,7 @@ class BidirectionalCounter:
                             duplicado = any(
                                 abs(curr_position[0] - cx) <= max(umbral, self.dedup_altos * ch)
                                 and abs(curr_position[1] - cy) <= max(umbral, self.dedup_altos * ch)
-                                for _, cx, cy, ch in self._recent_crossings
+                                for _, cx, cy, ch, _ in self._recent_crossings
                             )
                             if not duplicado and self.dobles_contencion:
                                 otro = self._pedazo_de(track, direction, cajas_actuales)
@@ -424,7 +424,7 @@ class BidirectionalCounter:
                                 self.counted_ids.add(track_id)
                                 self._recent_crossings.append(
                                     (self._frame_no, curr_position[0], curr_position[1],
-                                     alto_caja)
+                                     alto_caja, track_id)
                                 )
                                 if self.dobles_contencion:
                                     self._cruzados.append(
@@ -446,6 +446,15 @@ class BidirectionalCounter:
 
         return frame_crossings
     
+    def anular_cruce(self, track_id) -> None:
+        """El que llama descartó este cruce (pedazo de un pesado): deja de
+        servir de antiduplicado. Sin esto, el cruce del pedazo de cabina,
+        registrado y luego descartado, tapaba al camión entero que cruzaba
+        medio segundo después dentro del mismo radio (carretera km 140,
+        13-nov 12:35:48: el camión no se contaba). El rastro sigue contado,
+        así que no vuelve a cruzar."""
+        self._recent_crossings = [c for c in self._recent_crossings if c[4] != track_id]
+
     @staticmethod
     def _contencion(a, b) -> float:
         """Fracción de la caja MÁS CHICA que queda dentro de la otra. Un
